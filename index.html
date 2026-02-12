@@ -7,8 +7,41 @@
   <!-- MediaPipe -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <link rel="stylesheet" href="style.css">
 
+  <style>
+    body {
+      margin: 0;
+      background: black;
+      overflow: hidden;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+    }
+
+    #container {
+      position: relative;
+      width: 640px;
+      height: 480px;
+    }
+
+    /* Camera hidden but running */
+    #input_video {
+      position: absolute;
+      width: 640px;
+      height: 480px;
+      opacity: 0; /* hides camera */
+      pointer-events: none;
+    }
+
+    /* Game Canvas */
+    #game_canvas {
+      position: absolute;
+      width: 640px;
+      height: 480px;
+      background: black;
+    }
+  </style>
 </head>
 
 <body>
@@ -16,10 +49,9 @@
   <div id="container">
     <video id="input_video" autoplay playsinline></video>
     <canvas id="game_canvas" width="640" height="480"></canvas>
-    <div id="focus-wheel"></div>
   </div>
 
-  <!-- Your JS file -->
+  <!-- Your Game Logic -->
   <script src="hand-detection.js"></script>
 
 </body>
