@@ -55,39 +55,49 @@ let noteSpeed = 2.5;
     // Placeholder for Note Logic
     function drawNotes() {
   notes.forEach((note, index) => {
-
-    // Direction vector toward center
+    // 1. Vector toward center logic (unchanged)
     const dx = centerX - note.x;
     const dy = centerY - note.y;
-
     const length = Math.sqrt(dx * dx + dy * dy);
-
     const dirX = dx / length;
     const dirY = dy / length;
 
-    // Move toward center
     note.x += dirX * noteSpeed;
     note.y += dirY * noteSpeed;
 
-    // Draw circle
+    // 2. Draw the Note Circle (Symmetrical, so mirroring doesn't matter)
     canvasCtx.fillStyle = "#FF4C4C";
     canvasCtx.beginPath();
     canvasCtx.arc(note.x, note.y, note.radius, 0, 2 * Math.PI);
     canvasCtx.fill();
 
-    // Draw number
+    // 3. Draw the Number (UN-MIRRORING LOGIC)
+    canvasCtx.save(); // Save current state
+    
+    // Move the "drawing paper" to the note's position
+    canvasCtx.translate(note.x, note.y);
+    
+    // Flip the horizontal scale specifically for the text
+    // This cancels out the CSS scaleX(-1)
+    canvasCtx.scale(-1, 1); 
+
     canvasCtx.fillStyle = "white";
-    canvasCtx.font = "20px Arial";
+    canvasCtx.font = "bold 22px 'Segoe UI'";
     canvasCtx.textAlign = "center";
     canvasCtx.textBaseline = "middle";
-    canvasCtx.fillText(note.value, note.x, note.y);
+    
+    // Draw at (0,0) because we translated the context
+    canvasCtx.fillText(note.value, 0, 0); 
+    
+    canvasCtx.restore(); // Restore to normal for the rest of the frame
 
-    // Remove if passes center
-    if (length < 10) {
+    // 4. Remove if it hits center
+    if (length < 15) {
       notes.splice(index, 1);
     }
   });
 }
+
 
     function checkCollision(fingerX, fingerY) {
   notes.forEach((note, index) => {
