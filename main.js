@@ -20,6 +20,11 @@ window.startGame = function(gameName) {
     window.currentGame = Game2;
     Game2.init();
   }
+
+  if (gameName === "Game3") {
+    window.currentGame = ComparatorGame;
+    ComparatorGame.init();
+  }
 };
 
 /* ==============================
