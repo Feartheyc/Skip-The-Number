@@ -1,5 +1,5 @@
-// ===== ODD EVEN HAND GAME =====
 const Game2 = {
+
   canvas: document.getElementById("game_canvas"),
   ctx: document.getElementById("game_canvas").getContext("2d"),
 
@@ -11,6 +11,15 @@ const Game2 = {
   circles: [],
   maxPerLane: 2,
 
+  /* ============================== */
+  init() {
+    this.oddEvenRunning = true;
+    this.score = 0;
+    this.circles = [];
+    this.initLanes();
+  },
+
+  /* ============================== */
   initLanes() {
     this.lanes.length = 0;
     const spacing = this.canvas.width / (this.laneCount + 1);
@@ -23,16 +32,8 @@ const Game2 = {
     }
   },
 
-  start() {
-    this.oddEvenRunning = true;
-    this.score = 0;
-    this.initLanes();
-    this.spawnLoop();
-    requestAnimationFrame(() => this.gameLoop());
-  },
-
+  /* ============================== */
   spawnCircle() {
-    if (!this.oddEvenRunning) return;
 
     const available = this.lanes.filter(l => l.active < this.maxPerLane);
     if (available.length === 0) return;
@@ -53,12 +54,7 @@ const Game2 = {
     });
   },
 
-  spawnLoop() {
-    if (!this.oddEvenRunning) return;
-    this.spawnCircle();
-    setTimeout(() => this.spawnLoop(), 900);
-  },
-
+  /* ============================== */
   drawLanes() {
     this.ctx.strokeStyle = "#cfcfcf";
     this.ctx.lineWidth = 2;
@@ -71,16 +67,17 @@ const Game2 = {
     });
   },
 
+  /* ============================== */
   drawHUD() {
     this.ctx.fillStyle = "white";
     this.ctx.font = "18px Arial";
     this.ctx.fillText("Score: " + this.score, this.canvas.width - 110, 30);
 
-    // Left ODD zone
+    // ODD zone
     this.ctx.fillStyle = "rgba(255,0,0,0.1)";
     this.ctx.fillRect(0, 0, this.canvas.width / 2, this.canvas.height);
 
-    // Right EVEN zone
+    // EVEN zone
     this.ctx.fillStyle = "rgba(0,150,255,0.1)";
     this.ctx.fillRect(this.canvas.width / 2, 0, this.canvas.width / 2, this.canvas.height);
 
@@ -90,6 +87,7 @@ const Game2 = {
     this.ctx.fillText("EVEN", this.canvas.width - 70, 20);
   },
 
+  /* ============================== */
   drawCircles() {
     this.ctx.textAlign = "center";
     this.ctx.textBaseline = "middle";
@@ -106,10 +104,12 @@ const Game2 = {
     });
   },
 
-  checkHandHit(circle) {
-    if (!window.fingerPositions || window.fingerPositions.length === 0) return false;
+  /* ============================== */
+  checkHandHit(circle, fingers) {
 
-    for (let finger of window.fingerPositions) {
+    if (!fingers || fingers.length === 0) return false;
+
+    for (let finger of fingers) {
       const dx = circle.x - finger.x;
       const dy = circle.y - finger.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
@@ -119,15 +119,28 @@ const Game2 = {
         return true;
       }
     }
+
     return false;
   },
 
-  updateCircles() {
+  /* ============================== */
+  update(ctx, fingers) {
+
+    if (!this.oddEvenRunning) return;
+
+    // Spawn occasionally
+    if (Math.random() < 0.02) {
+      this.spawnCircle();
+    }
+
+    // Update circles
     for (let i = this.circles.length - 1; i >= 0; i--) {
+
       const c = this.circles[i];
       c.y += c.speed;
 
-      if (this.checkHandHit(c)) {
+      if (this.checkHandHit(c, fingers)) {
+
         const handOnLeft = c.hitFingerX < this.canvas.width / 2;
 
         if ((c.isOdd && handOnLeft) || (!c.isOdd && !handOnLeft)) {
@@ -147,42 +160,18 @@ const Game2 = {
         this.circles.splice(i, 1);
       }
     }
-  },
 
-  drawHandCursor() {
-    if (!window.fingerPositions) return;
-
-    window.fingerPositions.forEach(finger => {
-      this.ctx.beginPath();
-      this.ctx.fillStyle = "yellow";
-      this.ctx.arc(finger.x, finger.y, 10, 0, Math.PI * 2);
-      this.ctx.fill();
-    });
-  },
-
-  gameLoop() {
-    if (!this.oddEvenRunning) return;
-
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-
+    // Draw
     this.drawLanes();
     this.drawHUD();
-    this.updateCircles();
     this.drawCircles();
-    this.drawHandCursor();
 
-    requestAnimationFrame(() => this.gameLoop());
-  }
-};
-
-
-// Hook into main startGame
-const originalStartGame = window.startGame;
-window.startGame = function (game) {
-  if (game === "game2") {
-    document.getElementById("menu").style.display = "none";
-    GAME2.start();
-  } else {
-    originalStartGame(game);
+    // Draw hand cursors
+    fingers.forEach(finger => {
+      ctx.beginPath();
+      ctx.fillStyle = "yellow";
+      ctx.arc(finger.x, finger.y, 10, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 };
