@@ -2,24 +2,34 @@
 <html>
 <head>
   <meta charset="UTF-8" />
-  <title>Math Rhythm MVP</title>
+  <title>Math Rhythm Platform</title>
 
   <!-- MediaPipe -->
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <link rel="stylesheet" href="style.css">
 
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
 
   <div id="container">
+
     <video id="input_video" autoplay playsinline></video>
     <canvas id="game_canvas" width="640" height="480"></canvas>
-    <div id="focus-wheel"></div>
+
+    <!-- GAME MENU -->
+    <div id="menu">
+      <h1>Select Game</h1>
+      <button onclick="startGame('game1')">Math Rhythm</button>
+      <button disabled>Coming Soon</button>
+    </div>
+
   </div>
 
-  <!-- Your JS file -->
+  <!-- ORDER MATTERS -->
+  <script src="main.js"></script>
+  <script src="skip-number.js"></script>
   <script src="hand-detection.js"></script>
 
 </body>
