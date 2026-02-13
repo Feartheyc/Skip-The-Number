@@ -22,15 +22,22 @@ const camera = new Camera(videoElement, {
 camera.start();
 
 function onResults(results) {
-
   window.fingerPositions = [];
 
-  if (results.multiHandLandmarks) {
-    results.multiHandLandmarks.forEach((landmarks) => {
-      const x = (1 - landmarks[8].x) * 640; // 👈 flip horizontally;
+  if (results.multiHandLandmarks && results.multiHandedness) {
+    for (let i = 0; i < results.multiHandLandmarks.length; i++) {
+      const landmarks = results.multiHandLandmarks[i];
+      const handedness = results.multiHandedness[i].label; // "Left" or "Right"
+
+      const x = (1 - landmarks[8].x) * 640; // mirror flip
       const y = landmarks[8].y * 480;
 
-      window.fingerPositions.push({ x, y });
-    });
+      window.fingerPositions.push({
+        x,
+        y,
+        hand: handedness // 👈 VERY IMPORTANT
+      });
+    }
   }
 }
+
