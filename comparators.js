@@ -5,100 +5,163 @@ const Game3 = {
 
   leftNumber: 0,
   rightNumber: 0,
-  currentRelation: "", // ">", "<", or "="
+  currentRelation: "", // ">", "<"
 
   score: 0,
-  timer: 0,
-  gameState: "PLAYING", // "PLAYING", "SUCCESS", "FAIL"
-  feedbackText: "",
+  gameState: "PLAYING", // "PLAYING", "SUCCESS", "GAME_OVER"
+  
+  // Progress Logic
+  winHoldTime: 0, 
+  winHoldThreshold: 30, // Hold correct pose for ~0.5s to WIN
+  
+  failHoldTime: 0,
+  failHoldThreshold: 30, // Hold WRONG pose for ~0.5s to LOSE
 
-  // Configuration
-  margin: 80, // How far from center hands must be to register
-  winHoldTime: 0, // Frames the player holds the correct pose
-  winHoldThreshold: 40, // Need to hold pose for ~0.7 seconds
+  // Controls
+  margin: 50, 
+  detectedSymbol: "None", 
 
   /* ============================== */
   init() {
     const canvas = document.getElementById('game_canvas');
-    
-    // 1. FORCE the resolution to match the camera
     canvas.width = 640;
     canvas.height = 480;
 
-    // 2. Now calculate center
     this.centerX = canvas.width / 2;
     this.centerY = canvas.height / 2;
-    
     this.score = 0;
     
-    // 3. Spawn the first set of numbers
-    this.spawnNumbers(); 
-    
-    console.log("Comparator Initialized!", this.leftNumber, this.rightNumber);
+    this.spawnNumbers();
+    console.log("Game3 Initialized (Score Penalty Mode)");
   },
 
   /* ============================== */
   spawnNumbers() {
-    // Generate numbers between 1 and 20
     this.leftNumber = Math.floor(Math.random() * 20) + 1;
     this.rightNumber = Math.floor(Math.random() * 20) + 1;
 
-    // Prevent equality for now (to keep gestures simple)
+    // Prevent equal numbers
     while (this.leftNumber === this.rightNumber) {
       this.rightNumber = Math.floor(Math.random() * 20) + 1;
     }
 
-    // Determine correct answer
     this.currentRelation = this.leftNumber > this.rightNumber ? ">" : "<";
     
     this.gameState = "PLAYING";
     this.winHoldTime = 0;
-    this.feedbackText = "Make the mouth!";
+    this.failHoldTime = 0; // Reset fail timer
+    this.detectedSymbol = "None"; 
   },
 
   /* ============================== */
   update(ctx, fingers) {
-    
-    // 1. Draw UI (Score & Numbers)
     this.drawUI(ctx);
 
-    // 2. Logic & Detection
+    // If Round Ended (Success or Fail), stop processing
+    if (this.gameState === "GAME_OVER" || this.gameState === "SUCCESS") return;
+
     if (fingers.length < 2) {
-      this.drawFeedback(ctx, "Show both hands!", "#FFCC00");
+      this.drawFeedback(ctx, "Need 2 Hands!", "orange");
       return;
     }
 
-    // Sort fingers by Y to distinguish top/bottom hand visually
     fingers.sort((a, b) => a.y - b.y);
     const hand1 = fingers[0];
     const hand2 = fingers[1];
 
-    // Visualize the "Arm Symbol"
-    this.drawArmSymbol(ctx, hand1, hand2);
-
-    // Check Pose
     this.checkPose(ctx, hand1, hand2);
+    this.drawArmSymbol(ctx, hand1, hand2);
+  },
+
+  /* ============================== */
+  checkPose(ctx, h1, h2) {
+    if (this.gameState !== "PLAYING") return;
+
+    // 1. Detect Symbol
+    if (h1.x < this.centerX - this.margin && h2.x < this.centerX - this.margin) {
+      this.detectedSymbol = ">";
+    } 
+    else if (h1.x > this.centerX + this.margin && h2.x > this.centerX + this.margin) {
+      this.detectedSymbol = "<";
+    } 
+    else {
+      this.detectedSymbol = "Center";
+    }
+
+    // 2. Identify the WRONG answer
+    const wrongRelation = this.currentRelation === ">" ? "<" : ">";
+
+    // 3. Compare
+    if (this.detectedSymbol === this.currentRelation) {
+      // --- CORRECT PATH ---
+      this.winHoldTime++;
+      this.failHoldTime = 0; 
+      
+      const progress = this.winHoldTime / this.winHoldThreshold;
+      this.drawProgressBar(ctx, progress, "#00FFCC"); // Green/Cyan Bar
+
+      if (this.winHoldTime >= this.winHoldThreshold) {
+        this.handleSuccess();
+      }
+
+    } else if (this.detectedSymbol === wrongRelation) {
+      // --- FAILURE PATH ---
+      this.failHoldTime++;
+      this.winHoldTime = 0; 
+
+      // Show DANGER Bar (Red)
+      const failProgress = this.failHoldTime / this.failHoldThreshold;
+      this.drawProgressBar(ctx, failProgress, "#FF0000");
+
+      if (this.failHoldTime >= this.failHoldThreshold) {
+        this.handleFail();
+      }
+
+    } else {
+      // --- NEUTRAL PATH ---
+      this.winHoldTime = Math.max(0, this.winHoldTime - 2);
+      this.failHoldTime = Math.max(0, this.failHoldTime - 2);
+    }
   },
 
   /* ============================== */
   drawArmSymbol(ctx, h1, h2) {
-    // Draw lines from hands to center to form the < or >
     ctx.lineWidth = 15;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = "#00FFCC";
     ctx.shadowBlur = 15;
-    ctx.shadowColor = "#00FFCC";
+
+    // Colors
+    if (this.detectedSymbol === ">") {
+      ctx.strokeStyle = "#FFFF00"; // Yellow
+      ctx.shadowColor = "#FFFF00";
+    } else if (this.detectedSymbol === "<") {
+      ctx.strokeStyle = "#00AAFF"; // Blue
+      ctx.shadowColor = "#00AAFF";
+    } else {
+      ctx.strokeStyle = "#00FFCC"; // Cyan
+      ctx.shadowColor = "#00FFCC";
+    }
+
+    // Override color if failing
+    if (this.failHoldTime > 10) {
+        ctx.strokeStyle = "red";
+        ctx.shadowColor = "red";
+    }
+
+    if (this.gameState === "SUCCESS") {
+      ctx.strokeStyle = "#00FF00";
+      ctx.shadowColor = "#00FF00";
+    }
 
     ctx.beginPath();
-    ctx.moveTo(h1.x, h1.y);       // Top Hand
-    ctx.lineTo(this.centerX, this.centerY); // Center (Body)
-    ctx.lineTo(h2.x, h2.y);       // Bottom Hand
+    ctx.moveTo(h1.x, h1.y);
+    ctx.lineTo(this.centerX, this.centerY);
+    ctx.lineTo(h2.x, h2.y);
     ctx.stroke();
-
+    
     ctx.shadowBlur = 0;
     
-    // Draw "Hands"
     ctx.fillStyle = "white";
     [h1, h2].forEach(h => {
       ctx.beginPath();
@@ -108,93 +171,110 @@ const Game3 = {
   },
 
   /* ============================== */
-  checkPose(ctx, h1, h2) {
-    if (this.gameState !== "PLAYING") return;
-
-    const avgX = (h1.x + h2.x) / 2;
-    let detectedSymbol = "";
-
-    // If both hands are on the LEFT side of the center margin
-    if (h1.x < this.centerX - this.margin && h2.x < this.centerX - this.margin) {
-      detectedSymbol = ">";
-    }
-    // If both hands are on the RIGHT side of the center margin
-    else if (h1.x > this.centerX + this.margin && h2.x > this.centerX + this.margin) {
-      detectedSymbol = "<";
-    }
-
-    // Validate
-    if (detectedSymbol === this.currentRelation) {
-      this.winHoldTime++;
-      
-      // Visual Progress Bar
-      const progress = this.winHoldTime / this.winHoldThreshold;
-      this.drawProgressBar(ctx, progress);
-
-      if (this.winHoldTime >= this.winHoldThreshold) {
-        this.handleSuccess();
-      }
-    } else {
-      this.winHoldTime = Math.max(0, this.winHoldTime - 2); // Decay progress
-    }
-  },
-
-  /* ============================== */
   handleSuccess() {
     this.gameState = "SUCCESS";
     this.score += 10;
-    this.feedbackText = "Correct!";
     
-    // Wait a moment then spawn new numbers
     setTimeout(() => {
       this.spawnNumbers();
-    }, 1000);
+    }, 1200);
   },
 
   /* ============================== */
+  handleFail() {
+    this.gameState = "GAME_OVER";
+    
+    // --- UPDATED LOGIC HERE ---
+    this.score = this.score - 5;
+    
+    // Optional: Prevent negative score? 
+    // If you want negative scores, remove the line below.
+    if (this.score < 0) this.score = 0; 
+    
+    // Restart round after 2 seconds
+    setTimeout(() => {
+      this.spawnNumbers();
+    }, 2000);
+  },
+
   /* ============================== */
   drawUI(ctx) {
-    // Shared Text Settings
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     
-    // -- DRAW NUMBERS --
-    ctx.font = "bold 120px Arial"; // Made them slightly bigger
-    ctx.lineWidth = 8;             // Thickness of the outline
-    ctx.lineJoin = "round";        // Smooth corners for the outline
+    // -- NUMBERS --
+    ctx.font = "bold 120px Arial";
+    ctx.lineWidth = 8;
+    ctx.lineJoin = "round";
 
-    // 1. Draw Left Number
-    // Outline (Black)
     ctx.strokeStyle = "black";
     ctx.strokeText(this.leftNumber, this.centerX - 200, this.centerY);
-    // Fill (White)
     ctx.fillStyle = "white";
     ctx.fillText(this.leftNumber, this.centerX - 200, this.centerY);
 
-    // 2. Draw Right Number
-    // Outline
+    ctx.strokeStyle = "black";
     ctx.strokeText(this.rightNumber, this.centerX + 200, this.centerY);
-    // Fill
+    ctx.fillStyle = "white";
     ctx.fillText(this.rightNumber, this.centerX + 200, this.centerY);
 
-    // -- DRAW SCORE --
+    // -- SCORE --
     ctx.font = "bold 40px Arial";
     ctx.lineWidth = 4;
-    
-    // Outline
+    ctx.strokeStyle = "black";
     ctx.strokeText("Score: " + this.score, this.centerX, 60);
-    // Fill
+    ctx.fillStyle = "white";
     ctx.fillText("Score: " + this.score, this.centerX, 60);
 
-    // -- DRAW FEEDBACK (Success Message) --
+    // -- SUCCESS MESSAGE --
     if (this.gameState === "SUCCESS") {
       ctx.fillStyle = "#00FF66";
       ctx.strokeStyle = "black";
       ctx.lineWidth = 6;
       ctx.font = "bold 60px Arial";
-      
       ctx.strokeText("CORRECT!", this.centerX, this.centerY + 120);
       ctx.fillText("CORRECT!", this.centerX, this.centerY + 120);
+      
+      ctx.font = "bold 40px Arial";
+      ctx.fillStyle = "white";
+      ctx.fillText("+10 Points", this.centerX, this.centerY + 170);
+    }
+
+    // -- FAIL MESSAGE --
+    if (this.gameState === "GAME_OVER") {
+      ctx.fillStyle = "#FF0000"; // RED
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 6;
+      ctx.font = "bold 80px Arial";
+      
+      ctx.strokeText("WRONG!", this.centerX, this.centerY);
+      ctx.fillText("WRONG!", this.centerX, this.centerY);
+
+      ctx.font = "bold 40px Arial";
+      ctx.fillStyle = "white";
+      // UPDATED TEXT
+      ctx.fillText("-5 Points", this.centerX, this.centerY + 80);
     }
   },
+
+  drawFeedback(ctx, text, color) {
+    ctx.fillStyle = color;
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = 4;
+    ctx.font = "bold 30px Arial";
+    ctx.textAlign = "center";
+    ctx.strokeText(text, this.centerX, this.centerY + 150);
+    ctx.fillText(text, this.centerX, this.centerY + 150);
+  },
+
+  drawProgressBar(ctx, percentage, color) {
+    if (percentage <= 0) return;
+    
+    // Background bar
+    ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+    ctx.fillRect(this.centerX - 100, this.centerY + 70, 200, 20);
+
+    // Fill bar
+    ctx.fillStyle = color;
+    ctx.fillRect(this.centerX - 100, this.centerY + 70, 200 * percentage, 20);
+  }
 };
