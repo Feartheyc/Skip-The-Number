@@ -6,8 +6,12 @@ const Game1 = {
   baseOuterRadius: 200,
   innerRadius: 180,
 
+  currentOuterRadius: 200,
+
   notes: [],
   noteSpeed: 1.2,
+
+  score: 0,
 
   currentNumber: 1,
   maxNumber: 100,
@@ -28,7 +32,9 @@ const Game1 = {
 
     this.notes = [];
     this.currentNumber = 1;
+    this.score = 0;
     this.pulseTime = 0;
+    this.currentOuterRadius = this.baseOuterRadius;
 
     if (this.spawnTimer) {
       clearInterval(this.spawnTimer);
@@ -72,6 +78,8 @@ const Game1 = {
       this.drawFinger(ctx, finger.x, finger.y);
       this.checkCollision(finger.x, finger.y);
     });
+
+    this.drawScore(ctx);
   },
 
   /* ============================== */
@@ -102,68 +110,62 @@ const Game1 = {
   /* ============================== */
   drawRings(ctx, active) {
 
-  // Create property if not exists
-  if (this.currentOuterRadius === undefined) {
-    this.currentOuterRadius = this.baseOuterRadius;
-  }
+    let targetRadius = this.baseOuterRadius;
 
-  let targetRadius = this.baseOuterRadius;
+    if (active) {
 
-  if (active) {
-    // Continue pulse naturally
-    this.pulseTime += this.pulseSpeed;
+      this.pulseTime += this.pulseSpeed;
 
-    const pulseOffset = Math.sin(this.pulseTime) * this.pulseAmount;
+      const pulseOffset = Math.sin(this.pulseTime) * this.pulseAmount;
 
-    // Only allow expansion (never shrink below base)
-    targetRadius = this.baseOuterRadius + Math.max(0, pulseOffset);
+      // Only expand, never shrink below base
+      targetRadius = this.baseOuterRadius + Math.max(0, pulseOffset);
 
-    ctx.strokeStyle = "#00FF66";
-    ctx.shadowColor = "#00FF66";
-    ctx.shadowBlur = 25;
+      ctx.strokeStyle = "#00FF66";
+      ctx.shadowColor = "#00FF66";
+      ctx.shadowBlur = 25;
 
-  } else {
-    // When inactive, smoothly return to base
-    ctx.strokeStyle = "white";
+    } else {
+
+      ctx.strokeStyle = "white";
+      ctx.shadowBlur = 0;
+    }
+
+    // Smooth transition
+    this.currentOuterRadius +=
+      (targetRadius - this.currentOuterRadius) * 0.12;
+
+    // Clamp (never below original size)
+    if (this.currentOuterRadius < this.baseOuterRadius) {
+      this.currentOuterRadius = this.baseOuterRadius;
+    }
+
+    // Outer Ring
+    ctx.lineWidth = 6;
+    ctx.beginPath();
+    ctx.arc(
+      this.centerX,
+      this.centerY,
+      this.currentOuterRadius,
+      0,
+      2 * Math.PI
+    );
+    ctx.stroke();
+
+    // Inner Ring (static)
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(
+      this.centerX,
+      this.centerY,
+      this.innerRadius,
+      0,
+      2 * Math.PI
+    );
+    ctx.stroke();
+
     ctx.shadowBlur = 0;
-  }
-
-  // Smooth transition
-  this.currentOuterRadius += 
-    (targetRadius - this.currentOuterRadius) * 0.12;
-
-  // Safety clamp (never smaller than base)
-  if (this.currentOuterRadius < this.baseOuterRadius) {
-    this.currentOuterRadius = this.baseOuterRadius;
-  }
-
-  // Outer Ring
-  ctx.lineWidth = 6;
-  ctx.beginPath();
-  ctx.arc(
-    this.centerX,
-    this.centerY,
-    this.currentOuterRadius,
-    0,
-    2 * Math.PI
-  );
-  ctx.stroke();
-
-  // Inner Ring (always static)
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.arc(
-    this.centerX,
-    this.centerY,
-    this.innerRadius,
-    0,
-    2 * Math.PI
-  );
-  ctx.stroke();
-
-  ctx.shadowBlur = 0;
-},
-
+  },
 
   /* ============================== */
   drawNotes(ctx) {
@@ -213,10 +215,21 @@ const Game1 = {
         distFromCenter < this.baseOuterRadius;
 
       if (distance < note.radius + 20 && inRingZone) {
-        console.log("HIT:", note.value);
+
+        this.score++;  // 🔥 increase counter
+
         this.notes.splice(index, 1);
       }
     });
+  },
+
+  /* ============================== */
+  drawScore(ctx) {
+
+    ctx.fillStyle = "white";
+    ctx.font = "bold 28px Arial";
+    ctx.textAlign = "left";
+    ctx.fillText("Captured: " + this.score, 20, 40);
   }
 
 };
