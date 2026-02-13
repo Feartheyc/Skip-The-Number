@@ -2,30 +2,36 @@
 <html>
 
 <head>
-    <meta charset="UTF-8" />
-    <title>Math Rhythm MVP</title>
+  <meta charset="UTF-8" />
+  <title>Math Rhythm Platform</title>
 
-    <!-- MediaPipe -->
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-    <link rel="stylesheet" href="style.css">
+  <!-- MediaPipe -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
 
+  <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
 
-    <div id="container">
-        <video id="input_video" autoplay playsinline></video>
-        <div id="ui-layer"
-            style="position: absolute; top: 20px; left: 20px; color: #00FFCC; font-size: 24px; font-weight: bold; z-index: 100; text-shadow: 0 0 10px #000;">
-            Collected: <span id="score-counter">0</span>
-        </div>
-        <canvas id="game_canvas" width="640" height="480"></canvas>
-        <div id="focus-wheel"></div>
+  <div id="container">
+
+    <video id="input_video" autoplay playsinline></video>
+    <canvas id="game_canvas" width="640" height="480"></canvas>
+
+    <!-- GAME MENU -->
+    <div id="menu">
+      <h1>Select Game</h1>
+      <button onclick="startGame('game1')">Math Rhythm</button>
+      <button disabled>Coming Soon</button>
     </div>
 
-    <!-- Your JS file -->
-    <script src="hand-detection.js"></script>
+  </div>
+
+  <!-- ORDER MATTERS -->
+  <script src="main.js"></script>
+  <script src="skip-number.js"></script>
+  <script src="hand-detection.js"></script>
 
 </body>
 
