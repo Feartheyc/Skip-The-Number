@@ -3,12 +3,12 @@ window.currentGame = null;
 const canvasElement = document.getElementById('game_canvas');
 const canvasCtx = canvasElement.getContext('2d');
 
-window.startGame = function(gameName) {
+window.startGame = function (gameName) {
 
   // Hide menu
   document.getElementById("menu").style.display = "none";
 
-  // Ensure camera is visible
+  // Ensure camera visible
   document.getElementById("input_video").style.opacity = "1";
 
   if (gameName === "game1") {
@@ -22,13 +22,13 @@ window.startGame = function(gameName) {
   }
 
   if (gameName === "Game3") {
-    window.currentGame = ComparatorGame;
-    ComparatorGame.init();
+    window.currentGame = Game3;   // ✅ FIXED NAME
+    Game3.init();
   }
 };
 
 /* ==============================
-   MAIN GAME LOOP (60 FPS)
+   MAIN GLOBAL GAME LOOP
 ============================== */
 function gameLoop() {
 
