@@ -3,15 +3,20 @@ const Game1 = {
   centerX: null,
   centerY: null,
 
-  baseOuterRadius: 195,
-  innerRadius: 155,
-
+  baseOuterRadius: 200,
+  innerRadius: 170,
   currentOuterRadius: 200,
 
   notes: [],
-  noteSpeed: 1.2,
+  noteSpeed: 1.8,
 
   score: 0,
+
+  combo: 0,
+  multiplier: 1,
+
+  lastHitType: "",
+  hitTextTimer: 0,
 
   currentNumber: 1,
   maxNumber: 100,
@@ -21,6 +26,9 @@ const Game1 = {
   pulseTime: 0,
   pulseSpeed: 0.08,
   pulseAmount: 12,
+
+  skipAmount: 3,
+  gameTitle: "SKIP 3",
 
   /* ============================== */
   init() {
@@ -32,13 +40,17 @@ const Game1 = {
 
     this.notes = [];
     this.currentNumber = 1;
+
     this.score = 0;
-    this.pulseTime = 0;
+    this.combo = 0;
+    this.multiplier = 1;
+
+    this.hitTextTimer = 0;
     this.currentOuterRadius = this.baseOuterRadius;
 
-    if (this.spawnTimer) {
-      clearInterval(this.spawnTimer);
-    }
+    this.gameTitle = "SKIP " + this.skipAmount;
+
+    if (this.spawnTimer) clearInterval(this.spawnTimer);
 
     this.spawnTimer = setInterval(() => {
       this.spawnNote();
@@ -54,9 +66,8 @@ const Game1 = {
     const numberToSpawn = this.currentNumber;
 
     this.currentNumber++;
-    if (this.currentNumber > this.maxNumber) {
+    if (this.currentNumber > this.maxNumber)
       this.currentNumber = 1;
-    }
 
     this.notes.push({
       x: this.centerX + Math.cos(angle) * spawnRadius,
@@ -72,6 +83,7 @@ const Game1 = {
     const fingerInRing = this.isFingerInsideRing(fingers);
 
     this.drawRings(ctx, fingerInRing);
+    this.drawTitle(ctx);
     this.drawNotes(ctx);
 
     fingers.forEach(finger => {
@@ -80,6 +92,16 @@ const Game1 = {
     });
 
     this.drawScore(ctx);
+    this.drawCombo(ctx);
+    this.drawHitText(ctx);
+  },
+
+  /* ============================== */
+  shouldCollect(number) {
+
+    const group = Math.floor((number - 1) / this.skipAmount);
+
+    return group % 2 === 0; // even groups = collect
   },
 
   /* ============================== */
@@ -91,12 +113,19 @@ const Game1 = {
       const dy = finger.y - this.centerY;
       const dist = Math.sqrt(dx * dx + dy * dy);
 
-      if (dist > this.innerRadius && dist < this.baseOuterRadius) {
+      if (dist > this.innerRadius && dist < this.baseOuterRadius)
         return true;
-      }
     }
 
     return false;
+  },
+
+  /* ============================== */
+  drawTitle(ctx) {
+    ctx.fillStyle = "#00FF66";
+    ctx.font = "bold 30px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(this.gameTitle, this.centerX, 50);
   },
 
   /* ============================== */
@@ -113,55 +142,38 @@ const Game1 = {
     let targetRadius = this.baseOuterRadius;
 
     if (active) {
-
       this.pulseTime += this.pulseSpeed;
+      const pulseOffset =
+        Math.sin(this.pulseTime) * this.pulseAmount;
 
-      const pulseOffset = Math.sin(this.pulseTime) * this.pulseAmount;
-
-      // Only expand, never shrink below base
-      targetRadius = this.baseOuterRadius + Math.max(0, pulseOffset);
+      targetRadius =
+        this.baseOuterRadius + Math.max(0, pulseOffset);
 
       ctx.strokeStyle = "#00FF66";
       ctx.shadowColor = "#00FF66";
       ctx.shadowBlur = 25;
 
     } else {
-
       ctx.strokeStyle = "white";
       ctx.shadowBlur = 0;
     }
 
-    // Smooth transition
     this.currentOuterRadius +=
       (targetRadius - this.currentOuterRadius) * 0.12;
 
-    // Clamp (never below original size)
-    if (this.currentOuterRadius < this.baseOuterRadius) {
+    if (this.currentOuterRadius < this.baseOuterRadius)
       this.currentOuterRadius = this.baseOuterRadius;
-    }
 
-    // Outer Ring
     ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.arc(
-      this.centerX,
-      this.centerY,
-      this.currentOuterRadius,
-      0,
-      2 * Math.PI
-    );
+    ctx.arc(this.centerX, this.centerY,
+      this.currentOuterRadius, 0, 2 * Math.PI);
     ctx.stroke();
 
-    // Inner Ring (static)
     ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.arc(
-      this.centerX,
-      this.centerY,
-      this.innerRadius,
-      0,
-      2 * Math.PI
-    );
+    ctx.arc(this.centerX, this.centerY,
+      this.innerRadius, 0, 2 * Math.PI);
     ctx.stroke();
 
     ctx.shadowBlur = 0;
@@ -179,7 +191,10 @@ const Game1 = {
       note.x += (dx / length) * this.noteSpeed;
       note.y += (dy / length) * this.noteSpeed;
 
-      ctx.fillStyle = "#FF4C4C";
+      const shouldCollect = this.shouldCollect(note.value);
+
+      ctx.fillStyle = shouldCollect ? "#4CAF50" : "#FF4C4C";
+
       ctx.beginPath();
       ctx.arc(note.x, note.y, note.radius, 0, 2 * Math.PI);
       ctx.fill();
@@ -190,7 +205,14 @@ const Game1 = {
       ctx.textBaseline = "middle";
       ctx.fillText(note.value, note.x, note.y);
 
+      // Missed correct note = combo break
       if (length < 15) {
+
+        if (shouldCollect) {
+          this.combo = 0;
+          this.multiplier = 1;
+        }
+
         this.notes.splice(index, 1);
       }
     });
@@ -199,43 +221,89 @@ const Game1 = {
   /* ============================== */
   checkCollision(fingerX, fingerY) {
 
-  this.notes.forEach((note, index) => {
+    this.notes.forEach((note, index) => {
 
-    const dx = fingerX - note.x;
-    const dy = fingerY - note.y;
-    const distance = Math.sqrt(dx * dx + dy * dy);
+      const dx = fingerX - note.x;
+      const dy = fingerY - note.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
 
-    const distFromCenter = Math.sqrt(
-      (note.x - this.centerX) ** 2 +
-      (note.y - this.centerY) ** 2
-    );
+      const distFromCenter = Math.sqrt(
+        (note.x - this.centerX) ** 2 +
+        (note.y - this.centerY) ** 2
+      );
 
-    // ✅ NEW RING TOUCH LOGIC (edge-based)
-    const touchesRing =
-      (distFromCenter + note.radius) > this.innerRadius &&
-      (distFromCenter - note.radius) < this.baseOuterRadius;
+      const touchesRing =
+        (distFromCenter + note.radius) > this.innerRadius &&
+        (distFromCenter - note.radius) < this.baseOuterRadius;
 
-    // Finger touching note
-    const fingerTouchingNote =
-      distance < note.radius + 20;
+      if (distance < note.radius + 20 && touchesRing) {
 
-    if (fingerTouchingNote && touchesRing) {
+        const shouldCollect = this.shouldCollect(note.value);
 
-      this.score++;
+        if (shouldCollect) {
 
-      this.notes.splice(index, 1);
-    }
-  });
-},
+          this.combo++;
+          if (this.combo % 5 === 0)
+            this.multiplier++;
 
+          this.score += 10 * this.multiplier;
+          this.lastHitType = "CORRECT";
+
+        } else {
+
+          // Wrong hit
+          this.combo = 0;
+          this.multiplier = 1;
+          this.score -= 5;
+          this.lastHitType = "WRONG";
+        }
+
+        this.hitTextTimer = 30;
+        this.notes.splice(index, 1);
+      }
+    });
+  },
 
   /* ============================== */
   drawScore(ctx) {
-
     ctx.fillStyle = "white";
-    ctx.font = "bold 28px Arial";
+    ctx.font = "bold 26px Arial";
     ctx.textAlign = "left";
-    ctx.fillText("Captured: " + this.score, 20, 40);
+    ctx.fillText("Score: " + this.score, 20, 40);
+  },
+
+  /* ============================== */
+  drawCombo(ctx) {
+    ctx.fillStyle = "#FFD700";
+    ctx.font = "bold 22px Arial";
+    ctx.fillText(
+      "Combo: " + this.combo +
+      "  x" + this.multiplier,
+      20, 70
+    );
+  },
+
+  /* ============================== */
+  drawHitText(ctx) {
+
+    if (this.hitTextTimer > 0) {
+
+      ctx.fillStyle =
+        this.lastHitType === "CORRECT"
+          ? "#00FF66"
+          : "#FF3333";
+
+      ctx.font = "bold 40px Arial";
+      ctx.textAlign = "center";
+
+      ctx.fillText(
+        this.lastHitType,
+        this.centerX,
+        this.centerY - 120
+      );
+
+      this.hitTextTimer--;
+    }
   }
 
 };
