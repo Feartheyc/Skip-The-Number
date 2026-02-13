@@ -3,8 +3,8 @@ const Game1 = {
   centerX: null,
   centerY: null,
 
-  baseOuterRadius: 200,
-  innerRadius: 180,
+  baseOuterRadius: 195,
+  innerRadius: 155,
 
   currentOuterRadius: 200,
 
@@ -199,29 +199,35 @@ const Game1 = {
   /* ============================== */
   checkCollision(fingerX, fingerY) {
 
-    this.notes.forEach((note, index) => {
+  this.notes.forEach((note, index) => {
 
-      const dx = fingerX - note.x;
-      const dy = fingerY - note.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
+    const dx = fingerX - note.x;
+    const dy = fingerY - note.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
 
-      const distFromCenter = Math.sqrt(
-        (note.x - this.centerX) ** 2 +
-        (note.y - this.centerY) ** 2
-      );
+    const distFromCenter = Math.sqrt(
+      (note.x - this.centerX) ** 2 +
+      (note.y - this.centerY) ** 2
+    );
 
-      const inRingZone =
-        distFromCenter > this.innerRadius &&
-        distFromCenter < this.baseOuterRadius;
+    // ✅ NEW RING TOUCH LOGIC (edge-based)
+    const touchesRing =
+      (distFromCenter + note.radius) > this.innerRadius &&
+      (distFromCenter - note.radius) < this.baseOuterRadius;
 
-      if (distance < note.radius + 20 && inRingZone) {
+    // Finger touching note
+    const fingerTouchingNote =
+      distance < note.radius + 20;
 
-        this.score++;  // 🔥 increase counter
+    if (fingerTouchingNote && touchesRing) {
 
-        this.notes.splice(index, 1);
-      }
-    });
-  },
+      this.score++;
+
+      this.notes.splice(index, 1);
+    }
+  });
+},
+
 
   /* ============================== */
   drawScore(ctx) {
