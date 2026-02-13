@@ -102,39 +102,68 @@ const Game1 = {
   /* ============================== */
   drawRings(ctx, active) {
 
-    let outerRadius = this.baseOuterRadius;
+  // Create property if not exists
+  if (this.currentOuterRadius === undefined) {
+    this.currentOuterRadius = this.baseOuterRadius;
+  }
 
-    if (active) {
-      // Pulse only when active
-      this.pulseTime += this.pulseSpeed;
-      const pulseOffset = Math.sin(this.pulseTime) * this.pulseAmount;
-      outerRadius += pulseOffset;
+  let targetRadius = this.baseOuterRadius;
 
-      ctx.strokeStyle = "#00FF66";
-      ctx.shadowColor = "#00FF66";
-      ctx.shadowBlur = 25;
-    } else {
-      // Reset pulse
-      this.pulseTime = 0;
+  if (active) {
+    // Continue pulse naturally
+    this.pulseTime += this.pulseSpeed;
 
-      ctx.strokeStyle = "white";
-      ctx.shadowBlur = 0;
-    }
+    const pulseOffset = Math.sin(this.pulseTime) * this.pulseAmount;
 
-    // Outer Ring
-    ctx.lineWidth = 6;
-    ctx.beginPath();
-    ctx.arc(this.centerX, this.centerY, outerRadius, 0, 2 * Math.PI);
-    ctx.stroke();
+    // Only allow expansion (never shrink below base)
+    targetRadius = this.baseOuterRadius + Math.max(0, pulseOffset);
 
-    // Inner Ring
-    ctx.lineWidth = 4;
-    ctx.beginPath();
-    ctx.arc(this.centerX, this.centerY, this.innerRadius, 0, 2 * Math.PI);
-    ctx.stroke();
+    ctx.strokeStyle = "#00FF66";
+    ctx.shadowColor = "#00FF66";
+    ctx.shadowBlur = 25;
 
+  } else {
+    // When inactive, smoothly return to base
+    ctx.strokeStyle = "white";
     ctx.shadowBlur = 0;
-  },
+  }
+
+  // Smooth transition
+  this.currentOuterRadius += 
+    (targetRadius - this.currentOuterRadius) * 0.12;
+
+  // Safety clamp (never smaller than base)
+  if (this.currentOuterRadius < this.baseOuterRadius) {
+    this.currentOuterRadius = this.baseOuterRadius;
+  }
+
+  // Outer Ring
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.arc(
+    this.centerX,
+    this.centerY,
+    this.currentOuterRadius,
+    0,
+    2 * Math.PI
+  );
+  ctx.stroke();
+
+  // Inner Ring (always static)
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.arc(
+    this.centerX,
+    this.centerY,
+    this.innerRadius,
+    0,
+    2 * Math.PI
+  );
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+},
+
 
   /* ============================== */
   drawNotes(ctx) {

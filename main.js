@@ -15,6 +15,11 @@ window.startGame = function(gameName) {
     window.currentGame = Game1;
     Game1.init();
   }
+
+  if (gameName === "game2") {
+    window.currentGame = Game2;
+    Game2.init();
+  }
 };
 
 /* ==============================
