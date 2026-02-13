@@ -1,13 +1,15 @@
 const Game1 = {
 
-  centerX: canvasElement.width / 2,
-  centerY: canvasElement.height / 2,
+  centerX: 320,
+  centerY: 240,
   outerRadius: 200,
   innerRadius: 180,
   notes: [],
   noteSpeed: 2.5,
 
   init() {
+    this.notes = [];
+
     setInterval(() => {
       this.spawnNote();
     }, 1200);
@@ -26,6 +28,7 @@ const Game1 = {
   },
 
   update(ctx, fingers) {
+
     this.drawRings(ctx);
     this.drawNotes(ctx);
 
@@ -50,6 +53,7 @@ const Game1 = {
     ctx.arc(this.centerX, this.centerY, this.outerRadius, 0, 2 * Math.PI);
     ctx.stroke();
 
+    ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.arc(this.centerX, this.centerY, this.innerRadius, 0, 2 * Math.PI);
     ctx.stroke();
@@ -83,6 +87,7 @@ const Game1 = {
   },
 
   checkCollision(fingerX, fingerY) {
+
     this.notes.forEach((note, index) => {
 
       const dx = fingerX - note.x;
@@ -104,5 +109,4 @@ const Game1 = {
       }
     });
   }
-
 };

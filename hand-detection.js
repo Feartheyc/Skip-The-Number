@@ -27,7 +27,7 @@ function onResults(results) {
 
   if (results.multiHandLandmarks) {
     results.multiHandLandmarks.forEach((landmarks) => {
-      const x = landmarks[8].x * 640;
+      const x = (1 - landmarks[8].x) * 640; // 👈 flip horizontally;
       const y = landmarks[8].y * 480;
 
       window.fingerPositions.push({ x, y });

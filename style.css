@@ -21,6 +21,7 @@ body {
   opacity: 1;
   z-index: 0;
   transition: opacity 0.4s ease;
+  transform: scaleX(-1);
 }
 
 /* CANVAS OVER CAMERA */
