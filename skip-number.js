@@ -1,35 +1,71 @@
 const Game1 = {
 
-  centerX: 320,
-  centerY: 240,
-  outerRadius: 200,
+  centerX: null,
+  centerY: null,
+
+  baseOuterRadius: 200,
   innerRadius: 180,
+
   notes: [],
-  noteSpeed: 2.5,
+  noteSpeed: 1.2,
 
+  currentNumber: 1,
+  maxNumber: 100,
+
+  spawnTimer: null,
+
+  pulseTime: 0,
+  pulseSpeed: 0.08,
+  pulseAmount: 12,
+
+  /* ============================== */
   init() {
-    this.notes = [];
 
-    setInterval(() => {
+    const canvas = document.getElementById('game_canvas');
+
+    this.centerX = canvas.width / 2;
+    this.centerY = canvas.height / 2;
+
+    this.notes = [];
+    this.currentNumber = 1;
+    this.pulseTime = 0;
+
+    if (this.spawnTimer) {
+      clearInterval(this.spawnTimer);
+    }
+
+    this.spawnTimer = setInterval(() => {
       this.spawnNote();
     }, 1200);
   },
 
+  /* ============================== */
   spawnNote() {
+
     const angle = Math.random() * Math.PI * 2;
     const spawnRadius = 350;
+
+    const numberToSpawn = this.currentNumber;
+
+    this.currentNumber++;
+    if (this.currentNumber > this.maxNumber) {
+      this.currentNumber = 1;
+    }
 
     this.notes.push({
       x: this.centerX + Math.cos(angle) * spawnRadius,
       y: this.centerY + Math.sin(angle) * spawnRadius,
       radius: 25,
-      value: Math.floor(Math.random() * 9) + 1
+      value: numberToSpawn
     });
   },
 
+  /* ============================== */
   update(ctx, fingers) {
 
-    this.drawRings(ctx);
+    const fingerInRing = this.isFingerInsideRing(fingers);
+
+    this.drawRings(ctx, fingerInRing);
     this.drawNotes(ctx);
 
     fingers.forEach(finger => {
@@ -38,6 +74,24 @@ const Game1 = {
     });
   },
 
+  /* ============================== */
+  isFingerInsideRing(fingers) {
+
+    for (let finger of fingers) {
+
+      const dx = finger.x - this.centerX;
+      const dy = finger.y - this.centerY;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist > this.innerRadius && dist < this.baseOuterRadius) {
+        return true;
+      }
+    }
+
+    return false;
+  },
+
+  /* ============================== */
   drawFinger(ctx, x, y) {
     ctx.fillStyle = "#00FFCC";
     ctx.beginPath();
@@ -45,21 +99,46 @@ const Game1 = {
     ctx.fill();
   },
 
-  drawRings(ctx) {
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 6;
+  /* ============================== */
+  drawRings(ctx, active) {
 
+    let outerRadius = this.baseOuterRadius;
+
+    if (active) {
+      // Pulse only when active
+      this.pulseTime += this.pulseSpeed;
+      const pulseOffset = Math.sin(this.pulseTime) * this.pulseAmount;
+      outerRadius += pulseOffset;
+
+      ctx.strokeStyle = "#00FF66";
+      ctx.shadowColor = "#00FF66";
+      ctx.shadowBlur = 25;
+    } else {
+      // Reset pulse
+      this.pulseTime = 0;
+
+      ctx.strokeStyle = "white";
+      ctx.shadowBlur = 0;
+    }
+
+    // Outer Ring
+    ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.arc(this.centerX, this.centerY, this.outerRadius, 0, 2 * Math.PI);
+    ctx.arc(this.centerX, this.centerY, outerRadius, 0, 2 * Math.PI);
     ctx.stroke();
 
+    // Inner Ring
     ctx.lineWidth = 4;
     ctx.beginPath();
     ctx.arc(this.centerX, this.centerY, this.innerRadius, 0, 2 * Math.PI);
     ctx.stroke();
+
+    ctx.shadowBlur = 0;
   },
 
+  /* ============================== */
   drawNotes(ctx) {
+
     this.notes.forEach((note, index) => {
 
       const dx = this.centerX - note.x;
@@ -75,7 +154,7 @@ const Game1 = {
       ctx.fill();
 
       ctx.fillStyle = "white";
-      ctx.font = "bold 22px Arial";
+      ctx.font = "bold 18px Arial";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(note.value, note.x, note.y);
@@ -86,6 +165,7 @@ const Game1 = {
     });
   },
 
+  /* ============================== */
   checkCollision(fingerX, fingerY) {
 
     this.notes.forEach((note, index) => {
@@ -101,7 +181,7 @@ const Game1 = {
 
       const inRingZone =
         distFromCenter > this.innerRadius &&
-        distFromCenter < this.outerRadius;
+        distFromCenter < this.baseOuterRadius;
 
       if (distance < note.radius + 20 && inRingZone) {
         console.log("HIT:", note.value);
@@ -109,4 +189,5 @@ const Game1 = {
       }
     });
   }
+
 };
