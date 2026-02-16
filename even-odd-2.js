@@ -117,6 +117,7 @@ const Game4 = {
 
     this.drawEdgeZones(ctx);
     this.drawCross(ctx);
+    this.drawCenterPivots(ctx); // NEW UI
     this.drawCircles(ctx);
     this.drawArms(ctx);
     this.drawIndicators(ctx);
@@ -224,6 +225,45 @@ const Game4 = {
     ctx.beginPath();
     ctx.moveTo(0, this.CENTER_Y + gap);
     ctx.lineTo(canvasElement.width, this.CENTER_Y + gap);
+    ctx.stroke();
+  },
+
+
+  /* ==============================
+     NEW: CENTER PIVOTS + LINES
+  ============================== */
+  drawCenterPivots(ctx) {
+
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
+
+    const pivotOffset = 100;
+    const lineGap = 15;
+    const pivotRadius = 8;
+
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "white";
+
+    // LEFT pivot
+    const leftX = cx - pivotOffset;
+    ctx.beginPath();
+    ctx.arc(leftX, cy, pivotRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(leftX + pivotRadius, cy);
+    ctx.lineTo(cx - lineGap, cy);
+    ctx.stroke();
+
+    // RIGHT pivot
+    const rightX = cx + pivotOffset;
+    ctx.beginPath();
+    ctx.arc(rightX, cy, pivotRadius, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(rightX - pivotRadius, cy);
+    ctx.lineTo(cx + lineGap, cy);
     ctx.stroke();
   },
 
