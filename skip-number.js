@@ -27,8 +27,17 @@ const Game1 = {
   pulseSpeed: 0.08,
   pulseAmount: 12,
 
+  /* ================= MODE SYSTEM ================= */
+
+  mode: "default",   // "default" | "pattern"
+
   skipAmount: 3,
   gameTitle: "SKIP 3",
+
+  pattern: {
+    skip: 3,
+    collect: 1
+  },
 
   /* ============================== */
   init() {
@@ -48,13 +57,39 @@ const Game1 = {
     this.hitTextTimer = 0;
     this.currentOuterRadius = this.baseOuterRadius;
 
-    this.gameTitle = "SKIP " + this.skipAmount;
+    this.mode = "default";
+    this.skipAmount = 3;
+    this.gameTitle = "SKIP 3";
 
     if (this.spawnTimer) clearInterval(this.spawnTimer);
 
     this.spawnTimer = setInterval(() => {
       this.spawnNote();
     }, 1200);
+
+    /* KEYBOARD LISTENER */
+    window.addEventListener("keydown", (e) => {
+
+      if (e.key === "1") {
+        this.activatePatternMode();
+      }
+
+    });
+  },
+
+  /* ================= PATTERN MODE ================= */
+
+  activatePatternMode() {
+
+    this.mode = "pattern";
+
+    // random values (max 5)
+    this.pattern.skip = Math.floor(Math.random() * 5) + 1;
+    this.pattern.collect = Math.floor(Math.random() * 5) + 1;
+
+    this.gameTitle =
+      "SKIP " + this.pattern.skip +
+      " COLLECT " + this.pattern.collect;
   },
 
   /* ============================== */
@@ -96,13 +131,29 @@ const Game1 = {
     this.drawHitText(ctx);
   },
 
-  /* ============================== */
-shouldCollect(number) {
+  /* ================= COLLECT LOGIC ================= */
 
-  // collect only multiples of skipAmount
-  return number % this.skipAmount === 0;
+  shouldCollect(number) {
 
-},
+    if (this.mode === "default") {
+      // multiples of skipAmount
+      return number % this.skipAmount === 0;
+    }
+
+    if (this.mode === "pattern") {
+
+      const cycleLength =
+        this.pattern.skip + this.pattern.collect;
+
+      const position =
+        (number - 1) % cycleLength;
+
+      // skip first N, collect next M
+      return position >= this.pattern.skip;
+    }
+
+    return false;
+  },
 
   /* ============================== */
   isFingerInsideRing(fingers) {
@@ -123,7 +174,7 @@ shouldCollect(number) {
   /* ============================== */
   drawTitle(ctx) {
     ctx.fillStyle = "#00FF66";
-    ctx.font = "bold 30px Arial";
+    ctx.font = "bold 28px Arial";
     ctx.textAlign = "center";
     ctx.fillText(this.gameTitle, this.centerX, 50);
   },
@@ -166,14 +217,24 @@ shouldCollect(number) {
 
     ctx.lineWidth = 6;
     ctx.beginPath();
-    ctx.arc(this.centerX, this.centerY,
-      this.currentOuterRadius, 0, 2 * Math.PI);
+    ctx.arc(
+      this.centerX,
+      this.centerY,
+      this.currentOuterRadius,
+      0,
+      2 * Math.PI
+    );
     ctx.stroke();
 
     ctx.lineWidth = 4;
     ctx.beginPath();
-    ctx.arc(this.centerX, this.centerY,
-      this.innerRadius, 0, 2 * Math.PI);
+    ctx.arc(
+      this.centerX,
+      this.centerY,
+      this.innerRadius,
+      0,
+      2 * Math.PI
+    );
     ctx.stroke();
 
     ctx.shadowBlur = 0;
@@ -191,9 +252,11 @@ shouldCollect(number) {
       note.x += (dx / length) * this.noteSpeed;
       note.y += (dy / length) * this.noteSpeed;
 
-      const shouldCollect = this.shouldCollect(note.value);
+      const shouldCollect =
+        this.shouldCollect(note.value);
 
-      ctx.fillStyle = shouldCollect ? "#4CAF50" : "#FF4C4C";
+      ctx.fillStyle =
+        shouldCollect ? "#4CAF50" : "#FF4C4C";
 
       ctx.beginPath();
       ctx.arc(note.x, note.y, note.radius, 0, 2 * Math.PI);
@@ -238,11 +301,13 @@ shouldCollect(number) {
 
       if (distance < note.radius + 20 && touchesRing) {
 
-        const shouldCollect = this.shouldCollect(note.value);
+        const shouldCollect =
+          this.shouldCollect(note.value);
 
         if (shouldCollect) {
 
           this.combo++;
+
           if (this.combo % 5 === 0)
             this.multiplier++;
 
@@ -251,7 +316,6 @@ shouldCollect(number) {
 
         } else {
 
-          // Wrong hit
           this.combo = 0;
           this.multiplier = 1;
           this.score -= 5;
@@ -307,5 +371,3 @@ shouldCollect(number) {
   }
 
 };
-
-
