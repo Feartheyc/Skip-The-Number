@@ -97,12 +97,12 @@ const Game1 = {
   },
 
   /* ============================== */
-  shouldCollect(number) {
+shouldCollect(number) {
 
-    const group = Math.floor((number - 1) / this.skipAmount);
+  // collect only multiples of skipAmount
+  return number % this.skipAmount === 0;
 
-    return group % 2 === 0; // even groups = collect
-  },
+},
 
   /* ============================== */
   isFingerInsideRing(fingers) {
