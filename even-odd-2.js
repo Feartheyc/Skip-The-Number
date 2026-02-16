@@ -85,14 +85,12 @@ const Game4 = {
 
     // LEFT ARM
     this.armData.left = {
-      shoulder: mapPoint(lm[11]),
       elbow: mapPoint(lm[13]),
       wrist: mapPoint(lm[15])
     };
 
     // RIGHT ARM
     this.armData.right = {
-      shoulder: mapPoint(lm[12]),
       elbow: mapPoint(lm[14]),
       wrist: mapPoint(lm[16])
     };
@@ -217,7 +215,6 @@ const Game4 = {
       if (!arm) return;
 
       ctx.beginPath();
-      ctx.moveTo(arm.shoulder.x, arm.shoulder.y);
       ctx.lineTo(arm.elbow.x, arm.elbow.y);
       ctx.lineTo(arm.wrist.x, arm.wrist.y);
       ctx.stroke();
