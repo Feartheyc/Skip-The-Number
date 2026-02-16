@@ -11,9 +11,8 @@ const Game4 = {
 
   CIRCLE_RADIUS: 20,
   HIT_RADIUS: 40,
-  LINE_GAP: 40,
-  MOVE_SPEED: 1.5, // constant speed
-  EDGE_SIZE: 15,   // <<< thickness of highlighted edge zones
+  LINE_GAP: 40,     // center cross gap
+  EDGE_SIZE: 35,    // thickness of highlighted edges
 
   /* ==============================
      INIT GAME
@@ -32,13 +31,14 @@ const Game4 = {
   /* ==============================
      UPDATE LOOP
   ============================== */
-  update(ctx, fingers) {
+  update(ctx) {
     if (!this.running) return;
 
     const now = performance.now();
     const deltaTime = (now - this.lastTime) / 16.67;
     this.lastTime = now;
 
+    // Spawn timing
     this.spawnTimer += deltaTime;
     if (this.spawnTimer > 120) { // spawn rate control
       this.spawnCircle();
@@ -46,45 +46,45 @@ const Game4 = {
     }
 
     this.updateCircles(deltaTime);
-    this.checkHandHits(fingers);
+    this.checkArmHits();
 
-    this.drawEdgeZones(ctx); // <<< corrected highlight
+    this.drawEdgeZones(ctx); // colored edges
     this.drawCross(ctx);
     this.drawCircles(ctx);
     this.drawIndicators(ctx);
   },
 
   /* ==============================
-     SPAWN CIRCLES ON LINES
+     SPAWN CIRCLES ON CROSS LINES
   ============================== */
   spawnCircle() {
     const number = Math.floor(Math.random() * 100) + 1;
     const side = Math.floor(Math.random() * 4);
 
     const gap = this.LINE_GAP;
-    const speed = this.MOVE_SPEED;
+    const speed = 1.5; // <<< SPEED CONTROL HERE
 
     let x, y, vx, vy;
 
-    if (side === 0) { // top -> down
+    if (side === 0) { // TOP → down (left vertical line)
       x = this.CENTER_X - gap;
       y = -30;
       vx = 0;
       vy = speed;
     }
-    else if (side === 1) { // bottom -> up
+    else if (side === 1) { // BOTTOM → up (right vertical line)
       x = this.CENTER_X + gap;
       y = canvasElement.height + 30;
       vx = 0;
       vy = -speed;
     }
-    else if (side === 2) { // left -> right
+    else if (side === 2) { // LEFT → right (top horizontal line)
       x = -30;
       y = this.CENTER_Y - gap;
       vx = speed;
       vy = 0;
     }
-    else { // right -> left
+    else { // RIGHT → left (bottom horizontal line)
       x = canvasElement.width + 30;
       y = this.CENTER_Y + gap;
       vx = -speed;
@@ -92,10 +92,7 @@ const Game4 = {
     }
 
     this.circles.push({
-      x,
-      y,
-      vx,
-      vy,
+      x, y, vx, vy,
       number,
       isOdd: number % 2 !== 0,
       hit: false
@@ -111,12 +108,15 @@ const Game4 = {
       circle.y += circle.vy * deltaTime;
 
       const out =
-        circle.x < -50 ||
-        circle.x > canvasElement.width + 50 ||
-        circle.y < -50 ||
-        circle.y > canvasElement.height + 50;
+        circle.x < -60 ||
+        circle.x > canvasElement.width + 60 ||
+        circle.y < -60 ||
+        circle.y > canvasElement.height + 60;
 
-      if (out) circle.hit = true;
+      if (out && !circle.hit) {
+        this.score -= 1; // miss penalty
+        circle.hit = true;
+      }
     }
 
     this.circles = this.circles.filter(c => !c.hit);
@@ -131,7 +131,7 @@ const Game4 = {
 
     const gap = this.LINE_GAP;
 
-    // vertical
+    // vertical lines
     ctx.beginPath();
     ctx.moveTo(this.CENTER_X - gap, 0);
     ctx.lineTo(this.CENTER_X - gap, canvasElement.height);
@@ -142,7 +142,7 @@ const Game4 = {
     ctx.lineTo(this.CENTER_X + gap, canvasElement.height);
     ctx.stroke();
 
-    // horizontal
+    // horizontal lines
     ctx.beginPath();
     ctx.moveTo(0, this.CENTER_Y - gap);
     ctx.lineTo(canvasElement.width, this.CENTER_Y - gap);
@@ -155,65 +155,43 @@ const Game4 = {
   },
 
   /* ==============================
-     DRAW EDGE HIGHLIGHT ZONES
-     (Matches your image exactly)
+     DRAW EDGE ZONES (ONLY EDGES)
+     Left = Red (Even)
+     Right = Blue (Odd)
+     Center cross gap untouched
   ============================== */
- /* ==============================
-   DRAW EDGE HIGHLIGHT ZONES
-   Left edges = Red, Right edges = Blue
-============================== */
-/* ==============================
-   DRAW EDGE HIGHLIGHT ZONES
-   (Skip cross line gap area)
-============================== */
-drawEdgeZones(ctx) {
-  const w = canvasElement.width;
-  const h = canvasElement.height;
-  const e = this.EDGE_SIZE;   // thickness of edge highlight
-  const gap = this.LINE_GAP;
+  drawEdgeZones(ctx) {
+    const w = canvasElement.width;
+    const h = canvasElement.height;
+    const e = this.EDGE_SIZE;
+    const gap = this.LINE_GAP;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
 
-  const cx = this.CENTER_X;
-  const cy = this.CENTER_Y;
+    ctx.globalAlpha = 0.9;
+    ctx.shadowBlur = 40;
 
-  // 🔥 Strong color + glow
-  ctx.globalAlpha = 0.8;
-  ctx.shadowBlur = 10;
+    /* LEFT SIDE (RED) */
+    ctx.fillStyle = "rgb(255,40,40)";
+    ctx.shadowColor = "red";
 
-  /* ========= LEFT SIDE (RED) ========= */
-  ctx.fillStyle = "rgb(255,40,40)";
-  ctx.shadowColor = "red";
+    ctx.fillRect(0, 0, cx - gap, e); // top-left edge
+    ctx.fillRect(0, h - e, cx - gap, e); // bottom-left edge
+    ctx.fillRect(0, 0, e, cy - gap);
+    ctx.fillRect(0, cy + gap, e, h - (cy + gap));
 
-  // Top-left edge
-  ctx.fillRect(0, 0, cx - gap, e);
+    /* RIGHT SIDE (BLUE) */
+    ctx.fillStyle = "rgb(40,120,255)";
+    ctx.shadowColor = "blue";
 
-  // Bottom-left edge
-  ctx.fillRect(0, h - e, cx - gap, e);
+    ctx.fillRect(cx + gap, 0, w - (cx + gap), e); // top-right
+    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e); // bottom-right
+    ctx.fillRect(w - e, 0, e, cy - gap);
+    ctx.fillRect(w - e, cy + gap, e, h - (cy + gap));
 
-  // Left vertical edges (skip center gap)
-  ctx.fillRect(0, 0, e, cy - gap);
-  ctx.fillRect(0, cy + gap, e, h - (cy + gap));
-
-
-  /* ========= RIGHT SIDE (BLUE) ========= */
-  ctx.fillStyle = "rgb(40,120,255)";
-  ctx.shadowColor = "blue";
-
-  // Top-right edge
-  ctx.fillRect(cx + gap, 0, w - (cx + gap), e);
-
-  // Bottom-right edge
-  ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);
-
-  // Right vertical edges (skip center gap)
-  ctx.fillRect(w - e, 0, e, cy - gap);
-  ctx.fillRect(w - e, cy + gap, e, h - (cy + gap));
-
-  // Reset effects
-  ctx.shadowBlur = 0;
-  ctx.globalAlpha = 1;
-},
-
-
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  },
 
   /* ==============================
      DRAW CIRCLES
@@ -235,34 +213,36 @@ drawEdgeZones(ctx) {
   },
 
   /* ==============================
-     DRAW TEXT
+     SCORE + LEGEND
   ============================== */
   drawIndicators(ctx) {
     ctx.font = "18px Arial";
     ctx.textAlign = "left";
 
     ctx.fillStyle = "blue";
-    ctx.fillText("Odd = Right Finger", 10, 25);
+    ctx.fillText("Odd = Right Arm", 10, 20);
 
     ctx.fillStyle = "red";
-    ctx.fillText("Even = Left Finger", 10, 50);
+    ctx.fillText("Even = Left Arm", 10, 40);
 
     ctx.fillStyle = "black";
-    ctx.fillText("Score: " + this.score, canvasElement.width - 140, 30);
+    ctx.fillText("Score: " + this.score, canvasElement.width - 130, 30);
   },
 
   /* ==============================
-     HAND COLLISION
+     ARM HIT DETECTION
+     Uses window.armPositions
   ============================== */
-  checkHandHits(fingers) {
-    if (!fingers || fingers.length === 0) return;
+  checkArmHits() {
+    if (!window.armPositions || window.armPositions.length === 0) return;
 
     for (let circle of this.circles) {
       if (circle.hit) continue;
 
-      for (let finger of fingers) {
-        const dx = circle.x - finger.x;
-        const dy = circle.y - finger.y;
+      for (let arm of window.armPositions) {
+
+        const dx = circle.x - arm.indexX;
+        const dy = circle.y - arm.indexY;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         const nearCenter =
@@ -272,10 +252,12 @@ drawEdgeZones(ctx) {
         if (dist < this.CIRCLE_RADIUS + 15 && nearCenter) {
 
           if (
-            (circle.isOdd && finger.hand === "Right") ||
-            (!circle.isOdd && finger.hand === "Left")
+            (circle.isOdd && arm.side === "Right") ||
+            (!circle.isOdd && arm.side === "Left")
           ) {
             this.score += 10;
+          } else {
+            this.score -= 10;
           }
 
           circle.hit = true;
@@ -286,5 +268,4 @@ drawEdgeZones(ctx) {
 
     this.circles = this.circles.filter(c => !c.hit);
   }
-
 };
