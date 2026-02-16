@@ -16,7 +16,13 @@ hands.setOptions({
 hands.onResults(onResults);
 
 const camera = new Camera(videoElement, {
-  onFrame: async () => { await hands.send({ image: videoElement }); },
+  onFrame: async () => { await hands.send({ image: videoElement });
+  if (window.sendFrameToPose) {
+    await window.sendFrameToPose(videoElement);
+  }
+
+},
+  
   width: 640, height: 480
 });
 camera.start();
