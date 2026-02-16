@@ -188,4 +188,5 @@ if (window.armPositions.length >= 2) {
 
   console.log(leftArm.elbowX, leftArm.indexX);
 }
+
 */
