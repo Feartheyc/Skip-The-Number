@@ -60,14 +60,16 @@ const Game4 = {
 
     this.pose.onResults(this.onPoseResults.bind(this));
 
+    // Hook into existing camera loop
     window.sendFrameToPose = async (image) => {
+      if (!this.running) return;
       await this.pose.send({ image });
     };
   },
 
 
   /* ==============================
-     POSE RESULTS → ARM DATA
+     POSE RESULTS → ELBOW ONLY
   ============================== */
   onPoseResults(results) {
 
@@ -82,13 +84,11 @@ const Game4 = {
 
     this.armData.left = {
       elbow: mapPoint(lm[13]),
-      wrist: mapPoint(lm[15]),
       side: "Left"
     };
 
     this.armData.right = {
       elbow: mapPoint(lm[14]),
-      wrist: mapPoint(lm[16]),
       side: "Right"
     };
   },
@@ -113,12 +113,11 @@ const Game4 = {
     }
 
     this.updateCircles(deltaTime);
-    this.checkArmHits();
 
     this.drawEdgeZones(ctx);
     this.drawCross(ctx);
     this.drawCircles(ctx);
-    this.drawArms(ctx);
+    this.drawElbows(ctx);     // 👈 elbow pointer
     this.drawIndicators(ctx);
   },
 
@@ -171,7 +170,7 @@ const Game4 = {
 
 
   /* ==============================
-     UPDATE POSITIONS
+     UPDATE CIRCLES
   ============================== */
   updateCircles(deltaTime) {
 
@@ -243,7 +242,6 @@ const Game4 = {
     ctx.globalAlpha = 0.9;
     ctx.shadowBlur = 40;
 
-    // LEFT RED
     ctx.fillStyle = "rgb(255,40,40)";
     ctx.shadowColor = "red";
 
@@ -252,7 +250,6 @@ const Game4 = {
     ctx.fillRect(0, 0, e, cy - gap);
     ctx.fillRect(0, cy + gap, e, h - (cy + gap));
 
-    // RIGHT BLUE
     ctx.fillStyle = "rgb(40,120,255)";
     ctx.shadowColor = "blue";
 
@@ -289,74 +286,32 @@ const Game4 = {
 
 
   /* ==============================
-     DRAW ARMS
+     DRAW ELBOW POINTERS
   ============================== */
-  drawArms(ctx) {
+  drawElbows(ctx) {
 
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = "cyan";
+    const draw = (arm, color) => {
 
-    const drawArm = (arm) => {
-
-      if (!arm) return;
+      if (!arm || !arm.elbow) return;
 
       ctx.beginPath();
-      ctx.moveTo(arm.elbow.x, arm.elbow.y);
-      ctx.lineTo(arm.wrist.x, arm.wrist.y);
+      ctx.arc(arm.elbow.x, arm.elbow.y, 18, 0, Math.PI * 2);
+
+      ctx.fillStyle = color;
+      ctx.fill();
+
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "white";
       ctx.stroke();
     };
 
-    drawArm(this.armData.left);
-    drawArm(this.armData.right);
+    draw(this.armData.left, "red");
+    draw(this.armData.right, "blue");
   },
 
 
   /* ==============================
-     ARM COLLISION
-  ============================== */
-  checkArmHits() {
-
-    const arms = [this.armData.left, this.armData.right];
-
-    for (let circle of this.circles) {
-
-      if (circle.hit) continue;
-
-      for (let arm of arms) {
-
-        if (!arm) continue;
-
-        const dx = circle.x - arm.wrist.x;
-        const dy = circle.y - arm.wrist.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-
-        const nearCenter =
-          Math.abs(circle.x - this.CENTER_X) < this.HIT_RADIUS &&
-          Math.abs(circle.y - this.CENTER_Y) < this.HIT_RADIUS;
-
-        if (dist < this.CIRCLE_RADIUS + 15 && nearCenter) {
-
-          if (
-            (circle.isOdd && arm.side === "Right") ||
-            (!circle.isOdd && arm.side === "Left")
-          ) {
-            this.score += 10;
-          } else {
-            this.score -= 10;
-          }
-
-          circle.hit = true;
-          break;
-        }
-      }
-    }
-
-    this.circles = this.circles.filter(c => !c.hit);
-  },
-
-
-  /* ==============================
-     DRAW UI
+     UI TEXT
   ============================== */
   drawIndicators(ctx) {
 
