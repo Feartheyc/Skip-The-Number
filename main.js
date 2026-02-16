@@ -25,6 +25,11 @@ window.startGame = function (gameName) {
     window.currentGame = Game3;   // ✅ FIXED NAME
     Game3.init();
   }
+
+   if (gameName === "Game4") {
+    window.currentGame = Game4;
+    Game4.init();
+   }
 };
 
 /* ==============================
