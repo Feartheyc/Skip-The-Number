@@ -1,192 +1,86 @@
-/* ==============================
-   ARM DETECTION (ELBOW → INDEX)
-   MediaPipe Pose Version
-============================== */
+/* =========================================
+   ARM DETECTION USING MEDIAPIPE POSE
+   Uses SAME camera as hand detection
+========================================= */
 
-const armVideo = document.getElementById("input_video");
+window.armData = {
+  left: null,
+  right: null
+};
 
-/* ==============================
-   GLOBAL ARM STORAGE
-============================== */
-
-window.armPositions = []; 
-// Format:
-// [
-//   { elbowX, elbowY, indexX, indexY, side: "Left" },
-//   { elbowX, elbowY, indexX, indexY, side: "Right" }
-// ]
+let pose = null;
+let armDetectionRunning = false;
 
 
-/* ==============================
-   MEDIAPIPE POSE SETUP
-============================== */
+/* =========================================
+   INIT ARM DETECTION
+========================================= */
+window.initArmDetection = function () {
 
-const pose = new Pose({
-  locateFile: (file) =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-});
+  if (armDetectionRunning) return;
 
-pose.setOptions({
-  modelComplexity: 1,
-  smoothLandmarks: true,
-  enableSegmentation: false,
-  minDetectionConfidence: 0.6,
-  minTrackingConfidence: 0.6
-});
+  pose = new Pose({
+    locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+    }
+  });
+
+  pose.setOptions({
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    minDetectionConfidence: 0.5,
+    minTrackingConfidence: 0.5
+  });
+
+  pose.onResults(onPoseResults);
+
+  armDetectionRunning = true;
+
+  console.log("✅ Arm detection ready (waiting for frames)");
+};
 
 
-/* ==============================
-   RESULTS CALLBACK
-============================== */
+/* =========================================
+   SEND FRAME FROM MAIN CAMERA LOOP
+========================================= */
+window.sendFrameToPose = async function (video) {
 
-pose.onResults(onPoseResults);
+  if (!pose || !armDetectionRunning) return;
+
+  await pose.send({ image: video });
+};
 
 
+/* =========================================
+   PROCESS RESULTS
+========================================= */
 function onPoseResults(results) {
 
   if (!results.poseLandmarks) return;
 
-  const landmarks = results.poseLandmarks;
+  const lm = results.poseLandmarks;
 
-  const width = canvasElement.width;
-  const height = canvasElement.height;
+  const width = 640;
+  const height = 480;
 
-  window.armPositions = [];
-
-  /* ==============================
-     LANDMARK IDS
-  ============================== */
-
-  const LEFT_ELBOW = 13;
-  const RIGHT_ELBOW = 14;
-
-  const LEFT_WRIST = 15;
-  const RIGHT_WRIST = 16;
-
-
-  /* ==============================
-     HELPER
-  ============================== */
-
-  function getPoint(id) {
+  function convert(p) {
     return {
-      x: landmarks[id].x * width,
-      y: landmarks[id].y * height
+      x: p.x * width,
+      y: p.y * height
     };
   }
 
+  window.armData.left = {
+    shoulder: convert(lm[11]),
+    elbow: convert(lm[13]),
+    wrist: convert(lm[15]),
+    index: convert(lm[19])
+  };
 
-  const leftElbow = getPoint(LEFT_ELBOW);
-  const rightElbow = getPoint(RIGHT_ELBOW);
-
-  const leftWrist = getPoint(LEFT_WRIST);
-  const rightWrist = getPoint(RIGHT_WRIST);
-
-
-  /* ==============================
-     ESTIMATE INDEX FROM WRIST
-     (Extend arm direction)
-  ============================== */
-
-  function estimateIndex(elbow, wrist) {
-
-    const dx = wrist.x - elbow.x;
-    const dy = wrist.y - elbow.y;
-
-    return {
-      x: wrist.x + dx * 0.4,
-      y: wrist.y + dy * 0.4
-    };
-  }
-
-
-  const leftIndex = estimateIndex(leftElbow, leftWrist);
-  const rightIndex = estimateIndex(rightElbow, rightWrist);
-
-
-  /* ==============================
-     SAVE DATA
-  ============================== */
-
-  window.armPositions.push({
-    elbowX: leftElbow.x,
-    elbowY: leftElbow.y,
-    indexX: leftIndex.x,
-    indexY: leftIndex.y,
-    side: "Left"
-  });
-
-  window.armPositions.push({
-    elbowX: rightElbow.x,
-    elbowY: rightElbow.y,
-    indexX: rightIndex.x,
-    indexY: rightIndex.y,
-    side: "Right"
-  });
-
-
-  /* ==============================
-     OPTIONAL DEBUG DRAW
-  ============================== */
-
-  drawArmDebug(leftElbow, leftIndex, "red");
-  drawArmDebug(rightElbow, rightIndex, "blue");
+  window.armData.right = {
+    shoulder: convert(lm[12]),
+    elbow: convert(lm[14]),
+    wrist: convert(lm[16]),
+    index: convert(lm[20])
+  };
 }
-
-
-
-/* ==============================
-   DEBUG VISUAL
-============================== */
-
-function drawArmDebug(elbow, index, color) {
-
-  const ctx = canvasCtx;
-
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 5;
-
-  ctx.beginPath();
-  ctx.moveTo(elbow.x, elbow.y);
-  ctx.lineTo(index.x, index.y);
-  ctx.stroke();
-
-  ctx.fillStyle = color;
-
-  ctx.beginPath();
-  ctx.arc(elbow.x, elbow.y, 8, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(index.x, index.y, 8, 0, Math.PI * 2);
-  ctx.fill();
-}
-
-
-
-/* ==============================
-   CAMERA PIPELINE
-============================== */
-
-const poseCamera = new Camera(armVideo, {
-  onFrame: async () => {
-    await pose.send({ image: armVideo });
-  },
-  width: 640,
-  height: 480
-});
-
-poseCamera.start();
-
-
-
-/* example usecase
-if (window.armPositions.length >= 2) {
-
-  const leftArm = window.armPositions.find(a => a.side === "Left");
-  const rightArm = window.armPositions.find(a => a.side === "Right");
-
-  console.log(leftArm.elbowX, leftArm.indexX);
-}
-
-*/
