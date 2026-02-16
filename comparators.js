@@ -44,6 +44,7 @@ const Game3 = {
         if (e.key === '1') this.setDifficulty(1);
         if (e.key === '2') this.setDifficulty(2);
         if (e.key === '3') this.setDifficulty(3);
+        if (e.key === '4') this.setDifficulty(4);
     });
     
     this.spawnNumbers();
@@ -73,14 +74,17 @@ const Game3 = {
     else if (this.currentGrade === 2) {
         this.spawnIntegers(-50, 50);
     }
-    // --- GRADE 3: Big Numbers OR Fractions ---
+    // --- GRADE 3: Big Numbers OR Like Fractions ---
     else if (this.currentGrade === 3) {
-        // 50% chance for Fractions, 50% for Triple Digits
         if (Math.random() > 0.5) {
             this.spawnIntegers(100, 999);
         } else {
-            this.spawnFractions();
+            this.spawnLikeFractions(); // Same Denominator
         }
+    }
+    // --- GRADE 4: Irregular Fractions (Easy Mode) ---
+    else if (this.currentGrade === 4) {
+        this.spawnIrregularFractions(); // Different Denominators
     }
   },
 
@@ -93,40 +97,59 @@ const Game3 = {
         n2 = Math.floor(Math.random() * (max - min + 1)) + min;
     }
 
-    // Set Values
     this.leftValue = n1;
     this.rightValue = n2;
-
-    // Set Display Text
     this.leftText = n1.toString();
     this.rightText = n2.toString();
-
-    // Determine Relation
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
-  /* Helper: Spawn Fractions (Same Denominator) */
-  spawnFractions() {
-    // Denominator between 3 and 9
-    const den = Math.floor(Math.random() * 7) + 3; 
-
-    // Numerators between 1 and 12 (can be improper fractions like 8/5)
+  /* Helper: Grade 3 Fractions (Same Denominator) */
+  spawnLikeFractions() {
+    const den = Math.floor(Math.random() * 7) + 3; // 3 to 9
     let n1 = Math.floor(Math.random() * 12) + 1;
     let n2 = Math.floor(Math.random() * 12) + 1;
 
-    // Ensure they aren't equal
-    while (n1 === n2) {
-        n2 = Math.floor(Math.random() * 12) + 1;
-    }
+    while (n1 === n2) n2 = Math.floor(Math.random() * 12) + 1;
 
-    // Set Values (Actual decimal value for math comparison)
     this.leftValue = n1 / den;
     this.rightValue = n2 / den;
-
-    // Set Display Text (e.g., "3/5")
     this.leftText = `${n1}/${den}`;
     this.rightText = `${n2}/${den}`;
+    this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+  },
 
+  /* Helper: Grade 4 Fractions (Different Denominators) */
+  spawnIrregularFractions() {
+    // We restrict denominators to small "friendly" numbers to keep it easy
+    // Set: 2, 3, 4, 5, 6, 8, 10
+    const easyDenoms = [2, 3, 4, 5, 6, 8, 10];
+    
+    // Pick two DIFFERENT denominators
+    let d1 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
+    let d2 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
+    
+    while (d1 === d2) {
+       d2 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
+    }
+
+    // Generate Numerators (mostly proper fractions, occasionally improper)
+    // We try to keep values reasonably close to 1
+    let n1 = Math.floor(Math.random() * d1) + 1; // e.g. 1/4 to 4/4
+    let n2 = Math.floor(Math.random() * d2) + 1; 
+
+    // Calculate Values
+    this.leftValue = n1 / d1;
+    this.rightValue = n2 / d2;
+
+    // Retry if they happen to be exactly equal (e.g. 1/2 and 2/4)
+    while (Math.abs(this.leftValue - this.rightValue) < 0.001) {
+       n2 = Math.floor(Math.random() * d2) + 1; 
+       this.rightValue = n2 / d2;
+    }
+
+    this.leftText = `${n1}/${d1}`;
+    this.rightText = `${n2}/${d2}`;
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
@@ -153,7 +176,6 @@ const Game3 = {
   checkPose(ctx, h1, h2) {
     if (this.gameState !== "PLAYING") return;
 
-    // 1. Detect Symbol
     if (h1.x < this.centerX - this.margin && h2.x < this.centerX - this.margin) {
       this.detectedSymbol = ">";
     } 
@@ -164,35 +186,25 @@ const Game3 = {
       this.detectedSymbol = "Center";
     }
 
-    // 2. Logic
     const wrongRelation = this.currentRelation === ">" ? "<" : ">";
 
     if (this.detectedSymbol === this.currentRelation) {
-      // Correct
       this.winHoldTime++;
       this.failHoldTime = 0; 
-      
       const progress = this.winHoldTime / this.winHoldThreshold;
       this.drawProgressBar(ctx, progress, "#00FFCC"); 
 
-      if (this.winHoldTime >= this.winHoldThreshold) {
-        this.handleSuccess();
-      }
+      if (this.winHoldTime >= this.winHoldThreshold) this.handleSuccess();
 
     } else if (this.detectedSymbol === wrongRelation) {
-      // Wrong
       this.failHoldTime++;
       this.winHoldTime = 0; 
-
       const failProgress = this.failHoldTime / this.failHoldThreshold;
       this.drawProgressBar(ctx, failProgress, "#FF0000");
 
-      if (this.failHoldTime >= this.failHoldThreshold) {
-        this.handleFail();
-      }
+      if (this.failHoldTime >= this.failHoldThreshold) this.handleFail();
 
     } else {
-      // Neutral
       this.winHoldTime = Math.max(0, this.winHoldTime - 2);
       this.failHoldTime = Math.max(0, this.failHoldTime - 2);
     }
@@ -205,7 +217,6 @@ const Game3 = {
     ctx.lineJoin = "round";
     ctx.shadowBlur = 15;
 
-    // Colors
     if (this.detectedSymbol === ">") {
       ctx.strokeStyle = "#FFFF00"; // Yellow
       ctx.shadowColor = "#FFFF00";
@@ -263,8 +274,7 @@ const Game3 = {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     
-    // -- NUMBERS --
-    // Dynamic Font Size: Make smaller if text is long (like "10/12")
+    // Dynamic Font Size
     let fontSize = 120;
     if (this.leftText.length > 3 || this.rightText.length > 3) fontSize = 90;
     
@@ -272,34 +282,30 @@ const Game3 = {
     ctx.lineWidth = 8;
     ctx.lineJoin = "round";
 
-    // Draw Left Text
     ctx.strokeStyle = "black";
     ctx.strokeText(this.leftText, this.centerX - 200, this.centerY);
     ctx.fillStyle = "white";
     ctx.fillText(this.leftText, this.centerX - 200, this.centerY);
 
-    // Draw Right Text
     ctx.strokeText(this.rightText, this.centerX + 200, this.centerY);
     ctx.fillStyle = "white";
     ctx.fillText(this.rightText, this.centerX + 200, this.centerY);
 
-    // -- SCORE & GRADE --
+    // Score & Grade
     ctx.font = "bold 40px Arial";
     ctx.lineWidth = 4;
     
-    // Top Left: Grade
     ctx.strokeStyle = "black";
     ctx.strokeText(`Grade ${this.currentGrade}`, 100, 60);
     ctx.fillStyle = "#FFFF00"; 
     ctx.fillText(`Grade ${this.currentGrade}`, 100, 60);
 
-    // Center: Score
     ctx.strokeStyle = "black";
     ctx.strokeText("Score: " + this.score, this.centerX, 60);
     ctx.fillStyle = "white";
     ctx.fillText("Score: " + this.score, this.centerX, 60);
 
-    // -- FEEDBACK MESSAGES --
+    // Feedback
     if (this.gameState === "SUCCESS") {
       ctx.fillStyle = "#00FF66";
       ctx.strokeStyle = "black";
