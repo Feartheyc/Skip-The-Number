@@ -4,12 +4,15 @@ const Game4 = {
   score: 0,
   circles: [],
   spawnTimer: 0,
+  lastTime: 0,
 
-  CENTER_X: 320,
-  CENTER_Y: 240,
+  CENTER_X: 0,
+  CENTER_Y: 0,
 
-  CIRCLE_RADIUS: 25,
+  CIRCLE_RADIUS: 20,
   HIT_RADIUS: 40,
+  LINE_GAP: 40,
+  EDGE_SIZE: 35,
 
   pose: null,
 
@@ -19,22 +22,20 @@ const Game4 = {
   },
 
   /* ==============================
-     START GAME
+     INIT GAME
   ============================== */
   init() {
 
-    document.getElementById("menu").style.display = "none";
+    this.CENTER_X = canvasElement.width / 2;
+    this.CENTER_Y = canvasElement.height / 2;
 
     this.running = true;
     this.score = 0;
     this.circles = [];
     this.spawnTimer = 0;
+    this.lastTime = performance.now();
 
     this.initPose();
-
-    window.currentGame = this;
-
-    requestAnimationFrame(this.loop.bind(this));
   },
 
 
@@ -59,9 +60,6 @@ const Game4 = {
 
     this.pose.onResults(this.onPoseResults.bind(this));
 
-    const video = document.getElementById("input_video");
-
-    // Attach to global camera loop
     window.sendFrameToPose = async (image) => {
       await this.pose.send({ image });
     };
@@ -69,31 +67,59 @@ const Game4 = {
 
 
   /* ==============================
-     POSE RESULTS
+     POSE RESULTS → ARM DATA
   ============================== */
   onPoseResults(results) {
 
     if (!results.poseLandmarks) return;
 
     const lm = results.poseLandmarks;
-    const canvas = document.getElementById("game_canvas");
 
     const mapPoint = (p) => ({
-      x: canvas.width - (p.x * canvas.width),
-      y: p.y * canvas.height
+      x: canvasElement.width - (p.x * canvasElement.width),
+      y: p.y * canvasElement.height
     });
 
-    // LEFT ARM
     this.armData.left = {
       elbow: mapPoint(lm[13]),
-      wrist: mapPoint(lm[15])
+      wrist: mapPoint(lm[15]),
+      side: "Left"
     };
 
-    // RIGHT ARM
     this.armData.right = {
       elbow: mapPoint(lm[14]),
-      wrist: mapPoint(lm[16])
+      wrist: mapPoint(lm[16]),
+      side: "Right"
     };
+  },
+
+
+  /* ==============================
+     UPDATE LOOP
+  ============================== */
+  update(ctx) {
+
+    if (!this.running) return;
+
+    const now = performance.now();
+    const deltaTime = (now - this.lastTime) / 16.67;
+    this.lastTime = now;
+
+    this.spawnTimer += deltaTime;
+
+    if (this.spawnTimer > 120) {
+      this.spawnCircle();
+      this.spawnTimer = 0;
+    }
+
+    this.updateCircles(deltaTime);
+    this.checkArmHits();
+
+    this.drawEdgeZones(ctx);
+    this.drawCross(ctx);
+    this.drawCircles(ctx);
+    this.drawArms(ctx);
+    this.drawIndicators(ctx);
   },
 
 
@@ -102,35 +128,35 @@ const Game4 = {
   ============================== */
   spawnCircle() {
 
-    const canvas = document.getElementById("game_canvas");
-
     const number = Math.floor(Math.random() * 100) + 1;
     const side = Math.floor(Math.random() * 4);
 
+    const gap = this.LINE_GAP;
+    const speed = 1.5;
+
     let x, y, vx, vy;
-    const speed = 2.5;
 
     if (side === 0) {
-      x = this.CENTER_X;
+      x = this.CENTER_X - gap;
       y = -30;
       vx = 0;
       vy = speed;
     }
     else if (side === 1) {
-      x = this.CENTER_X;
-      y = canvas.height + 30;
+      x = this.CENTER_X + gap;
+      y = canvasElement.height + 30;
       vx = 0;
       vy = -speed;
     }
     else if (side === 2) {
       x = -30;
-      y = this.CENTER_Y;
+      y = this.CENTER_Y - gap;
       vx = speed;
       vy = 0;
     }
     else {
-      x = canvas.width + 30;
-      y = this.CENTER_Y;
+      x = canvasElement.width + 30;
+      y = this.CENTER_Y + gap;
       vx = -speed;
       vy = 0;
     }
@@ -145,39 +171,98 @@ const Game4 = {
 
 
   /* ==============================
-     UPDATE CIRCLES
+     UPDATE POSITIONS
   ============================== */
-  updateCircles(canvas) {
+  updateCircles(deltaTime) {
 
     for (let circle of this.circles) {
-      circle.x += circle.vx;
-      circle.y += circle.vy;
+
+      circle.x += circle.vx * deltaTime;
+      circle.y += circle.vy * deltaTime;
+
+      const out =
+        circle.x < -60 ||
+        circle.x > canvasElement.width + 60 ||
+        circle.y < -60 ||
+        circle.y > canvasElement.height + 60;
+
+      if (out && !circle.hit) {
+        this.score -= 1;
+        circle.hit = true;
+      }
     }
 
-    this.circles = this.circles.filter(c =>
-      c.x > -50 && c.x < canvas.width + 50 &&
-      c.y > -50 && c.y < canvas.height + 50
-    );
+    this.circles = this.circles.filter(c => !c.hit);
   },
 
 
   /* ==============================
      DRAW CROSS
   ============================== */
-  drawCross(ctx, canvas) {
+  drawCross(ctx) {
 
     ctx.strokeStyle = "white";
     ctx.lineWidth = 2;
 
+    const gap = this.LINE_GAP;
+
     ctx.beginPath();
-    ctx.moveTo(0, this.CENTER_Y);
-    ctx.lineTo(canvas.width, this.CENTER_Y);
+    ctx.moveTo(this.CENTER_X - gap, 0);
+    ctx.lineTo(this.CENTER_X - gap, canvasElement.height);
     ctx.stroke();
 
     ctx.beginPath();
-    ctx.moveTo(this.CENTER_X, 0);
-    ctx.lineTo(this.CENTER_X, canvas.height);
+    ctx.moveTo(this.CENTER_X + gap, 0);
+    ctx.lineTo(this.CENTER_X + gap, canvasElement.height);
     ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, this.CENTER_Y - gap);
+    ctx.lineTo(canvasElement.width, this.CENTER_Y - gap);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, this.CENTER_Y + gap);
+    ctx.lineTo(canvasElement.width, this.CENTER_Y + gap);
+    ctx.stroke();
+  },
+
+
+  /* ==============================
+     DRAW EDGE ZONES
+  ============================== */
+  drawEdgeZones(ctx) {
+
+    const w = canvasElement.width;
+    const h = canvasElement.height;
+    const e = this.EDGE_SIZE;
+    const gap = this.LINE_GAP;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
+
+    ctx.globalAlpha = 0.9;
+    ctx.shadowBlur = 40;
+
+    // LEFT RED
+    ctx.fillStyle = "rgb(255,40,40)";
+    ctx.shadowColor = "red";
+
+    ctx.fillRect(0, 0, cx - gap, e);
+    ctx.fillRect(0, h - e, cx - gap, e);
+    ctx.fillRect(0, 0, e, cy - gap);
+    ctx.fillRect(0, cy + gap, e, h - (cy + gap));
+
+    // RIGHT BLUE
+    ctx.fillStyle = "rgb(40,120,255)";
+    ctx.shadowColor = "blue";
+
+    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);
+    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);
+    ctx.fillRect(w - e, 0, e, cy - gap);
+    ctx.fillRect(w - e, cy + gap, e, h - (cy + gap));
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
   },
 
 
@@ -190,15 +275,15 @@ const Game4 = {
     ctx.textBaseline = "middle";
     ctx.font = "bold 18px Arial";
 
-    for (let c of this.circles) {
+    for (let circle of this.circles) {
 
       ctx.beginPath();
       ctx.fillStyle = "purple";
-      ctx.arc(c.x, c.y, this.CIRCLE_RADIUS, 0, Math.PI * 2);
+      ctx.arc(circle.x, circle.y, this.CIRCLE_RADIUS, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "white";
-      ctx.fillText(c.number, c.x, c.y);
+      ctx.fillText(circle.number, circle.x, circle.y);
     }
   },
 
@@ -212,10 +297,11 @@ const Game4 = {
     ctx.strokeStyle = "cyan";
 
     const drawArm = (arm) => {
+
       if (!arm) return;
 
       ctx.beginPath();
-      ctx.lineTo(arm.elbow.x, arm.elbow.y);
+      ctx.moveTo(arm.elbow.x, arm.elbow.y);
       ctx.lineTo(arm.wrist.x, arm.wrist.y);
       ctx.stroke();
     };
@@ -226,20 +312,22 @@ const Game4 = {
 
 
   /* ==============================
-     HAND COLLISION
+     ARM COLLISION
   ============================== */
-  checkHandHits() {
+  checkArmHits() {
 
-    if (!window.fingerPositions) return;
+    const arms = [this.armData.left, this.armData.right];
 
     for (let circle of this.circles) {
 
       if (circle.hit) continue;
 
-      for (let finger of window.fingerPositions) {
+      for (let arm of arms) {
 
-        const dx = circle.x - finger.x;
-        const dy = circle.y - finger.y;
+        if (!arm) continue;
+
+        const dx = circle.x - arm.wrist.x;
+        const dy = circle.y - arm.wrist.y;
         const dist = Math.sqrt(dx * dx + dy * dy);
 
         const nearCenter =
@@ -249,13 +337,16 @@ const Game4 = {
         if (dist < this.CIRCLE_RADIUS + 15 && nearCenter) {
 
           if (
-            (circle.isOdd && finger.hand === "Right") ||
-            (!circle.isOdd && finger.hand === "Left")
+            (circle.isOdd && arm.side === "Right") ||
+            (!circle.isOdd && arm.side === "Left")
           ) {
-            this.score++;
+            this.score += 10;
+          } else {
+            this.score -= 10;
           }
 
           circle.hit = true;
+          break;
         }
       }
     }
@@ -267,55 +358,19 @@ const Game4 = {
   /* ==============================
      DRAW UI
   ============================== */
-  drawUI(ctx, canvas) {
+  drawIndicators(ctx) {
 
     ctx.font = "18px Arial";
     ctx.textAlign = "left";
 
     ctx.fillStyle = "blue";
-    ctx.fillText("Odd = Right Hand", 10, 20);
+    ctx.fillText("Odd = Right Arm", 10, 20);
 
     ctx.fillStyle = "red";
-    ctx.fillText("Even = Left Hand", 10, 40);
+    ctx.fillText("Even = Left Arm", 10, 40);
 
     ctx.fillStyle = "white";
-    ctx.fillText("Score: " + this.score, canvas.width - 120, 30);
-  },
-
-
-  /* ==============================
-     MAIN UPDATE (for main.js loop)
-  ============================== */
-  update(ctx) {
-
-    if (!this.running) return;
-
-    const canvas = document.getElementById("game_canvas");
-
-    this.spawnTimer++;
-
-    if (this.spawnTimer > 60) {
-      this.spawnCircle();
-      this.spawnTimer = 0;
-    }
-
-    this.updateCircles(canvas);
-    this.checkHandHits();
-
-    this.drawCross(ctx, canvas);
-    this.drawCircles(ctx);
-    this.drawArms(ctx);
-    this.drawUI(ctx, canvas);
-  },
-
-
-  /* ==============================
-     LOOP WRAPPER
-  ============================== */
-  loop() {
-
-    if (!this.running) return;
-
-    requestAnimationFrame(this.loop.bind(this));
+    ctx.fillText("Score: " + this.score, canvasElement.width - 130, 30);
   }
+
 };
