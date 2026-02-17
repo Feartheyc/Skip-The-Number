@@ -1,250 +1,302 @@
-/* game5.js - Roman Numeral Tracer */
-
 const Game5 = {
 
   running: false,
-  currentNumeral: "I",
-  currentIndex: 0, // Which numeral we are on
+  score: 0,
   
-  // Define the shapes as a series of line segments (Start -> End)
-  // Coordinates are percentage based (0.0 to 1.0) to fit any screen
-  numerals: [
+  // State
+  currentLevel: 0,
+  tracePoints: [], // The trail of "chalk"
+  activeStrokeIndex: 0, 
+  
+  // Input State
+  isDrawing: false,
+  cursor: { x: 0, y: 0 },
+
+  // Configuration
+  snapDistance: 40, // Pixel tolerance for staying on the line
+
+  // Roman Numeral Data
+  levels: [
     { 
-      name: "I", 
-      strokes: [ 
-        {x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8} // Vertical line
+      symbol: "I", 
+      strokes: [ { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 } ] 
+    },
+    { 
+      symbol: "L", 
+      strokes: [
+        { x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8 }, // Down
+        { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 }  // Right
       ]
     },
     { 
-      name: "V", 
-      strokes: [ 
-        {x1: 0.3, y1: 0.2, x2: 0.5, y2: 0.8}, // Left diag
-        {x1: 0.5, y1: 0.8, x2: 0.7, y2: 0.2}  // Right diag
+      symbol: "V", 
+      strokes: [
+        { x1: 0.3, y1: 0.2, x2: 0.5, y2: 0.8 }, // Down-Right
+        { x1: 0.5, y1: 0.8, x2: 0.7, y2: 0.2 }  // Up-Right
       ]
     },
     { 
-      name: "X", 
-      strokes: [ 
-        {x1: 0.3, y1: 0.2, x2: 0.7, y2: 0.8}, // Left-to-Right diag
-        {x1: 0.7, y1: 0.2, x2: 0.3, y2: 0.8}  // Right-to-Left diag
-      ]
-    },
-    { 
-      name: "L", 
-      strokes: [ 
-        {x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8}, // Vertical
-        {x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8}  // Horizontal
+      symbol: "X", 
+      strokes: [
+        { x1: 0.3, y1: 0.2, x2: 0.7, y2: 0.8 }, 
+        { x1: 0.7, y1: 0.2, x2: 0.3, y2: 0.8 } 
       ]
     }
   ],
 
-  // Tracking State
-  strokeProgress: [], // Array of booleans, is this stroke finished?
-  tracingPoint: null, // Where the user is currently touching
-  score: 0,
-  completedTimer: 0,
+  currentStrokeProgress: 0, 
+  levelCompleteTimer: 0,
+  listenersAdded: false,
 
-  /* ============================== */
+  /* ==============================
+     INIT
+  ============================== */
   init() {
     this.running = true;
-    this.currentIndex = 0;
     this.score = 0;
-    this.loadNumeral(0);
-  },
+    this.currentLevel = 0;
+    this.resetLevel();
 
-  /* ============================== */
-  loadNumeral(index) {
-    if (index >= this.numerals.length) {
-      index = 0; // Loop back to start
+    // Attach Touch/Mouse Listeners ONCE
+    if (!this.listenersAdded) {
+      this.addInputListeners();
+      this.listenersAdded = true;
     }
-    this.currentIndex = index;
-    const current = this.numerals[index];
-    
-    // Reset progress for new letter
-    this.strokeProgress = current.strokes.map(() => ({
-      completed: false,
-      progress: 0 // 0.0 to 1.0
-    }));
-    
-    this.completedTimer = 0;
   },
 
-  /* ============================== */
-  update(ctx, fingers) {
+  resetLevel() {
+    this.tracePoints = [];
+    this.activeStrokeIndex = 0;
+    this.currentStrokeProgress = 0;
+    this.levelCompleteTimer = 0;
+    this.isDrawing = false;
+  },
+
+  /* ==============================
+     INPUT HANDLING (TOUCH & MOUSE)
+  ============================== */
+  addInputListeners() {
+    const canvas = document.getElementById('game_canvas');
+
+    // --- MOUSE EVENTS ---
+    canvas.addEventListener('mousedown', (e) => {
+      this.isDrawing = true;
+      this.updateCursor(e);
+    });
+    window.addEventListener('mousemove', (e) => {
+      if (this.isDrawing) this.updateCursor(e);
+    });
+    window.addEventListener('mouseup', () => {
+      this.isDrawing = false;
+      this.tracePoints = []; // Clear trail on lift (optional)
+    });
+
+    // --- TOUCH EVENTS ---
+    canvas.addEventListener('touchstart', (e) => {
+      this.isDrawing = true;
+      this.updateCursor(e.touches[0]);
+      e.preventDefault(); // Stop scrolling while playing
+    }, {passive: false});
+    
+    canvas.addEventListener('touchmove', (e) => {
+      if (this.isDrawing) this.updateCursor(e.touches[0]);
+      e.preventDefault();
+    }, {passive: false});
+
+    window.addEventListener('touchend', () => {
+      this.isDrawing = false;
+      this.tracePoints = [];
+    });
+  },
+
+  updateCursor(e) {
+    const canvas = document.getElementById('game_canvas');
+    const rect = canvas.getBoundingClientRect();
+    
+    // Scale Logic: Maps screen pixels to canvas internal resolution (640x480)
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    this.cursor.x = (e.clientX - rect.left) * scaleX;
+    this.cursor.y = (e.clientY - rect.top) * scaleY;
+  },
+
+  /* ==============================
+     UPDATE LOOP
+  ============================== */
+  update(ctx) { // No 'fingers' argument needed anymore
     if (!this.running) return;
 
     const w = ctx.canvas.width;
     const h = ctx.canvas.height;
-    const current = this.numerals[this.currentIndex];
 
-    // 1. Detect Finger (Use the first finger found)
-    let finger = null;
-    if (fingers && fingers.length > 0) {
-      finger = fingers[0];
+    // 1. Draw Blackboard
+    ctx.fillStyle = "#222"; 
+    ctx.fillRect(0, 0, w, h);
+
+    // 2. Logic
+    if (this.levelCompleteTimer === 0 && this.isDrawing) {
+      this.handleTracing(w, h);
     }
 
-    // 2. Logic: Check Tracing
-    if (finger) {
-      this.checkTracing(finger, w, h);
-    }
-
-    // 3. Draw The Guide (Ghost Letter)
-    this.drawGuide(ctx, w, h);
-
-    // 4. Draw User's Trace
-    if (finger) {
-      ctx.fillStyle = "#00FFCC";
-      ctx.beginPath();
-      ctx.arc(finger.x, finger.y, 10, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    
-    // 5. Check Win
-    const allDone = this.strokeProgress.every(s => s.completed);
-    if (allDone) {
-      this.completedTimer++;
-      
-      // Success Message
-      ctx.fillStyle = "#00FF66";
-      ctx.font = "bold 60px Arial";
-      ctx.textAlign = "center";
-      ctx.fillText("GREAT!", w/2, h/2);
-
-      if (this.completedTimer > 60) { // Wait 1 second
-        this.score += 10;
-        this.loadNumeral(this.currentIndex + 1);
-      }
-    }
-    
+    // 3. Render
+    this.drawTemplate(ctx, w, h);
+    this.drawUserInk(ctx);
     this.drawUI(ctx);
+
+    // 4. Level Completion Animation
+    if (this.levelCompleteTimer > 0) {
+      this.levelCompleteTimer++;
+      this.drawSuccessEffect(ctx, w, h);
+      
+      if (this.levelCompleteTimer > 80) { // Next level after pause
+        this.currentLevel++;
+        if (this.currentLevel >= this.levels.length) this.currentLevel = 0;
+        this.resetLevel();
+      }
+    }
   },
 
-  /* ============================== */
-  checkTracing(finger, w, h) {
-    const current = this.numerals[this.currentIndex];
+  /* ==============================
+     TRACING LOGIC
+  ============================== */
+  handleTracing(w, h) {
+    const level = this.levels[this.currentLevel];
+    const stroke = level.strokes[this.activeStrokeIndex];
+    if (!stroke) return;
 
-    current.strokes.forEach((stroke, i) => {
-      if (this.strokeProgress[i].completed) return; // Already done
+    const p1 = { x: stroke.x1 * w, y: stroke.y1 * h };
+    const p2 = { x: stroke.x2 * w, y: stroke.y2 * h };
 
-      // Convert Start/End to pixels
-      const x1 = stroke.x1 * w;
-      const y1 = stroke.y1 * h;
-      const x2 = stroke.x2 * w;
-      const y2 = stroke.y2 * h;
+    // Math: Distance logic
+    const lineLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+    const distToStart = Math.hypot(this.cursor.x - p1.x, this.cursor.y - p1.y);
+    const distToLine = this.pointToLineDist(this.cursor.x, this.cursor.y, p1.x, p1.y, p2.x, p2.y);
 
-      // Distance from finger to the line segment
-      const dist = this.pointLineDistance(finger.x, finger.y, x1, y1, x2, y2);
-
-      // If finger is close to the line (within 40px)
-      if (dist < 40) {
-        // Calculate progress along the line
-        // We project the finger onto the line vector
-        const lineLen = Math.sqrt((x2-x1)**2 + (y2-y1)**2);
-        const distFromStart = Math.sqrt((finger.x-x1)**2 + (finger.y-y1)**2);
+    // 1. Must be touching NEAR the line
+    if (distToLine < this.snapDistance) {
+      
+      const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
+      
+      // 2. Must be moving FORWARD (allows small jitter, but prevents backtracking)
+      if (newProgress > this.currentStrokeProgress - 0.05) {
         
-        const currentProg = Math.min(1, Math.max(0, distFromStart / lineLen));
-        
-        // Only allow forward progress
-        if (currentProg > this.strokeProgress[i].progress) {
-          this.strokeProgress[i].progress = currentProg;
+        if (newProgress > this.currentStrokeProgress) {
+          this.currentStrokeProgress = newProgress;
+          this.tracePoints.push({ x: this.cursor.x, y: this.cursor.y });
         }
 
-        // If we reached near the end (> 90%)
-        if (this.strokeProgress[i].progress > 0.9) {
-          this.strokeProgress[i].completed = true;
+        // 3. Stroke Complete (> 95%)
+        if (this.currentStrokeProgress >= 0.95) {
+          this.completeStroke();
         }
       }
-    });
+    }
   },
 
-  /* ============================== */
-  drawGuide(ctx, w, h) {
-    const current = this.numerals[this.currentIndex];
+  completeStroke() {
+    this.activeStrokeIndex++;
+    this.currentStrokeProgress = 0;
+    this.tracePoints = []; // Reset ink for the next line
+    this.score += 10;
 
+    if (this.activeStrokeIndex >= this.levels[this.currentLevel].strokes.length) {
+      this.levelCompleteTimer = 1; // Trigger win
+    }
+  },
+
+  /* ==============================
+     DRAWING HELPERS
+  ============================== */
+  drawTemplate(ctx, w, h) {
+    const level = this.levels[this.currentLevel];
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    current.strokes.forEach((stroke, i) => {
-      const x1 = stroke.x1 * w;
-      const y1 = stroke.y1 * h;
-      const x2 = stroke.x2 * w;
-      const y2 = stroke.y2 * h;
-
-      // 1. Draw Gray Background Line (The Guide)
-      ctx.lineWidth = 40;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+    // Draw Guides
+    level.strokes.forEach((s, index) => {
       ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-
-      // 2. Draw Progress Line (Green)
-      if (this.strokeProgress[i].progress > 0) {
-        const prog = this.strokeProgress[i].progress;
-        
-        // Calculate point where progress currently is
-        const currentX = x1 + (x2 - x1) * prog;
-        const currentY = y1 + (y2 - y1) * prog;
-
-        ctx.lineWidth = 20;
-        ctx.strokeStyle = "#00FF66"; // Green
-        ctx.shadowColor = "#00FF66";
-        ctx.shadowBlur = 15;
-        
-        ctx.beginPath();
-        ctx.moveTo(x1, y1);
-        ctx.lineTo(currentX, currentY);
-        ctx.stroke();
-        
-        ctx.shadowBlur = 0;
+      ctx.lineWidth = 40;
+      
+      if (index < this.activeStrokeIndex) {
+        ctx.strokeStyle = "#00FF66"; // Completed = Green
+      } else if (index === this.activeStrokeIndex) {
+        ctx.strokeStyle = "#444"; // Active = Dark Gray
+      } else {
+        ctx.strokeStyle = "#2a2a2a"; // Future = Very Dark
       }
       
-      // 3. Draw Start/End dots to guide direction
-      ctx.fillStyle = "yellow";
-      ctx.beginPath();
-      ctx.arc(x1, y1, 8, 0, Math.PI*2);
-      ctx.fill();
+      ctx.moveTo(s.x1 * w, s.y1 * h);
+      ctx.lineTo(s.x2 * w, s.y2 * h);
+      ctx.stroke();
     });
+
+    // Draw Guidance Dots for the CURRENT stroke
+    const active = level.strokes[this.activeStrokeIndex];
+    if (active) {
+      // Start Dot (Yellow)
+      ctx.fillStyle = "#FFCC00"; 
+      ctx.beginPath(); ctx.arc(active.x1 * w, active.y1 * h, 15, 0, Math.PI*2); ctx.fill();
+
+      // End Dot (Red)
+      ctx.fillStyle = "#FF4444"; 
+      ctx.beginPath(); ctx.arc(active.x2 * w, active.y2 * h, 15, 0, Math.PI*2); ctx.fill();
+    }
+  },
+
+  drawUserInk(ctx) {
+    if (this.tracePoints.length < 2) return;
+
+    ctx.beginPath();
+    ctx.lineWidth = 15;
+    ctx.strokeStyle = "#00FFFF"; // Cyan Chalk
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "cyan";
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+
+    ctx.moveTo(this.tracePoints[0].x, this.tracePoints[0].y);
+    for (let i = 1; i < this.tracePoints.length; i++) {
+      ctx.lineTo(this.tracePoints[i].x, this.tracePoints[i].y);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
   },
 
   drawUI(ctx) {
-    ctx.font = "bold 30px Arial";
     ctx.fillStyle = "white";
+    ctx.font = "bold 30px Arial";
     ctx.textAlign = "left";
-    ctx.fillText("Trace the Numeral", 20, 40);
-    ctx.fillText("Score: " + this.score, 20, 80);
+    ctx.fillText("Score: " + this.score, 20, 40);
   },
 
-  // Math Helper: Distance from point (px,py) to line segment (x1,y1)-(x2,y2)
-  pointLineDistance(px, py, x1, y1, x2, y2) {
-    const A = px - x1;
-    const B = py - y1;
-    const C = x2 - x1;
-    const D = y2 - y1;
+  drawSuccessEffect(ctx, w, h) {
+    ctx.save();
+    ctx.fillStyle = "rgba(0, 255, 100, 0.2)";
+    ctx.fillRect(0, 0, w, h);
+    
+    ctx.fillStyle = "white";
+    ctx.font = "bold 80px Arial";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("NICE!", w/2, h/2);
+    ctx.restore();
+  },
 
+  pointToLineDist(px, py, x1, y1, x2, y2) {
+    const A = px - x1; const B = py - y1;
+    const C = x2 - x1; const D = y2 - y1;
     const dot = A * C + B * D;
     const len_sq = C * C + D * D;
     let param = -1;
-    if (len_sq != 0) // in case of 0 length line
-        param = dot / len_sq;
+    if (len_sq !== 0) param = dot / len_sq;
 
     let xx, yy;
+    if (param < 0) { xx = x1; yy = y1; }
+    else if (param > 1) { xx = x2; yy = y2; }
+    else { xx = x1 + param * C; yy = y1 + param * D; }
 
-    if (param < 0) {
-      xx = x1;
-      yy = y1;
-    }
-    else if (param > 1) {
-      xx = x2;
-      yy = y2;
-    }
-    else {
-      xx = x1 + param * C;
-      yy = y1 + param * D;
-    }
-
-    const dx = px - xx;
-    const dy = py - yy;
+    const dx = px - xx; const dy = py - yy;
     return Math.sqrt(dx * dx + dy * dy);
   }
 };
