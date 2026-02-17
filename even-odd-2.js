@@ -1,5 +1,17 @@
 const Game4 = {
 
+  PIVOT_OFFSET: 100,
+  PIVOT_RADIUS: 12,
+  ARM_LENGTH: 120,
+
+  LOCK_RADIUS: 40,
+  LOCK_TIME: 2000,
+
+  pivotLockTimer: { left: 0, right: 0 },
+  pivotLocked: { left: false, right: false },
+
+  gameStarted: false,
+
   running: false,
   score: 0,
   circles: [],
@@ -10,7 +22,6 @@ const Game4 = {
   CENTER_Y: 0,
 
   CIRCLE_RADIUS: 20,
-  HIT_RADIUS: 40,
   LINE_GAP: 40,
   EDGE_SIZE: 35,
 
@@ -21,11 +32,7 @@ const Game4 = {
     right: null
   },
 
-  /* ==============================
-     INIT GAME
-  ============================== */
   init() {
-
     this.CENTER_X = canvasElement.width / 2;
     this.CENTER_Y = canvasElement.height / 2;
 
@@ -38,12 +45,7 @@ const Game4 = {
     this.initPose();
   },
 
-
-  /* ==============================
-     INIT MEDIAPIPE POSE
-  ============================== */
   initPose() {
-
     if (this.pose) return;
 
     this.pose = new Pose({
@@ -60,19 +62,13 @@ const Game4 = {
 
     this.pose.onResults(this.onPoseResults.bind(this));
 
-    // Hook into existing camera loop
     window.sendFrameToPose = async (image) => {
       if (!this.running) return;
       await this.pose.send({ image });
     };
   },
 
-
-  /* ==============================
-     POSE RESULTS → ELBOW ONLY
-  ============================== */
   onPoseResults(results) {
-
     if (!results.poseLandmarks) return;
 
     const lm = results.poseLandmarks;
@@ -84,50 +80,48 @@ const Game4 = {
 
     this.armData.left = {
       elbow: mapPoint(lm[13]),
-      side: "Left"
+      wrist: mapPoint(lm[15]),
+      side: "left"
     };
 
     this.armData.right = {
       elbow: mapPoint(lm[14]),
-      side: "Right"
+      wrist: mapPoint(lm[16]),
+      side: "right"
     };
   },
 
-
-  /* ==============================
-     UPDATE LOOP
-  ============================== */
   update(ctx) {
-
     if (!this.running) return;
 
     const now = performance.now();
-    const deltaTime = (now - this.lastTime) / 16.67;
+    const deltaTime = now - this.lastTime;
     this.lastTime = now;
 
-    this.spawnTimer += deltaTime;
+    if (!this.gameStarted) {
+      this.checkPivotLock(deltaTime);
+    } else {
+      this.spawnTimer += deltaTime / 16.67;
 
-    if (this.spawnTimer > 120) {
-      this.spawnCircle();
-      this.spawnTimer = 0;
+      if (this.spawnTimer > 120) {
+        this.spawnCircle();
+        this.spawnTimer = 0;
+      }
+
+      this.updateCircles(deltaTime / 16.67);
+      this.checkArmLineHits();
     }
-
-    this.updateCircles(deltaTime);
 
     this.drawEdgeZones(ctx);
     this.drawCross(ctx);
-    this.drawCenterPivots(ctx); // NEW UI
+    this.drawCenterPivots(ctx);
+    this.drawPivotArms(ctx);
     this.drawCircles(ctx);
-    this.drawElbows(ctx);     // 👈 elbow pointer
+    this.drawElbows(ctx);
     this.drawIndicators(ctx);
   },
 
-
-  /* ==============================
-     SPAWN CIRCLES
-  ============================== */
   spawnCircle() {
-
     const number = Math.floor(Math.random() * 100) + 1;
     const side = Math.floor(Math.random() * 4);
 
@@ -141,20 +135,17 @@ const Game4 = {
       y = -30;
       vx = 0;
       vy = speed;
-    }
-    else if (side === 1) {
+    } else if (side === 1) {
       x = this.CENTER_X + gap;
       y = canvasElement.height + 30;
       vx = 0;
       vy = -speed;
-    }
-    else if (side === 2) {
+    } else if (side === 2) {
       x = -30;
       y = this.CENTER_Y - gap;
       vx = speed;
       vy = 0;
-    }
-    else {
+    } else {
       x = canvasElement.width + 30;
       y = this.CENTER_Y + gap;
       vx = -speed;
@@ -169,25 +160,18 @@ const Game4 = {
     });
   },
 
-
-  /* ==============================
-     UPDATE CIRCLES
-  ============================== */
-  updateCircles(deltaTime) {
-
+  updateCircles(dt) {
     for (let circle of this.circles) {
+      circle.x += circle.vx * dt;
+      circle.y += circle.vy * dt;
 
-      circle.x += circle.vx * deltaTime;
-      circle.y += circle.vy * deltaTime;
-
-      const out =
+      if (
         circle.x < -60 ||
         circle.x > canvasElement.width + 60 ||
         circle.y < -60 ||
-        circle.y > canvasElement.height + 60;
-
-      if (out && !circle.hit) {
-        this.score -= 1;
+        circle.y > canvasElement.height + 60
+      ) {
+        if (!circle.hit) this.score -= 1;
         circle.hit = true;
       }
     }
@@ -195,15 +179,9 @@ const Game4 = {
     this.circles = this.circles.filter(c => !c.hit);
   },
 
-
-  /* ==============================
-     DRAW CROSS
-  ============================== */
   drawCross(ctx) {
-
     ctx.strokeStyle = "white";
     ctx.lineWidth = 2;
-
     const gap = this.LINE_GAP;
 
     ctx.beginPath();
@@ -227,51 +205,67 @@ const Game4 = {
     ctx.stroke();
   },
 
-
-  /* ==============================
-     NEW: CENTER PIVOTS + LINES
-  ============================== */
   drawCenterPivots(ctx) {
-
     const cx = this.CENTER_X;
     const cy = this.CENTER_Y;
 
-    const pivotOffset = 100;
-    const lineGap = 15;
-    const pivotRadius = 8;
+    const left = { x: cx - this.PIVOT_OFFSET, y: cy };
+    const right = { x: cx + this.PIVOT_OFFSET, y: cy };
 
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = "white";
+    const pulse = Math.sin(performance.now() * 0.01) * 4;
 
-    // LEFT pivot
-    const leftX = cx - pivotOffset;
-    ctx.beginPath();
-    ctx.arc(leftX, cy, pivotRadius, 0, Math.PI * 2);
-    ctx.stroke();
+    const draw = (p, locked, color) => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, this.PIVOT_RADIUS + (locked ? pulse : 0), 0, Math.PI * 2);
+      ctx.fillStyle = locked ? color : "white";
+      ctx.shadowBlur = locked ? 25 : 0;
+      ctx.shadowColor = color;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    };
 
-    ctx.beginPath();
-    ctx.moveTo(leftX + pivotRadius, cy);
-    ctx.lineTo(cx - lineGap, cy);
-    ctx.stroke();
-
-    // RIGHT pivot
-    const rightX = cx + pivotOffset;
-    ctx.beginPath();
-    ctx.arc(rightX, cy, pivotRadius, 0, Math.PI * 2);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(rightX - pivotRadius, cy);
-    ctx.lineTo(cx + lineGap, cy);
-    ctx.stroke();
+    draw(left, this.pivotLocked.left, "red");
+    draw(right, this.pivotLocked.right, "blue");
   },
 
+  drawPivotArms(ctx) {
+    if (!this.gameStarted) return;
 
-  /* ==============================
-     DRAW EDGE ZONES
-  ============================== */
+    const leftPivot = {
+      x: this.CENTER_X - this.PIVOT_OFFSET,
+      y: this.CENTER_Y
+    };
+
+    const rightPivot = {
+      x: this.CENTER_X + this.PIVOT_OFFSET,
+      y: this.CENTER_Y
+    };
+
+    const drawArm = (arm, pivot, color) => {
+      if (!arm?.wrist || !arm?.elbow) return;
+
+      // ONLY angle from elbow to wrist
+      const angle = Math.atan2(
+        arm.wrist.y - arm.elbow.y,
+        arm.wrist.x - arm.elbow.x
+      );
+
+      const endX = pivot.x + Math.cos(angle) * this.ARM_LENGTH;
+      const endY = pivot.y + Math.sin(angle) * this.ARM_LENGTH;
+
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 6;
+      ctx.beginPath();
+      ctx.moveTo(pivot.x, pivot.y);
+      ctx.lineTo(endX, endY);
+      ctx.stroke();
+    };
+
+    drawArm(this.armData.left, leftPivot, "red");
+    drawArm(this.armData.right, rightPivot, "blue");
+  },
+
   drawEdgeZones(ctx) {
-
     const w = canvasElement.width;
     const h = canvasElement.height;
     const e = this.EDGE_SIZE;
@@ -284,7 +278,6 @@ const Game4 = {
 
     ctx.fillStyle = "rgb(255,40,40)";
     ctx.shadowColor = "red";
-
     ctx.fillRect(0, 0, cx - gap, e);
     ctx.fillRect(0, h - e, cx - gap, e);
     ctx.fillRect(0, 0, e, cy - gap);
@@ -292,7 +285,6 @@ const Game4 = {
 
     ctx.fillStyle = "rgb(40,120,255)";
     ctx.shadowColor = "blue";
-
     ctx.fillRect(cx + gap, 0, w - (cx + gap), e);
     ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);
     ctx.fillRect(w - e, 0, e, cy - gap);
@@ -302,18 +294,12 @@ const Game4 = {
     ctx.globalAlpha = 1;
   },
 
-
-  /* ==============================
-     DRAW CIRCLES
-  ============================== */
   drawCircles(ctx) {
-
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "bold 18px Arial";
 
     for (let circle of this.circles) {
-
       ctx.beginPath();
       ctx.fillStyle = "purple";
       ctx.arc(circle.x, circle.y, this.CIRCLE_RADIUS, 0, Math.PI * 2);
@@ -324,22 +310,13 @@ const Game4 = {
     }
   },
 
-
-  /* ==============================
-     DRAW ELBOW POINTERS
-  ============================== */
   drawElbows(ctx) {
-
     const draw = (arm, color) => {
-
-      if (!arm || !arm.elbow) return;
-
+      if (!arm?.elbow) return;
       ctx.beginPath();
       ctx.arc(arm.elbow.x, arm.elbow.y, 18, 0, Math.PI * 2);
-
       ctx.fillStyle = color;
       ctx.fill();
-
       ctx.lineWidth = 3;
       ctx.strokeStyle = "white";
       ctx.stroke();
@@ -349,12 +326,7 @@ const Game4 = {
     draw(this.armData.right, "blue");
   },
 
-
-  /* ==============================
-     UI TEXT
-  ============================== */
   drawIndicators(ctx) {
-
     ctx.font = "18px Arial";
     ctx.textAlign = "left";
 
@@ -366,6 +338,107 @@ const Game4 = {
 
     ctx.fillStyle = "white";
     ctx.fillText("Score: " + this.score, canvasElement.width - 130, 30);
-  }
+  },
 
+  checkPivotLock(dt) {
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
+
+    const leftPivotX = cx - this.PIVOT_OFFSET;
+    const rightPivotX = cx + this.PIVOT_OFFSET;
+
+    const checkArm = (arm, side, pivotX) => {
+      if (!arm?.elbow) return;
+
+      const dx = arm.elbow.x - pivotX;
+      const dy = arm.elbow.y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (dist < this.LOCK_RADIUS) {
+        this.pivotLockTimer[side] += dt;
+        if (this.pivotLockTimer[side] > this.LOCK_TIME) {
+          this.pivotLocked[side] = true;
+        }
+      } else {
+        this.pivotLockTimer[side] = 0;
+        this.pivotLocked[side] = false;
+      }
+    };
+
+    checkArm(this.armData.left, "left", leftPivotX);
+    checkArm(this.armData.right, "right", rightPivotX);
+
+    if (this.pivotLocked.left && this.pivotLocked.right) {
+      this.gameStarted = true;
+    }
+  },
+
+  checkArmLineHits() {
+    const leftPivot = {
+      x: this.CENTER_X - this.PIVOT_OFFSET,
+      y: this.CENTER_Y
+    };
+
+    const rightPivot = {
+      x: this.CENTER_X + this.PIVOT_OFFSET,
+      y: this.CENTER_Y
+    };
+
+    const checkLine = (arm, pivot, side) => {
+      if (!arm?.wrist || !arm?.elbow) return;
+
+      const angle = Math.atan2(
+        arm.wrist.y - arm.elbow.y,
+        arm.wrist.x - arm.elbow.x
+      );
+
+      const endX = pivot.x + Math.cos(angle) * this.ARM_LENGTH;
+      const endY = pivot.y + Math.sin(angle) * this.ARM_LENGTH;
+
+      for (let circle of this.circles) {
+        if (circle.hit) continue;
+
+        const dist = this.pointToLineDistance(
+          circle.x, circle.y,
+          pivot.x, pivot.y,
+          endX, endY
+        );
+
+        if (dist < this.CIRCLE_RADIUS + 5) {
+          if (
+            (circle.isOdd && side === "right") ||
+            (!circle.isOdd && side === "left")
+          ) this.score += 10;
+          else this.score -= 10;
+
+          circle.hit = true;
+        }
+      }
+    };
+
+    checkLine(this.armData.left, leftPivot, "left");
+    checkLine(this.armData.right, rightPivot, "right");
+
+    this.circles = this.circles.filter(c => !c.hit);
+  },
+
+  pointToLineDistance(px, py, x1, y1, x2, y2) {
+    const A = px - x1;
+    const B = py - y1;
+    const C = x2 - x1;
+    const D = y2 - y1;
+
+    const dot = A * C + B * D;
+    const lenSq = C * C + D * D;
+    let param = dot / lenSq;
+
+    param = Math.max(0, Math.min(1, param));
+
+    const xx = x1 + param * C;
+    const yy = y1 + param * D;
+
+    const dx = px - xx;
+    const dy = py - yy;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
 };
