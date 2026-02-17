@@ -27,6 +27,14 @@ const Game6 = {
     { num: 5, label: "th" }
   ],
 
+    targets: [],
+    spawnTimer: 0,
+    spawnInterval: 1200, // frames (~2 seconds at 60fps)
+
+    score: 0,
+    catchRadius: 45,
+
+
 
   /* =========================
      INIT
@@ -60,6 +68,10 @@ const Game6 = {
       this.handleClick(x, y);
 
     });
+
+    this.targets = [];
+    this.spawnTimer = 0;
+    this.score = 0;
 
   },
 
@@ -229,9 +241,21 @@ const Game6 = {
     this.player.x = Math.max(this.player.size, Math.min(this.canvasWidth - this.player.size, this.player.x));
     this.player.y = Math.max(this.player.size, Math.min(this.canvasHeight - this.player.size, this.player.y));
 
+      this.spawnTimer++;
+
+    if (this.spawnTimer > this.spawnInterval) {
+        this.spawnTimer = 0;
+        this.spawnTarget();
+     }
+
     this.drawBackground(ctx);
     this.drawPlayer(ctx);
+    this.drawTargets(ctx);
     this.drawBallUI(ctx);
+    this.drawScore(ctx);
+    this.checkCatch();
+
+
 
   },
 
@@ -279,6 +303,94 @@ const Game6 = {
     );
     ctx.fill();
   },
+
+  drawTargets(ctx) {
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = "20px Arial";
+
+  this.targets.forEach(target => {
+
+    // circle
+    ctx.fillStyle = "#ef4444";
+
+    ctx.beginPath();
+    ctx.arc(target.x, target.y, target.size, 0, Math.PI * 2);
+    ctx.fill();
+
+    // text
+    ctx.fillStyle = "white";
+    ctx.fillText(target.num + target.label, target.x, target.y);
+
+  });
+
+},
+
+    drawScore(ctx) {
+
+  ctx.fillStyle = "white";
+  ctx.font = "22px Arial";
+  ctx.textAlign = "left";
+
+  ctx.fillText("Score: " + this.score, 20, 30);
+
+},
+
+
+
+  spawnTarget() {
+
+  const num = Math.floor(Math.random() * this.balls.length) + 1;
+
+  const x = Math.random() * (this.canvasWidth - 100) + 50;
+  const y = Math.random() * (this.canvasHeight - 200) + 50;
+
+  this.targets.push({
+    x: x,
+    y: y,
+    size: 35,
+    num: num,
+    label: this.balls[num - 1].label
+  });
+
+},
+
+    checkCatch() {
+
+  for (let i = this.targets.length - 1; i >= 0; i--) {
+
+    const t = this.targets[i];
+
+    const dx = this.player.x - t.x;
+    const dy = this.player.y - t.y;
+
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < this.catchRadius + t.size) {
+
+      // Correct ball
+      if (this.selectedBall === t.num) {
+
+        this.score++;
+
+        this.targets.splice(i, 1);
+
+      } else {
+
+        // Wrong feedback (shake effect)
+        t.x += (Math.random() - 0.5) * 10;
+        t.y += (Math.random() - 0.5) * 10;
+
+      }
+
+    }
+
+  }
+
+},
+
+
 
 
   /* =========================
