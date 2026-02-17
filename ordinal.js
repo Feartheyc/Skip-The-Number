@@ -17,15 +17,15 @@ const Game6 = {
   canvasWidth: 640,
   canvasHeight: 480,
 
-  selectedBall: 1,
+  selectedBall: "st",
 
-  balls: [
-    { num: 1, label: "st" },
-    { num: 2, label: "nd" },
-    { num: 3, label: "rd" },
-    { num: 4, label: "th" },
-    { num: 5, label: "th" }
-  ],
+  balls : [
+  { type: "st" },
+  { type: "nd" },
+  { type: "rd" },
+  { type: "th" }
+],
+
 
     targets: [],
     spawnTimer: 0,
@@ -194,14 +194,14 @@ const Game6 = {
 
       const x = startX + i * 100;
 
-      ctx.fillStyle = this.selectedBall === ball.num ? "yellow" : "white";
+      ctx.fillStyle = this.selectedBall === ball.type ? "yellow" : "white";
 
       ctx.beginPath();
       ctx.arc(x, y, 30, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "black";
-      ctx.fillText(ball.num + ball.label, x, y);
+      ctx.fillText(ball.type, x, y);
     });
   },
 
@@ -220,7 +220,7 @@ const Game6 = {
       const dy = y - by;
 
       if (Math.sqrt(dx * dx + dy * dy) < 30) {
-        this.selectedBall = ball.num;
+        this.selectedBall = ball.type;
       }
 
     });
@@ -321,7 +321,7 @@ const Game6 = {
 
     // text
     ctx.fillStyle = "white";
-    ctx.fillText(target.num + target.label, target.x, target.y);
+    ctx.fillText(target.num, target.x, target.y);
 
   });
 
@@ -341,7 +341,8 @@ const Game6 = {
 
   spawnTarget() {
 
-  const num = Math.floor(Math.random() * this.balls.length) + 1;
+  const num = Math.floor(Math.random() * 30) + 1;
+
 
   const x = Math.random() * (this.canvasWidth - 100) + 50;
   const y = Math.random() * (this.canvasHeight - 200) + 50;
@@ -351,7 +352,6 @@ const Game6 = {
     y: y,
     size: 35,
     num: num,
-    label: this.balls[num - 1].label
   });
 
 },
@@ -370,7 +370,10 @@ const Game6 = {
     if (dist < this.catchRadius + t.size) {
 
       // Correct ball
-      if (this.selectedBall === t.num) {
+      const correctType = this.getOrdinalType(t.num);
+
+        if (this.selectedBall === correctType)
+        {
 
         this.score++;
 
@@ -389,6 +392,17 @@ const Game6 = {
   }
 
 },
+    getOrdinalType(num) {
+
+  if (num % 100 >= 11 && num % 100 <= 13) return "th";
+
+  if (num % 10 === 1) return "st";
+  if (num % 10 === 2) return "nd";
+  if (num % 10 === 3) return "rd";
+
+  return "th";
+},
+
 
 
 
