@@ -1,5 +1,8 @@
 const Game4 = {
 
+  /* ===============================
+     CONFIG / STYLE
+  =============================== */
   PIVOT_OFFSET: 100,
   PIVOT_RADIUS: 12,
   ARM_LENGTH: 120,
@@ -7,25 +10,35 @@ const Game4 = {
   LOCK_RADIUS: 40,
   LOCK_TIME: 2000,
 
-  pivotLockTimer: { left: 0, right: 0 },
-  pivotLocked: { left: false, right: false },
-
-  gameStarted: false,
-
-  running: false,
-  score: 0,
-  balls: [],
-  spawnTimer: 0,
-  lastTime: 0,
-
-  MAX_BALLS: 3, // <<< CONTROL MAX BALLS ON SCREEN HERE
-
-  CENTER_X: 0,
-  CENTER_Y: 0,
+  MAX_BALLS: 3,
 
   BALL_RADIUS: 20,
   LINE_GAP: 40,
   EDGE_SIZE: 35,
+
+  COLORS: {
+    blue: "#3aa0ff",
+    red: "#ff4b5c",
+    yellow: "#ffd166",
+    white: "#ffffff",
+    purple: "#a66cff",
+    grid: "#2a2f5a"
+  },
+
+  pivotLockTimer: { left: 0, right: 0 },
+  pivotLocked: { left: false, right: false },
+
+  gameStarted: false,
+  running: false,
+  score: 0,
+  balls: [],
+  scorePops: [],
+
+  spawnTimer: 0,
+  lastTime: 0,
+
+  CENTER_X: 0,
+  CENTER_Y: 0,
 
   pose: null,
 
@@ -41,12 +54,16 @@ const Game4 = {
     this.running = true;
     this.score = 0;
     this.balls = [];
+    this.scorePops = [];
     this.spawnTimer = 0;
     this.lastTime = performance.now();
 
     this.initPose();
   },
 
+  /* ===============================
+     POSE SETUP
+  =============================== */
   initPose() {
     if (this.pose) return;
 
@@ -91,6 +108,9 @@ const Game4 = {
     };
   },
 
+  /* ===============================
+     UPDATE LOOP
+  =============================== */
   update(ctx) {
     if (!this.running) return;
 
@@ -103,13 +123,13 @@ const Game4 = {
     } else {
       this.spawnTimer += deltaTime / 16.67;
 
-      // SPAWN ONLY IF BELOW MAX BALL LIMIT
       if (this.spawnTimer > 120 && this.balls.length < this.MAX_BALLS) {
         this.spawnBall();
         this.spawnTimer = 0;
       }
 
       this.updateBalls(deltaTime / 16.67);
+      this.updateScorePops(deltaTime / 16.67);
       this.checkBallLinePhysics();
       this.checkEdgeScoring();
     }
@@ -120,9 +140,13 @@ const Game4 = {
     this.drawPivotArms(ctx);
     this.drawBalls(ctx);
     this.drawElbows(ctx);
+    this.drawScorePops(ctx);
     this.drawIndicators(ctx);
   },
 
+  /* ===============================
+     BALLS
+  =============================== */
   spawnBall() {
     const number = Math.floor(Math.random() * 100) + 1;
     const side = Math.floor(Math.random() * 4);
@@ -132,27 +156,10 @@ const Game4 = {
 
     let x, y, vx, vy;
 
-    if (side === 0) {
-      x = this.CENTER_X - gap;
-      y = -30;
-      vx = 0;
-      vy = speed;
-    } else if (side === 1) {
-      x = this.CENTER_X + gap;
-      y = canvasElement.height + 30;
-      vx = 0;
-      vy = -speed;
-    } else if (side === 2) {
-      x = -30;
-      y = this.CENTER_Y - gap;
-      vx = speed;
-      vy = 0;
-    } else {
-      x = canvasElement.width + 30;
-      y = this.CENTER_Y + gap;
-      vx = -speed;
-      vy = 0;
-    }
+    if (side === 0) { x = this.CENTER_X - gap; y = -30; vx = 0; vy = speed; }
+    else if (side === 1) { x = this.CENTER_X + gap; y = canvasElement.height + 30; vx = 0; vy = -speed; }
+    else if (side === 2) { x = -30; y = this.CENTER_Y - gap; vx = speed; vy = 0; }
+    else { x = canvasElement.width + 30; y = this.CENTER_Y + gap; vx = -speed; vy = 0; }
 
     this.balls.push({
       x, y, vx, vy,
@@ -171,6 +178,39 @@ const Game4 = {
     }
   },
 
+  /* ===============================
+     SCORE POP TEXT
+  =============================== */
+  addScorePop(x, y, value, color) {
+    this.scorePops.push({ x, y, value, color, life: 60 });
+  },
+
+  updateScorePops(dt) {
+    for (let p of this.scorePops) {
+      p.y -= 0.5 * dt;
+      p.life -= dt;
+    }
+    this.scorePops = this.scorePops.filter(p => p.life > 0);
+  },
+
+  drawScorePops(ctx) {
+    ctx.textAlign = "center";
+    ctx.font = "bold 26px Arial";
+
+    for (let p of this.scorePops) {
+      ctx.globalAlpha = p.life / 60;
+      ctx.fillStyle = p.color;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = p.color;
+      ctx.fillText(p.value, p.x, p.y);
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 1;
+    }
+  },
+
+  /* ===============================
+     COLLISION
+  =============================== */
   checkBallLinePhysics() {
     const checkLine = (arm, pivot) => {
       if (!arm?.wrist || !arm?.elbow) return;
@@ -214,36 +254,68 @@ const Game4 = {
     checkLine(this.armData.right, rightPivot);
   },
 
+  /* ===============================
+     EDGE SCORING
+  =============================== */
   checkEdgeScoring() {
-    const e = this.EDGE_SIZE;
-    const w = canvasElement.width;
-    const h = canvasElement.height;
-    const cx = this.CENTER_X;
-    const gap = this.LINE_GAP;
+  const e = this.EDGE_SIZE;
+  const w = canvasElement.width;
+  const h = canvasElement.height;
+  const cx = this.CENTER_X;
+  const cy = this.CENTER_Y;
+  const gap = this.LINE_GAP;
 
-    for (let b of this.balls) {
-      if (b.scored) continue;
+  for (let b of this.balls) {
+    if (b.scored) continue;
 
-      if (b.x < cx - gap && (b.y < e || b.y > h - e || b.x < e)) {
-        if (!b.isOdd) this.score += 10;
-        else this.score -= 5;
-        b.scored = true;
+    /* ---------- LEFT SIDE (RED STRIPS) ---------- */
+    const hitLeftTop = b.x < cx - gap && b.y <= e;
+    const hitLeftBottom = b.x < cx - gap && b.y >= h - e;
+    const hitLeftSideUpper = b.x <= e && b.y < cy - gap;
+    const hitLeftSideLower = b.x <= e && b.y > cy + gap;
+
+    if (hitLeftTop || hitLeftBottom || hitLeftSideUpper || hitLeftSideLower) {
+      if (!b.isOdd) {
+        this.score += 10;
+        this.addScorePop(b.x, b.y, "+10", this.COLORS.red);
+      } else {
+        this.score -= 5;
+        this.addScorePop(b.x, b.y, "-5", this.COLORS.red);
       }
-
-      if (b.x > cx + gap && (b.y < e || b.y > h - e || b.x > w - e)) {
-        if (b.isOdd) this.score += 10;
-        else this.score -= 5;
-        b.scored = true;
-      }
+      b.scored = true;
+      continue;
     }
 
-    this.balls = this.balls.filter(b =>
-      b.x > -100 && b.x < w + 100 && b.y > -100 && b.y < h + 100
-    );
-  },
+    /* ---------- RIGHT SIDE (BLUE STRIPS) ---------- */
+    const hitRightTop = b.x > cx + gap && b.y <= e;
+    const hitRightBottom = b.x > cx + gap && b.y >= h - e;
+    const hitRightSideUpper = b.x >= w - e && b.y < cy - gap;
+    const hitRightSideLower = b.x >= w - e && b.y > cy + gap;
 
+    if (hitRightTop || hitRightBottom || hitRightSideUpper || hitRightSideLower) {
+      if (b.isOdd) {
+        this.score += 10;
+        this.addScorePop(b.x, b.y, "+10", this.COLORS.blue);
+      } else {
+        this.score -= 5;
+        this.addScorePop(b.x, b.y, "-5", this.COLORS.blue);
+      }
+      b.scored = true;
+    }
+  }
+
+  // Clean offscreen balls
+  this.balls = this.balls.filter(b =>
+    b.x > -100 && b.x < w + 100 && b.y > -100 && b.y < h + 100
+  );
+},
+
+
+  /* ===============================
+     DRAWING
+  =============================== */
   drawCross(ctx) {
-    ctx.strokeStyle = "white";
+    ctx.strokeStyle = this.COLORS.grid;
     ctx.lineWidth = 2;
     const gap = this.LINE_GAP;
 
@@ -280,9 +352,9 @@ const Game4 = {
     const draw = (p, locked) => {
       ctx.beginPath();
       ctx.arc(p.x, p.y, this.PIVOT_RADIUS + (locked ? pulse : 0), 0, Math.PI * 2);
-      ctx.fillStyle = locked ? "yellow" : "white";
-      ctx.shadowBlur = locked ? 25 : 0;
-      ctx.shadowColor = "yellow";
+      ctx.fillStyle = locked ? this.COLORS.yellow : this.COLORS.white;
+      ctx.shadowBlur = 25;
+      ctx.shadowColor = ctx.fillStyle;
       ctx.fill();
       ctx.shadowBlur = 0;
     };
@@ -308,45 +380,19 @@ const Game4 = {
       const endX = pivot.x + Math.cos(angle) * this.ARM_LENGTH;
       const endY = pivot.y + Math.sin(angle) * this.ARM_LENGTH;
 
-      ctx.strokeStyle = "yellow";
+      ctx.strokeStyle = this.COLORS.yellow;
       ctx.lineWidth = 6;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = this.COLORS.yellow;
       ctx.beginPath();
       ctx.moveTo(pivot.x, pivot.y);
       ctx.lineTo(endX, endY);
       ctx.stroke();
+      ctx.shadowBlur = 0;
     };
 
     drawArm(this.armData.left, leftPivot);
     drawArm(this.armData.right, rightPivot);
-  },
-
-  drawEdgeZones(ctx) {
-    const w = canvasElement.width;
-    const h = canvasElement.height;
-    const e = this.EDGE_SIZE;
-    const gap = this.LINE_GAP;
-    const cx = this.CENTER_X;
-    const cy = this.CENTER_Y;
-
-    ctx.globalAlpha = 0.9;
-    ctx.shadowBlur = 40;
-
-    ctx.fillStyle = "rgb(255,40,40)";
-    ctx.shadowColor = "red";
-    ctx.fillRect(0, 0, cx - gap, e);
-    ctx.fillRect(0, h - e, cx - gap, e);
-    ctx.fillRect(0, 0, e, cy - gap);
-    ctx.fillRect(0, cy + gap, e, h - (cy + gap));
-
-    ctx.fillStyle = "rgb(40,120,255)";
-    ctx.shadowColor = "blue";
-    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);
-    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);
-    ctx.fillRect(w - e, 0, e, cy - gap);
-    ctx.fillRect(w - e, cy + gap, e, h - (cy + gap));
-
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
   },
 
   drawBalls(ctx) {
@@ -355,10 +401,17 @@ const Game4 = {
     ctx.font = "bold 18px Arial";
 
     for (let b of this.balls) {
+      const grad = ctx.createRadialGradient(b.x, b.y, 5, b.x, b.y, this.BALL_RADIUS);
+      grad.addColorStop(0, "#ffffff65");
+      grad.addColorStop(1, this.COLORS.purple);
+
       ctx.beginPath();
-      ctx.fillStyle = "purple";
+      ctx.fillStyle = grad;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = this.COLORS.purple;
       ctx.arc(b.x, b.y, this.BALL_RADIUS, 0, Math.PI * 2);
       ctx.fill();
+      ctx.shadowBlur = 0;
 
       ctx.fillStyle = "white";
       ctx.fillText(b.number, b.x, b.y);
@@ -370,31 +423,64 @@ const Game4 = {
       if (!arm?.elbow) return;
       ctx.beginPath();
       ctx.arc(arm.elbow.x, arm.elbow.y, 18, 0, Math.PI * 2);
-      ctx.fillStyle = "yellow";
+      ctx.fillStyle = this.COLORS.yellow;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = this.COLORS.yellow;
       ctx.fill();
-      ctx.lineWidth = 3;
-      ctx.strokeStyle = "white";
-      ctx.stroke();
+      ctx.shadowBlur = 0;
     };
 
     draw(this.armData.left);
     draw(this.armData.right);
   },
 
-  drawIndicators(ctx) {
-    ctx.font = "18px Arial";
-    ctx.textAlign = "left";
+  /* RESTORED ORIGINAL COLORED EDGE STRIPS */
+  drawEdgeZones(ctx) {
+    const w = canvasElement.width;
+    const h = canvasElement.height;
+    const e = this.EDGE_SIZE;
+    const gap = this.LINE_GAP;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
 
-    ctx.fillStyle = "blue";
-    ctx.fillText("Odd → Blue Edge = +10", 10, 20);
+    ctx.globalAlpha = 0.9;
+    ctx.shadowBlur = 40;
 
-    ctx.fillStyle = "red";
-    ctx.fillText("Even → Red Edge = +10", 10, 40);
+    ctx.fillStyle = this.COLORS.red;
+    ctx.shadowColor = this.COLORS.red;
+    ctx.fillRect(0, 0, cx - gap, e);
+    ctx.fillRect(0, h - e, cx - gap, e);
+    ctx.fillRect(0, 0, e, cy - gap);
+    ctx.fillRect(0, cy + gap, e, h - (cy + gap));
 
-    ctx.fillStyle = "white";
-    ctx.fillText("Score: " + this.score, canvasElement.width - 150, 30);
+    ctx.fillStyle = this.COLORS.blue;
+    ctx.shadowColor = this.COLORS.blue;
+    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);
+    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);
+    ctx.fillRect(w - e, 0, e, cy - gap);
+    ctx.fillRect(w - e, cy + gap, e, h - (cy + gap));
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
   },
 
+  drawIndicators(ctx) {
+    ctx.font = "bold 20px Arial";
+    ctx.textAlign = "left";
+
+    ctx.fillStyle = this.COLORS.blue;
+    ctx.fillText("Odd → Blue Edge = +10", 10, 30);
+
+    ctx.fillStyle = this.COLORS.red;
+    ctx.fillText("Even → Red Edge = +10", 10, 60);
+
+    ctx.fillStyle = this.COLORS.white;
+    ctx.fillText("Score: " + this.score, canvasElement.width - 180, 40);
+  },
+
+  /* ===============================
+     LOCK SYSTEM
+  =============================== */
   checkPivotLock(dt) {
     const cx = this.CENTER_X;
     const cy = this.CENTER_Y;
