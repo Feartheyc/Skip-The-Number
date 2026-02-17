@@ -69,23 +69,26 @@ const Game6 = {
   ========================= */
   resizeCanvas() {
 
-    const canvas = document.getElementById("game_canvas");
+  const canvas = document.getElementById("game_canvas");
 
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 
-    canvas.style.width = window.innerWidth + "px";
-    canvas.style.height = window.innerHeight + "px";
+  canvas.style.position = "fixed";
+  canvas.style.left = "0";
+  canvas.style.top = "0";
+  canvas.style.width = "100vw";
+  canvas.style.height = "100vh";
 
-    this.canvasWidth = canvas.width;
-    this.canvasHeight = canvas.height;
+  this.canvasWidth = canvas.width;
+  this.canvasHeight = canvas.height;
 
-    // Center player when resizing first time
-    if (this.player.x === 320 && this.player.y === 240) {
-      this.player.x = this.canvasWidth / 2;
-      this.player.y = this.canvasHeight / 2;
-    }
-  },
+  if (this.player.x === 320 && this.player.y === 240) {
+    this.player.x = this.canvasWidth / 2;
+    this.player.y = this.canvasHeight / 2;
+  }
+},
+
 
 
   /* =========================
