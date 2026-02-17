@@ -14,14 +14,16 @@ const Game4 = {
 
   running: false,
   score: 0,
-  circles: [],
+  balls: [],
   spawnTimer: 0,
   lastTime: 0,
+
+  MAX_BALLS: 3, // <<< CONTROL MAX BALLS ON SCREEN HERE
 
   CENTER_X: 0,
   CENTER_Y: 0,
 
-  CIRCLE_RADIUS: 20,
+  BALL_RADIUS: 20,
   LINE_GAP: 40,
   EDGE_SIZE: 35,
 
@@ -38,7 +40,7 @@ const Game4 = {
 
     this.running = true;
     this.score = 0;
-    this.circles = [];
+    this.balls = [];
     this.spawnTimer = 0;
     this.lastTime = performance.now();
 
@@ -80,14 +82,12 @@ const Game4 = {
 
     this.armData.left = {
       elbow: mapPoint(lm[13]),
-      wrist: mapPoint(lm[15]),
-      side: "left"
+      wrist: mapPoint(lm[15])
     };
 
     this.armData.right = {
       elbow: mapPoint(lm[14]),
-      wrist: mapPoint(lm[16]),
-      side: "right"
+      wrist: mapPoint(lm[16])
     };
   },
 
@@ -103,30 +103,32 @@ const Game4 = {
     } else {
       this.spawnTimer += deltaTime / 16.67;
 
-      if (this.spawnTimer > 120) {
-        this.spawnCircle();
+      // SPAWN ONLY IF BELOW MAX BALL LIMIT
+      if (this.spawnTimer > 120 && this.balls.length < this.MAX_BALLS) {
+        this.spawnBall();
         this.spawnTimer = 0;
       }
 
-      this.updateCircles(deltaTime / 16.67);
-      this.checkArmLineHits();
+      this.updateBalls(deltaTime / 16.67);
+      this.checkBallLinePhysics();
+      this.checkEdgeScoring();
     }
 
     this.drawEdgeZones(ctx);
     this.drawCross(ctx);
     this.drawCenterPivots(ctx);
     this.drawPivotArms(ctx);
-    this.drawCircles(ctx);
+    this.drawBalls(ctx);
     this.drawElbows(ctx);
     this.drawIndicators(ctx);
   },
 
-  spawnCircle() {
+  spawnBall() {
     const number = Math.floor(Math.random() * 100) + 1;
     const side = Math.floor(Math.random() * 4);
 
     const gap = this.LINE_GAP;
-    const speed = 1.5;
+    const speed = 1.8;
 
     let x, y, vx, vy;
 
@@ -152,31 +154,92 @@ const Game4 = {
       vy = 0;
     }
 
-    this.circles.push({
+    this.balls.push({
       x, y, vx, vy,
       number,
       isOdd: number % 2 !== 0,
-      hit: false
+      recentlyHit: 0,
+      scored: false
     });
   },
 
-  updateCircles(dt) {
-    for (let circle of this.circles) {
-      circle.x += circle.vx * dt;
-      circle.y += circle.vy * dt;
+  updateBalls(dt) {
+    for (let b of this.balls) {
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.recentlyHit -= dt;
+    }
+  },
 
-      if (
-        circle.x < -60 ||
-        circle.x > canvasElement.width + 60 ||
-        circle.y < -60 ||
-        circle.y > canvasElement.height + 60
-      ) {
-        if (!circle.hit) this.score -= 1;
-        circle.hit = true;
+  checkBallLinePhysics() {
+    const checkLine = (arm, pivot) => {
+      if (!arm?.wrist || !arm?.elbow) return;
+
+      const angle = Math.atan2(
+        arm.wrist.y - arm.elbow.y,
+        arm.wrist.x - arm.elbow.x
+      );
+
+      const endX = pivot.x + Math.cos(angle) * this.ARM_LENGTH;
+      const endY = pivot.y + Math.sin(angle) * this.ARM_LENGTH;
+
+      const dx = endX - pivot.x;
+      const dy = endY - pivot.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const nx = -dy / len;
+      const ny = dx / len;
+
+      for (let b of this.balls) {
+        if (b.recentlyHit > 0) continue;
+
+        const dist = this.pointToLineDistance(
+          b.x, b.y,
+          pivot.x, pivot.y,
+          endX, endY
+        );
+
+        if (dist < this.BALL_RADIUS + 2) {
+          const dot = b.vx * nx + b.vy * ny;
+          b.vx = b.vx - 2 * dot * nx;
+          b.vy = b.vy - 2 * dot * ny;
+          b.recentlyHit = 10;
+        }
+      }
+    };
+
+    const leftPivot = { x: this.CENTER_X - this.PIVOT_OFFSET, y: this.CENTER_Y };
+    const rightPivot = { x: this.CENTER_X + this.PIVOT_OFFSET, y: this.CENTER_Y };
+
+    checkLine(this.armData.left, leftPivot);
+    checkLine(this.armData.right, rightPivot);
+  },
+
+  checkEdgeScoring() {
+    const e = this.EDGE_SIZE;
+    const w = canvasElement.width;
+    const h = canvasElement.height;
+    const cx = this.CENTER_X;
+    const gap = this.LINE_GAP;
+
+    for (let b of this.balls) {
+      if (b.scored) continue;
+
+      if (b.x < cx - gap && (b.y < e || b.y > h - e || b.x < e)) {
+        if (!b.isOdd) this.score += 10;
+        else this.score -= 5;
+        b.scored = true;
+      }
+
+      if (b.x > cx + gap && (b.y < e || b.y > h - e || b.x > w - e)) {
+        if (b.isOdd) this.score += 10;
+        else this.score -= 5;
+        b.scored = true;
       }
     }
 
-    this.circles = this.circles.filter(c => !c.hit);
+    this.balls = this.balls.filter(b =>
+      b.x > -100 && b.x < w + 100 && b.y > -100 && b.y < h + 100
+    );
   },
 
   drawCross(ctx) {
@@ -214,37 +277,29 @@ const Game4 = {
 
     const pulse = Math.sin(performance.now() * 0.01) * 4;
 
-    const draw = (p, locked, color) => {
+    const draw = (p, locked) => {
       ctx.beginPath();
       ctx.arc(p.x, p.y, this.PIVOT_RADIUS + (locked ? pulse : 0), 0, Math.PI * 2);
-      ctx.fillStyle = locked ? color : "white";
+      ctx.fillStyle = locked ? "yellow" : "white";
       ctx.shadowBlur = locked ? 25 : 0;
-      ctx.shadowColor = color;
+      ctx.shadowColor = "yellow";
       ctx.fill();
       ctx.shadowBlur = 0;
     };
 
-    draw(left, this.pivotLocked.left, "red");
-    draw(right, this.pivotLocked.right, "blue");
+    draw(left, this.pivotLocked.left);
+    draw(right, this.pivotLocked.right);
   },
 
   drawPivotArms(ctx) {
     if (!this.gameStarted) return;
 
-    const leftPivot = {
-      x: this.CENTER_X - this.PIVOT_OFFSET,
-      y: this.CENTER_Y
-    };
+    const leftPivot = { x: this.CENTER_X - this.PIVOT_OFFSET, y: this.CENTER_Y };
+    const rightPivot = { x: this.CENTER_X + this.PIVOT_OFFSET, y: this.CENTER_Y };
 
-    const rightPivot = {
-      x: this.CENTER_X + this.PIVOT_OFFSET,
-      y: this.CENTER_Y
-    };
-
-    const drawArm = (arm, pivot, color) => {
+    const drawArm = (arm, pivot) => {
       if (!arm?.wrist || !arm?.elbow) return;
 
-      // ONLY angle from elbow to wrist
       const angle = Math.atan2(
         arm.wrist.y - arm.elbow.y,
         arm.wrist.x - arm.elbow.x
@@ -253,7 +308,7 @@ const Game4 = {
       const endX = pivot.x + Math.cos(angle) * this.ARM_LENGTH;
       const endY = pivot.y + Math.sin(angle) * this.ARM_LENGTH;
 
-      ctx.strokeStyle = color;
+      ctx.strokeStyle = "yellow";
       ctx.lineWidth = 6;
       ctx.beginPath();
       ctx.moveTo(pivot.x, pivot.y);
@@ -261,8 +316,8 @@ const Game4 = {
       ctx.stroke();
     };
 
-    drawArm(this.armData.left, leftPivot, "red");
-    drawArm(this.armData.right, rightPivot, "blue");
+    drawArm(this.armData.left, leftPivot);
+    drawArm(this.armData.right, rightPivot);
   },
 
   drawEdgeZones(ctx) {
@@ -294,36 +349,36 @@ const Game4 = {
     ctx.globalAlpha = 1;
   },
 
-  drawCircles(ctx) {
+  drawBalls(ctx) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.font = "bold 18px Arial";
 
-    for (let circle of this.circles) {
+    for (let b of this.balls) {
       ctx.beginPath();
       ctx.fillStyle = "purple";
-      ctx.arc(circle.x, circle.y, this.CIRCLE_RADIUS, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, this.BALL_RADIUS, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.fillStyle = "white";
-      ctx.fillText(circle.number, circle.x, circle.y);
+      ctx.fillText(b.number, b.x, b.y);
     }
   },
 
   drawElbows(ctx) {
-    const draw = (arm, color) => {
+    const draw = (arm) => {
       if (!arm?.elbow) return;
       ctx.beginPath();
       ctx.arc(arm.elbow.x, arm.elbow.y, 18, 0, Math.PI * 2);
-      ctx.fillStyle = color;
+      ctx.fillStyle = "yellow";
       ctx.fill();
       ctx.lineWidth = 3;
       ctx.strokeStyle = "white";
       ctx.stroke();
     };
 
-    draw(this.armData.left, "red");
-    draw(this.armData.right, "blue");
+    draw(this.armData.left);
+    draw(this.armData.right);
   },
 
   drawIndicators(ctx) {
@@ -331,13 +386,13 @@ const Game4 = {
     ctx.textAlign = "left";
 
     ctx.fillStyle = "blue";
-    ctx.fillText("Odd = Right Arm", 10, 20);
+    ctx.fillText("Odd → Blue Edge = +10", 10, 20);
 
     ctx.fillStyle = "red";
-    ctx.fillText("Even = Left Arm", 10, 40);
+    ctx.fillText("Even → Red Edge = +10", 10, 40);
 
     ctx.fillStyle = "white";
-    ctx.fillText("Score: " + this.score, canvasElement.width - 130, 30);
+    ctx.fillText("Score: " + this.score, canvasElement.width - 150, 30);
   },
 
   checkPivotLock(dt) {
@@ -371,55 +426,6 @@ const Game4 = {
     if (this.pivotLocked.left && this.pivotLocked.right) {
       this.gameStarted = true;
     }
-  },
-
-  checkArmLineHits() {
-    const leftPivot = {
-      x: this.CENTER_X - this.PIVOT_OFFSET,
-      y: this.CENTER_Y
-    };
-
-    const rightPivot = {
-      x: this.CENTER_X + this.PIVOT_OFFSET,
-      y: this.CENTER_Y
-    };
-
-    const checkLine = (arm, pivot, side) => {
-      if (!arm?.wrist || !arm?.elbow) return;
-
-      const angle = Math.atan2(
-        arm.wrist.y - arm.elbow.y,
-        arm.wrist.x - arm.elbow.x
-      );
-
-      const endX = pivot.x + Math.cos(angle) * this.ARM_LENGTH;
-      const endY = pivot.y + Math.sin(angle) * this.ARM_LENGTH;
-
-      for (let circle of this.circles) {
-        if (circle.hit) continue;
-
-        const dist = this.pointToLineDistance(
-          circle.x, circle.y,
-          pivot.x, pivot.y,
-          endX, endY
-        );
-
-        if (dist < this.CIRCLE_RADIUS + 5) {
-          if (
-            (circle.isOdd && side === "right") ||
-            (!circle.isOdd && side === "left")
-          ) this.score += 10;
-          else this.score -= 10;
-
-          circle.hit = true;
-        }
-      }
-    };
-
-    checkLine(this.armData.left, leftPivot, "left");
-    checkLine(this.armData.right, rightPivot, "right");
-
-    this.circles = this.circles.filter(c => !c.hit);
   },
 
   pointToLineDistance(px, py, x1, y1, x2, y2) {
