@@ -1,44 +1,55 @@
-body {
+/* GLOBAL LAYOUT */
+html, body {
   margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
   background: black;
-  overflow: hidden;
+  overflow: hidden; /* Prevents scrollbars */
   font-family: Arial, sans-serif;
+  touch-action: none; /* Prevents zooming/scrolling on tablets while playing */
 }
 
 #container {
   position: relative;
-  width: 640px;
-  height: 480px;
-  margin: auto;
-}
-
-/* CAMERA (visible during game) */
-#input_video {
-  position: absolute;
-  width: 640px;
-  height: 480px;
-  object-fit: cover;
-  opacity: 1;
-  z-index: 0;
-  transition: opacity 0.4s ease;
-  transform: scaleX(-1);
-}
-
-/* CANVAS OVER CAMERA */
-#game_canvas {
-  position: absolute;
-  width: 640px;
-  height: 480px;
-  background: transparent; /* important */
-  z-index: 1;
-}
-
-/* GAME MENU (covers everything at start) */
-#menu {
-  position: absolute;
   width: 100%;
   height: 100%;
-  background: black;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+/* CAMERA (visible during AR games) */
+#input_video {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover; /* Fills screen (might crop edges slightly) */
+  z-index: 0;
+  transform: scaleX(-1); /* Mirror effect */
+}
+
+/* GAME CANVAS (The drawing layer) */
+#game_canvas {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  background: transparent;
+}
+
+/* GAME MENU (Centered overlay) */
+#menu {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.85); /* Slightly transparent background */
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -49,13 +60,22 @@ body {
 
 #menu h1 {
   margin-bottom: 30px;
+  font-size: 4vh; /* Responsive font size */
 }
 
 #menu button {
-  padding: 12px 30px;
+  padding: 15px 40px;
   margin: 10px;
-  font-size: 18px;
+  font-size: 24px; /* Larger buttons for touch screens */
   cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  background-color: #00FFCC;
+  color: black;
+  font-weight: bold;
 }
 
-
+#menu button:active {
+  background-color: #00CC99;
+  transform: scale(0.95);
+}
