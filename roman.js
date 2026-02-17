@@ -14,23 +14,18 @@ const Game5 = {
 
   // Configuration
   snapDistance: 40, // How close to the line you must be
-  jumpLimit: 0.15,  // <--- NEW: Max % you can skip in one frame (prevents tapping end)
+  jumpLimit: 0.15,  // Max % you can skip in one frame
 
   // Roman Numeral Data
   levels: [
     { 
       symbol: "I", 
+      number: "1", // <<< ADDED
       strokes: [ { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 } ] 
     },
     { 
-      symbol: "L", 
-      strokes: [
-        { x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8 }, // Down
-        { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 }  // Right
-      ]
-    },
-    { 
       symbol: "V", 
+      number: "5", // <<< ADDED
       strokes: [
         { x1: 0.3, y1: 0.2, x2: 0.5, y2: 0.8 }, // Down-Right
         { x1: 0.5, y1: 0.8, x2: 0.7, y2: 0.2 }  // Up-Right
@@ -38,9 +33,27 @@ const Game5 = {
     },
     { 
       symbol: "X", 
+      number: "10", // <<< ADDED
       strokes: [
         { x1: 0.3, y1: 0.2, x2: 0.7, y2: 0.8 }, 
         { x1: 0.7, y1: 0.2, x2: 0.3, y2: 0.8 } 
+      ]
+    },
+    { 
+      symbol: "L", 
+      number: "50", // <<< ADDED
+      strokes: [
+        { x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8 }, // Down
+        { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 }  // Right
+      ]
+    },
+    { 
+      symbol: "III", 
+      number: "3", // <<< ADDED
+      strokes: [
+        { x1: 0.35, y1: 0.2, x2: 0.35, y2: 0.8 }, // Left I
+        { x1: 0.45, y1: 0.2, x2: 0.45, y2: 0.8 }, // Right I
+        { x1: 0.60, y1: 0.2, x2: 0.60, y2: 0.8 }  // Third I
       ]
     }
   ],
@@ -152,7 +165,7 @@ const Game5 = {
   },
 
   /* ==============================
-     TRACING LOGIC (UPDATED)
+     TRACING LOGIC
   ============================== */
   handleTracing(w, h) {
     const level = this.levels[this.currentLevel];
@@ -166,29 +179,18 @@ const Game5 = {
     const distToStart = Math.hypot(this.cursor.x - p1.x, this.cursor.y - p1.y);
     const distToLine = this.pointToLineDist(this.cursor.x, this.cursor.y, p1.x, p1.y, p2.x, p2.y);
 
-    // Rule 1: Must be near the line
     if (distToLine > this.snapDistance) return;
 
-    // Calculate projected progress (0.0 to 1.0)
     const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
 
-    // Rule 2: START CHECK
-    // If we haven't started yet (progress is 0), you MUST touch near the start (first 10%)
     if (this.currentStrokeProgress === 0 && newProgress > 0.1) return;
-
-    // Rule 3: NO TELEPORTING
-    // You cannot jump more than 'jumpLimit' (15%) forward in a single frame.
-    // This forces the user to drag along the line.
     if (newProgress > this.currentStrokeProgress + this.jumpLimit) return;
 
-    // Rule 4: FORWARD ONLY
-    // You can't erase by going backward
     if (newProgress > this.currentStrokeProgress) {
       this.currentStrokeProgress = newProgress;
       this.tracePoints.push({ x: this.cursor.x, y: this.cursor.y });
     }
 
-    // Rule 5: COMPLETE
     if (this.currentStrokeProgress >= 0.95) {
       this.completeStroke();
     }
@@ -230,19 +232,6 @@ const Game5 = {
       ctx.lineTo(s.x2 * w, s.y2 * h);
       ctx.stroke();
     });
-
-    // Draw Guidance Dots for the CURRENT stroke
-    const active = level.strokes[this.activeStrokeIndex];
-    if (active) {
-      // Start Dot (Yellow) - Pulsing effect
-      const pulse = Math.sin(Date.now() / 200) * 5;
-      ctx.fillStyle = "#FFCC00"; 
-      ctx.beginPath(); ctx.arc(active.x1 * w, active.y1 * h, 15 + pulse, 0, Math.PI*2); ctx.fill();
-
-      // End Dot (Red)
-      ctx.fillStyle = "#FF4444"; 
-      ctx.beginPath(); ctx.arc(active.x2 * w, active.y2 * h, 15, 0, Math.PI*2); ctx.fill();
-    }
   },
 
   drawUserInk(ctx) {
@@ -265,10 +254,19 @@ const Game5 = {
   },
 
   drawUI(ctx) {
+    // Score
     ctx.fillStyle = "white";
     ctx.font = "bold 30px Arial";
     ctx.textAlign = "left";
-    ctx.fillText("Score: " + this.score, 20, 40);
+    ctx.textBaseline = "top";
+    ctx.fillText("Score: " + this.score, 20, 20);
+
+    // Current Number Display
+    const level = this.levels[this.currentLevel];
+    ctx.textAlign = "center";
+    ctx.font = "bold 50px Arial";
+    ctx.fillStyle = "#FFCC00"; // Gold color
+    ctx.fillText("Number: " + level.number, ctx.canvas.width / 2, 30);
   },
 
   drawSuccessEffect(ctx, w, h) {
