@@ -15,7 +15,7 @@ const Game5 = {
   // Input State
   isDrawing: false,
   cursor: { x: 0, y: 0 },
-  cursorColor: "white", // Changes to red on error
+  cursorColor: "white", 
 
   // Configuration
   snapDistance: 45, 
@@ -75,6 +75,13 @@ const Game5 = {
     this.score = 0;
     this.currentLevel = 0;
     this.mode = "TRACE"; 
+    
+    // --- RESIZE LOGIC ---
+    const canvas = document.getElementById('game_canvas');
+    // Set to a larger resolution (e.g. 800x600 or window size)
+    canvas.width = window.innerWidth > 800 ? 800 : window.innerWidth - 20;
+    canvas.height = window.innerHeight > 600 ? 600 : window.innerHeight - 20;
+    
     this.resetLevel();
 
     if (!this.listenersAdded) {
@@ -117,7 +124,7 @@ const Game5 = {
     const endDraw = () => {
         this.isDrawing = false;
         this.tracePoints = []; 
-        this.cursorColor = "white"; // Reset color
+        this.cursorColor = "white"; 
     };
 
     // Mouse
@@ -146,7 +153,10 @@ const Game5 = {
     const w = canvas.width;
     const h = canvas.height;
     
-    const btnW = 120; const btnH = 40; const btnY = h - 60;
+    // Button Logic (Dynamic Y based on Height)
+    const btnW = 120; const btnH = 40; 
+    const btnY = h - 60; // Always at bottom
+    
     const traceX = w / 2 - 130;
     const freeX = w / 2 + 10;
 
@@ -183,8 +193,8 @@ const Game5 = {
     // Render
     this.drawTemplate(ctx, w, h);
     this.drawUserInk(ctx);
-    this.drawParticles(ctx); // Draw sparks
-    this.drawCursor(ctx); // Draw custom cursor
+    this.drawParticles(ctx); 
+    this.drawCursor(ctx); 
     this.drawUI(ctx);
 
     // Success Animation
@@ -232,16 +242,15 @@ const Game5 = {
         return;
     }
     if (newProgress > this.currentStrokeProgress + this.jumpLimit) {
-        return; // Just ignore, don't flash red for speed, just stop drawing
+        return; 
     }
 
     // SUCCESS: Drawing Forward
     if (newProgress > this.currentStrokeProgress) {
       this.currentStrokeProgress = newProgress;
       this.tracePoints.push({ x: this.cursor.x, y: this.cursor.y });
-      this.cursorColor = "#00FFCC"; // Green when drawing correctly
+      this.cursorColor = "#00FFCC"; 
       
-      // SPAWN PARTICLES!
       if (Math.random() > 0.5) {
         this.spawnParticle(this.cursor.x, this.cursor.y);
       }
@@ -258,7 +267,6 @@ const Game5 = {
     this.tracePoints = []; 
     this.score += 10;
     
-    // Burst of particles on completion
     for(let i=0; i<20; i++) {
         const lastPt = this.cursor; 
         this.spawnParticle(lastPt.x, lastPt.y, true);
@@ -279,8 +287,8 @@ const Game5 = {
         x: x, y: y,
         vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
-        life: 1.0, // 100% opacity
-        color: `hsl(${Math.random()*60 + 160}, 100%, 70%)` // Cyan/Green/Blue hues
+        life: 1.0, 
+        color: `hsl(${Math.random()*60 + 160}, 100%, 70%)` 
     });
   },
 
@@ -289,7 +297,7 @@ const Game5 = {
         let p = this.particles[i];
         p.x += p.vx;
         p.y += p.vy;
-        p.life -= 0.05; // Fade out
+        p.life -= 0.05; 
         if (p.life <= 0) this.particles.splice(i, 1);
     }
   },
@@ -335,7 +343,7 @@ const Game5 = {
         ctx.stroke();
       }
 
-      // Draw ARROWS for Guidance (New!)
+      // Draw ARROW
       if (shouldDraw && index === this.activeStrokeIndex) {
         this.drawArrow(ctx, s.x1*w, s.y1*h, s.x2*w, s.y2*h);
       }
@@ -389,7 +397,6 @@ const Game5 = {
   },
 
   drawCursor(ctx) {
-      // Draw a circle following the finger/mouse
       ctx.beginPath();
       ctx.fillStyle = this.cursorColor;
       ctx.arc(this.cursor.x, this.cursor.y, 10, 0, Math.PI*2);
@@ -418,8 +425,10 @@ const Game5 = {
     ctx.fillText("Number: " + level.number, w / 2, 40);
 
     // Buttons
-    const btnW = 120; const btnH = 40; const btnY = h - 60;
-    const traceX = w / 2 - 130; const freeX = w / 2 + 10;
+    const btnW = 120; const btnH = 40; 
+    const btnY = h - 60; // Dynamic Bottom
+    const traceX = w / 2 - 130; 
+    const freeX = w / 2 + 10;
 
     ctx.font = "bold 16px Arial";
     ctx.textBaseline = "middle";
