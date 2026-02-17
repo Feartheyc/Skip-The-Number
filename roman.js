@@ -13,7 +13,8 @@ const Game5 = {
   cursor: { x: 0, y: 0 },
 
   // Configuration
-  snapDistance: 40, // Pixel tolerance for staying on the line
+  snapDistance: 40, // How close to the line you must be
+  jumpLimit: 0.15,  // <--- NEW: Max % you can skip in one frame (prevents tapping end)
 
   // Roman Numeral Data
   levels: [
@@ -57,7 +58,6 @@ const Game5 = {
     this.currentLevel = 0;
     this.resetLevel();
 
-    // Attach Touch/Mouse Listeners ONCE
     if (!this.listenersAdded) {
       this.addInputListeners();
       this.listenersAdded = true;
@@ -73,12 +73,12 @@ const Game5 = {
   },
 
   /* ==============================
-     INPUT HANDLING (TOUCH & MOUSE)
+     INPUT HANDLING
   ============================== */
   addInputListeners() {
     const canvas = document.getElementById('game_canvas');
 
-    // --- MOUSE EVENTS ---
+    // MOUSE
     canvas.addEventListener('mousedown', (e) => {
       this.isDrawing = true;
       this.updateCursor(e);
@@ -88,14 +88,14 @@ const Game5 = {
     });
     window.addEventListener('mouseup', () => {
       this.isDrawing = false;
-      this.tracePoints = []; // Clear trail on lift (optional)
+      this.tracePoints = []; 
     });
 
-    // --- TOUCH EVENTS ---
+    // TOUCH
     canvas.addEventListener('touchstart', (e) => {
       this.isDrawing = true;
       this.updateCursor(e.touches[0]);
-      e.preventDefault(); // Stop scrolling while playing
+      e.preventDefault(); 
     }, {passive: false});
     
     canvas.addEventListener('touchmove', (e) => {
@@ -112,8 +112,6 @@ const Game5 = {
   updateCursor(e) {
     const canvas = document.getElementById('game_canvas');
     const rect = canvas.getBoundingClientRect();
-    
-    // Scale Logic: Maps screen pixels to canvas internal resolution (640x480)
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
@@ -124,32 +122,28 @@ const Game5 = {
   /* ==============================
      UPDATE LOOP
   ============================== */
-  update(ctx) { // No 'fingers' argument needed anymore
+  update(ctx) {
     if (!this.running) return;
 
     const w = ctx.canvas.width;
     const h = ctx.canvas.height;
 
-    // 1. Draw Blackboard
     ctx.fillStyle = "#222"; 
     ctx.fillRect(0, 0, w, h);
 
-    // 2. Logic
     if (this.levelCompleteTimer === 0 && this.isDrawing) {
       this.handleTracing(w, h);
     }
 
-    // 3. Render
     this.drawTemplate(ctx, w, h);
     this.drawUserInk(ctx);
     this.drawUI(ctx);
 
-    // 4. Level Completion Animation
     if (this.levelCompleteTimer > 0) {
       this.levelCompleteTimer++;
       this.drawSuccessEffect(ctx, w, h);
       
-      if (this.levelCompleteTimer > 80) { // Next level after pause
+      if (this.levelCompleteTimer > 80) { 
         this.currentLevel++;
         if (this.currentLevel >= this.levels.length) this.currentLevel = 0;
         this.resetLevel();
@@ -158,7 +152,7 @@ const Game5 = {
   },
 
   /* ==============================
-     TRACING LOGIC
+     TRACING LOGIC (UPDATED)
   ============================== */
   handleTracing(w, h) {
     const level = this.levels[this.currentLevel];
@@ -168,40 +162,46 @@ const Game5 = {
     const p1 = { x: stroke.x1 * w, y: stroke.y1 * h };
     const p2 = { x: stroke.x2 * w, y: stroke.y2 * h };
 
-    // Math: Distance logic
     const lineLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     const distToStart = Math.hypot(this.cursor.x - p1.x, this.cursor.y - p1.y);
     const distToLine = this.pointToLineDist(this.cursor.x, this.cursor.y, p1.x, p1.y, p2.x, p2.y);
 
-    // 1. Must be touching NEAR the line
-    if (distToLine < this.snapDistance) {
-      
-      const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
-      
-      // 2. Must be moving FORWARD (allows small jitter, but prevents backtracking)
-      if (newProgress > this.currentStrokeProgress - 0.05) {
-        
-        if (newProgress > this.currentStrokeProgress) {
-          this.currentStrokeProgress = newProgress;
-          this.tracePoints.push({ x: this.cursor.x, y: this.cursor.y });
-        }
+    // Rule 1: Must be near the line
+    if (distToLine > this.snapDistance) return;
 
-        // 3. Stroke Complete (> 95%)
-        if (this.currentStrokeProgress >= 0.95) {
-          this.completeStroke();
-        }
-      }
+    // Calculate projected progress (0.0 to 1.0)
+    const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
+
+    // Rule 2: START CHECK
+    // If we haven't started yet (progress is 0), you MUST touch near the start (first 10%)
+    if (this.currentStrokeProgress === 0 && newProgress > 0.1) return;
+
+    // Rule 3: NO TELEPORTING
+    // You cannot jump more than 'jumpLimit' (15%) forward in a single frame.
+    // This forces the user to drag along the line.
+    if (newProgress > this.currentStrokeProgress + this.jumpLimit) return;
+
+    // Rule 4: FORWARD ONLY
+    // You can't erase by going backward
+    if (newProgress > this.currentStrokeProgress) {
+      this.currentStrokeProgress = newProgress;
+      this.tracePoints.push({ x: this.cursor.x, y: this.cursor.y });
+    }
+
+    // Rule 5: COMPLETE
+    if (this.currentStrokeProgress >= 0.95) {
+      this.completeStroke();
     }
   },
 
   completeStroke() {
     this.activeStrokeIndex++;
     this.currentStrokeProgress = 0;
-    this.tracePoints = []; // Reset ink for the next line
+    this.tracePoints = []; 
     this.score += 10;
 
     if (this.activeStrokeIndex >= this.levels[this.currentLevel].strokes.length) {
-      this.levelCompleteTimer = 1; // Trigger win
+      this.levelCompleteTimer = 1; 
     }
   },
 
@@ -234,9 +234,10 @@ const Game5 = {
     // Draw Guidance Dots for the CURRENT stroke
     const active = level.strokes[this.activeStrokeIndex];
     if (active) {
-      // Start Dot (Yellow)
+      // Start Dot (Yellow) - Pulsing effect
+      const pulse = Math.sin(Date.now() / 200) * 5;
       ctx.fillStyle = "#FFCC00"; 
-      ctx.beginPath(); ctx.arc(active.x1 * w, active.y1 * h, 15, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(active.x1 * w, active.y1 * h, 15 + pulse, 0, Math.PI*2); ctx.fill();
 
       // End Dot (Red)
       ctx.fillStyle = "#FF4444"; 
@@ -249,7 +250,7 @@ const Game5 = {
 
     ctx.beginPath();
     ctx.lineWidth = 15;
-    ctx.strokeStyle = "#00FFFF"; // Cyan Chalk
+    ctx.strokeStyle = "#00FFFF"; 
     ctx.shadowBlur = 15;
     ctx.shadowColor = "cyan";
     ctx.lineCap = "round";
