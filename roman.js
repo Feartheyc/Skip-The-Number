@@ -4,8 +4,9 @@ const Game5 = {
   score: 0,
   
   // State
+  mode: "TRACE", // "TRACE" or "FREEHAND"
   currentLevel: 0,
-  tracePoints: [], // The trail of "chalk"
+  tracePoints: [], 
   activeStrokeIndex: 0, 
   
   // Input State
@@ -13,27 +14,27 @@ const Game5 = {
   cursor: { x: 0, y: 0 },
 
   // Configuration
-  snapDistance: 40, // How close to the line you must be
-  jumpLimit: 0.15,  // Max % you can skip in one frame
+  snapDistance: 45, // Slightly increased to make Freehand easier
+  jumpLimit: 0.15, 
 
   // Roman Numeral Data
   levels: [
     { 
       symbol: "I", 
-      number: "1", // <<< ADDED
+      number: "1", 
       strokes: [ { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 } ] 
     },
     { 
       symbol: "V", 
-      number: "5", // <<< ADDED
+      number: "5", 
       strokes: [
-        { x1: 0.3, y1: 0.2, x2: 0.5, y2: 0.8 }, // Down-Right
-        { x1: 0.5, y1: 0.8, x2: 0.7, y2: 0.2 }  // Up-Right
+        { x1: 0.3, y1: 0.2, x2: 0.5, y2: 0.8 }, 
+        { x1: 0.5, y1: 0.8, x2: 0.7, y2: 0.2 }  
       ]
     },
     { 
       symbol: "X", 
-      number: "10", // <<< ADDED
+      number: "10", 
       strokes: [
         { x1: 0.3, y1: 0.2, x2: 0.7, y2: 0.8 }, 
         { x1: 0.7, y1: 0.2, x2: 0.3, y2: 0.8 } 
@@ -41,19 +42,19 @@ const Game5 = {
     },
     { 
       symbol: "L", 
-      number: "50", // <<< ADDED
+      number: "50", 
       strokes: [
-        { x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8 }, // Down
-        { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 }  // Right
+        { x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8 }, 
+        { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 }  
       ]
     },
     { 
       symbol: "III", 
-      number: "3", // <<< ADDED
+      number: "3", 
       strokes: [
-        { x1: 0.35, y1: 0.2, x2: 0.35, y2: 0.8 }, // Left I
-        { x1: 0.45, y1: 0.2, x2: 0.45, y2: 0.8 }, // Right I
-        { x1: 0.60, y1: 0.2, x2: 0.60, y2: 0.8 }  // Third I
+        { x1: 0.35, y1: 0.2, x2: 0.35, y2: 0.8 },
+        { x1: 0.45, y1: 0.2, x2: 0.45, y2: 0.8 },
+        { x1: 0.60, y1: 0.2, x2: 0.60, y2: 0.8 }
       ]
     }
   ],
@@ -69,12 +70,26 @@ const Game5 = {
     this.running = true;
     this.score = 0;
     this.currentLevel = 0;
+    this.mode = "TRACE"; // Default
     this.resetLevel();
 
     if (!this.listenersAdded) {
       this.addInputListeners();
+      // Mode Switching Keys
+      window.addEventListener('keydown', (e) => {
+        if (e.key === '1') this.setMode("TRACE");
+        if (e.key === '2') this.setMode("FREEHAND");
+      });
       this.listenersAdded = true;
     }
+    
+    console.log("Game5 Init: Press 1 for Trace, 2 for Freehand");
+  },
+
+  setMode(newMode) {
+    this.mode = newMode;
+    this.resetLevel(); // Restart level to clear any partial drawing
+    console.log("Mode set to:", this.mode);
   },
 
   resetLevel() {
@@ -215,22 +230,38 @@ const Game5 = {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    // Draw Guides
     level.strokes.forEach((s, index) => {
       ctx.beginPath();
       ctx.lineWidth = 40;
       
-      if (index < this.activeStrokeIndex) {
-        ctx.strokeStyle = "#00FF66"; // Completed = Green
-      } else if (index === this.activeStrokeIndex) {
-        ctx.strokeStyle = "#444"; // Active = Dark Gray
-      } else {
-        ctx.strokeStyle = "#2a2a2a"; // Future = Very Dark
-      }
+      // LOGIC:
+      // If Trace Mode: Draw Active and Future strokes as gray guides.
+      // If Freehand Mode: Draw ONLY Completed strokes (so they see what they did).
       
-      ctx.moveTo(s.x1 * w, s.y1 * h);
-      ctx.lineTo(s.x2 * w, s.y2 * h);
-      ctx.stroke();
+      let shouldDraw = false;
+      let color = "";
+
+      if (index < this.activeStrokeIndex) {
+        // COMPLETED STROKE (Always Visible)
+        shouldDraw = true;
+        color = "#00FF66"; // Green
+      } 
+      else if (this.mode === "TRACE") {
+        // UNFINISHED STROKE (Only visible in Trace Mode)
+        shouldDraw = true;
+        if (index === this.activeStrokeIndex) {
+          color = "#444"; // Active = Dark Gray
+        } else {
+          color = "#2a2a2a"; // Future = Very Dark
+        }
+      }
+
+      if (shouldDraw) {
+        ctx.strokeStyle = color;
+        ctx.moveTo(s.x1 * w, s.y1 * h);
+        ctx.lineTo(s.x2 * w, s.y2 * h);
+        ctx.stroke();
+      }
     });
   },
 
@@ -261,11 +292,16 @@ const Game5 = {
     ctx.textBaseline = "top";
     ctx.fillText("Score: " + this.score, 20, 20);
 
-    // Current Number Display
+    // Mode Indicator
+    ctx.font = "20px Arial";
+    ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#FF4444";
+    ctx.fillText("Mode: " + this.mode, 20, 60);
+
+    // Number Hint
     const level = this.levels[this.currentLevel];
     ctx.textAlign = "center";
     ctx.font = "bold 50px Arial";
-    ctx.fillStyle = "#FFCC00"; // Gold color
+    ctx.fillStyle = "#FFCC00"; 
     ctx.fillText("Number: " + level.number, ctx.canvas.width / 2, 30);
   },
 
