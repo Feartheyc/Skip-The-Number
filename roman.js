@@ -14,6 +14,7 @@ const Game5 = {
   cursor: { x: 0, y: 0 },
 
   // Configuration
+  snapDistance: 45, 
   jumpLimit: 0.15, 
 
   // Roman Numeral Data
@@ -74,20 +75,14 @@ const Game5 = {
 
     if (!this.listenersAdded) {
       this.addInputListeners();
-      window.addEventListener('keydown', (e) => {
-        if (e.key === '1') this.setMode("TRACE");
-        if (e.key === '2') this.setMode("FREEHAND");
-      });
       this.listenersAdded = true;
     }
-    
-    console.log("Game5 Init: Press 1 for Trace, 2 for Freehand");
   },
 
   setMode(newMode) {
+    if (this.mode === newMode) return; // No change
     this.mode = newMode;
     this.resetLevel();
-    console.log("Mode set to:", this.mode);
   },
 
   resetLevel() {
@@ -99,27 +94,49 @@ const Game5 = {
   },
 
   /* ==============================
-     INPUT HANDLING
+     INPUT HANDLING (BUTTONS + DRAWING)
   ============================== */
   addInputListeners() {
     const canvas = document.getElementById('game_canvas');
 
-    canvas.addEventListener('mousedown', (e) => { this.isDrawing = true; this.updateCursor(e); });
-    window.addEventListener('mousemove', (e) => { if (this.isDrawing) this.updateCursor(e); });
-    window.addEventListener('mouseup', () => { this.isDrawing = false; this.tracePoints = []; });
-
-    canvas.addEventListener('touchstart', (e) => {
+    // MOUSE DOWN
+    canvas.addEventListener('mousedown', (e) => {
+      this.updateCursor(e);
+      if (this.checkButtonClicks()) return; // If button clicked, don't draw
       this.isDrawing = true;
+    });
+    // MOUSE MOVE
+    window.addEventListener('mousemove', (e) => {
+      if (this.isDrawing) this.updateCursor(e);
+    });
+    // MOUSE UP
+    window.addEventListener('mouseup', () => {
+      this.isDrawing = false;
+      this.tracePoints = []; 
+    });
+
+    // TOUCH START
+    canvas.addEventListener('touchstart', (e) => {
       this.updateCursor(e.touches[0]);
+      if (this.checkButtonClicks()) {
+         e.preventDefault(); 
+         return; 
+      }
+      this.isDrawing = true;
       e.preventDefault(); 
     }, {passive: false});
     
+    // TOUCH MOVE
     canvas.addEventListener('touchmove', (e) => {
       if (this.isDrawing) this.updateCursor(e.touches[0]);
       e.preventDefault();
     }, {passive: false});
 
-    window.addEventListener('touchend', () => { this.isDrawing = false; this.tracePoints = []; });
+    // TOUCH END
+    window.addEventListener('touchend', () => {
+      this.isDrawing = false;
+      this.tracePoints = [];
+    });
   },
 
   updateCursor(e) {
@@ -130,6 +147,40 @@ const Game5 = {
 
     this.cursor.x = (e.clientX - rect.left) * scaleX;
     this.cursor.y = (e.clientY - rect.top) * scaleY;
+  },
+
+  // RETURNS TRUE IF A BUTTON WAS CLICKED
+  checkButtonClicks() {
+    const canvas = document.getElementById('game_canvas');
+    const w = canvas.width;
+    const h = canvas.height;
+    
+    // Button Dimensions (Must match drawUI)
+    const btnW = 120;
+    const btnH = 40;
+    const btnY = h - 60;
+    
+    // Check Trace Button (Left)
+    const traceX = w / 2 - 130;
+    if (
+      this.cursor.x >= traceX && this.cursor.x <= traceX + btnW &&
+      this.cursor.y >= btnY && this.cursor.y <= btnY + btnH
+    ) {
+      this.setMode("TRACE");
+      return true;
+    }
+
+    // Check Freehand Button (Right)
+    const freeX = w / 2 + 10;
+    if (
+      this.cursor.x >= freeX && this.cursor.x <= freeX + btnW &&
+      this.cursor.y >= btnY && this.cursor.y <= btnY + btnH
+    ) {
+      this.setMode("FREEHAND");
+      return true;
+    }
+
+    return false;
   },
 
   /* ==============================
@@ -179,24 +230,18 @@ const Game5 = {
     const distToStart = Math.hypot(this.cursor.x - p1.x, this.cursor.y - p1.y);
     const distToLine = this.pointToLineDist(this.cursor.x, this.cursor.y, p1.x, p1.y, p2.x, p2.y);
 
-    // --- UPDATED LOGIC FOR FREEHAND ---
-    
-    // 1. DYNAMIC SNAP DISTANCE
-    // In Freehand (blind) mode, we allow you to be 100px off!
-    // In Trace (visible) mode, we require 45px accuracy.
+    // Freehand = More forgiving (100px), Trace = Strict (45px)
     const currentSnap = this.mode === "FREEHAND" ? 100 : 45;
 
     if (distToLine > currentSnap) return;
 
     const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
-
-    // 2. DYNAMIC START TOLERANCE
-    // In Freehand, finding the exact start pixel is hard, so we allow starting at 20%
+    
+    // Freehand = Forgiving Start (20%), Trace = Strict Start (10%)
     const startTolerance = this.mode === "FREEHAND" ? 0.2 : 0.1;
 
     if (this.currentStrokeProgress === 0 && newProgress > startTolerance) return;
 
-    // Rule 3: No teleporting forward
     if (newProgress > this.currentStrokeProgress + this.jumpLimit) return;
 
     if (newProgress > this.currentStrokeProgress) {
@@ -228,7 +273,6 @@ const Game5 = {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
 
-    // Draw Guides
     level.strokes.forEach((s, index) => {
       ctx.beginPath();
       ctx.lineWidth = 40;
@@ -237,12 +281,10 @@ const Game5 = {
       let color = "";
 
       if (index < this.activeStrokeIndex) {
-        // Completed strokes are always visible
         shouldDraw = true;
         color = "#00FF66"; 
       } 
       else if (this.mode === "TRACE") {
-        // Guides only visible in Trace Mode
         shouldDraw = true;
         color = index === this.activeStrokeIndex ? "#444" : "#2a2a2a";
       }
@@ -255,11 +297,10 @@ const Game5 = {
       }
     });
 
-    // --- START DOT (Crucial for Freehand) ---
-    // We ALWAYS show the pulsing start dot so the user knows WHERE to touch.
+    // Start Dot (Always Visible)
     const active = level.strokes[this.activeStrokeIndex];
     if (active) {
-      const pulse = Math.sin(Date.now() / 150) * 4; // Faster pulse
+      const pulse = Math.sin(Date.now() / 150) * 4;
       ctx.fillStyle = "#FFCC00"; 
       ctx.beginPath(); 
       ctx.arc(active.x1 * w, active.y1 * h, 12 + pulse, 0, Math.PI*2); 
@@ -287,29 +328,46 @@ const Game5 = {
   },
 
   drawUI(ctx) {
-    // Score
+    const w = ctx.canvas.width;
+    const h = ctx.canvas.height;
+
+    // 1. Draw Score
     ctx.fillStyle = "white";
     ctx.font = "bold 30px Arial";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillText("Score: " + this.score, 20, 20);
 
-    // Mode
-    ctx.font = "20px Arial";
-    ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#FF4444";
-    ctx.fillText("Mode: " + this.mode, 20, 60);
-
-    // Number Hint
+    // 2. Draw Number Hint
     const level = this.levels[this.currentLevel];
     ctx.textAlign = "center";
     ctx.font = "bold 50px Arial";
     ctx.fillStyle = "#FFCC00"; 
-    ctx.fillText("Number: " + level.number, ctx.canvas.width / 2, 30);
-    
-    // Instructions (Bottom)
-    ctx.font = "16px Arial";
-    ctx.fillStyle = "#888"; 
-    ctx.fillText("Press 1 for Trace Mode | Press 2 for Freehand", ctx.canvas.width / 2, ctx.canvas.height - 20);
+    ctx.fillText("Number: " + level.number, w / 2, 40);
+
+    // 3. Draw Buttons
+    const btnW = 120;
+    const btnH = 40;
+    const btnY = h - 60;
+    const traceX = w / 2 - 130;
+    const freeX = w / 2 + 10;
+
+    ctx.font = "bold 16px Arial";
+    ctx.textBaseline = "middle";
+
+    // Trace Button
+    ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#444";
+    ctx.fillRect(traceX, btnY, btnW, btnH);
+    ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(traceX, btnY, btnW, btnH);
+    ctx.fillStyle = this.mode === "TRACE" ? "black" : "white";
+    ctx.fillText("TRACE", traceX + btnW/2, btnY + btnH/2);
+
+    // Freehand Button
+    ctx.fillStyle = this.mode === "FREEHAND" ? "#FF4444" : "#444";
+    ctx.fillRect(freeX, btnY, btnW, btnH);
+    ctx.strokeRect(freeX, btnY, btnW, btnH);
+    ctx.fillStyle = this.mode === "FREEHAND" ? "white" : "white";
+    ctx.fillText("FREEHAND", freeX + btnW/2, btnY + btnH/2);
   },
 
   drawSuccessEffect(ctx, w, h) {
