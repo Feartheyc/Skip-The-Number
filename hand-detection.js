@@ -98,6 +98,31 @@ function onResults(results) {
 
   window.fingerPositions = [];
 
+  const canvas = document.getElementById("game_canvas");
+  const video = document.getElementById("input_video");
+
+  const rect = canvas.getBoundingClientRect();
+
+  const videoWidth = video.videoWidth || 640;
+  const videoHeight = video.videoHeight || 480;
+
+  const canvasRatio = rect.width / rect.height;
+  const videoRatio = videoWidth / videoHeight;
+
+  let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
+
+  if (canvasRatio > videoRatio) {
+    // canvas wider → video cropped top/bottom
+    drawWidth = rect.width;
+    drawHeight = rect.width / videoRatio;
+    offsetY = (drawHeight - rect.height) / 2;
+  } else {
+    // canvas taller → video cropped left/right
+    drawHeight = rect.height;
+    drawWidth = rect.height * videoRatio;
+    offsetX = (drawWidth - rect.width) / 2;
+  }
+
   if (results.multiHandLandmarks && results.multiHandedness) {
 
     for (let i = 0; i < results.multiHandLandmarks.length; i++) {
@@ -105,8 +130,8 @@ function onResults(results) {
       const landmarks = results.multiHandLandmarks[i];
       const handedness = results.multiHandedness[i].label;
 
-      const x = (1 - landmarks[8].x) * 640; // mirror
-      const y = landmarks[8].y * 480;
+      let x = (1 - landmarks[8].x) * drawWidth - offsetX;
+      let y = landmarks[8].y * drawHeight - offsetY;
 
       window.fingerPositions.push({
         x: x,
@@ -116,3 +141,7 @@ function onResults(results) {
     }
   }
 }
+
+
+
+

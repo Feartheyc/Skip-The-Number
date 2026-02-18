@@ -1,78 +1,74 @@
-/* GLOBAL LAYOUT */
 html, body {
   margin: 0;
   padding: 0;
   width: 100%;
   height: 100%;
   background: black;
-  overflow: hidden; /* Prevents scrollbars */
+  overflow: hidden;
   font-family: Arial, sans-serif;
-  touch-action: none; /* Prevents zooming/scrolling on tablets while playing */
+  touch-action: none;
 }
 
 #container {
   position: relative;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
 }
 
-/* CAMERA (visible during AR games) */
+/* Camera */
 #input_video {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: cover; /* Fills screen (might crop edges slightly) */
+  object-fit: cover;
+  transform: scaleX(-1);
   z-index: 0;
-  transform: scaleX(-1); /* Mirror effect */
 }
 
-/* GAME CANVAS (The drawing layer) */
+/* Canvas overlay */
 #game_canvas {
   position: absolute;
-  top: 0;
-  left: 0;
+  inset: 0;
   width: 100%;
   height: 100%;
   z-index: 1;
-  background: transparent;
+  pointer-events: none;
 }
 
-/* GAME MENU (Centered overlay) */
+/* MENU */
 #menu {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.85); /* Slightly transparent background */
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   color: white;
   z-index: 10;
+  padding: 2rem;
+  text-align: center;
 }
 
 #menu h1 {
-  margin-bottom: 30px;
-  font-size: 4vh; /* Responsive font size */
+  margin-bottom: 2rem;
+  font-size: clamp(24px, 4vw, 60px);
 }
 
 #menu button {
-  padding: 15px 40px;
-  margin: 10px;
-  font-size: 24px; /* Larger buttons for touch screens */
+  padding: clamp(12px, 2vh, 22px) clamp(24px, 4vw, 48px);
+  margin: 1vh;
+  font-size: clamp(16px, 2.5vw, 28px);
+  min-width: 180px;
   cursor: pointer;
   border: none;
-  border-radius: 8px;
+  border-radius: 10px;
   background-color: #00FFCC;
   color: black;
   font-weight: bold;
+  transition: transform 0.15s, background 0.15s;
 }
 
 #menu button:active {

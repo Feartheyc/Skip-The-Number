@@ -3,15 +3,15 @@ const Game1 = {
   centerX: null,
   centerY: null,
 
-  baseOuterRadius: 1000,
-  innerRadius: 970,
-  currentOuterRadius: 1000,
-  ringScale: 1.5,
+  baseOuterRadius: 200,
+  innerRadius: 170,
+  currentOuterRadius: 200,
 
   notes: [],
   noteSpeed: 1.8,
 
   score: 0,
+
   combo: 0,
   multiplier: 1,
 
@@ -24,10 +24,12 @@ const Game1 = {
   spawnTimer: null,
 
   pulseTime: 0,
-  pulseSpeed: 4,      // radians per second
+  pulseSpeed: 0.08,
   pulseAmount: 12,
 
-  mode: "default",
+  /* ================= MODE SYSTEM ================= */
+
+  mode: "default",   // "default" | "pattern"
 
   skipAmount: 3,
   gameTitle: "SKIP 3",
@@ -40,11 +42,10 @@ const Game1 = {
   /* ============================== */
   init() {
 
-    const rect = document
-      .getElementById("container")
-      .getBoundingClientRect();
+    const canvas = document.getElementById('game_canvas');
 
-    this.onResize(rect.width, rect.height);
+    this.centerX = canvas.width / 2;
+    this.centerY = canvas.height / 2;
 
     this.notes = [];
     this.currentNumber = 1;
@@ -60,41 +61,29 @@ const Game1 = {
     this.skipAmount = 3;
     this.gameTitle = "SKIP 3";
 
-    // speed per second relative to screen size
-    this.noteSpeed = this.baseOuterRadius * 0.6;
-
     if (this.spawnTimer) clearInterval(this.spawnTimer);
 
     this.spawnTimer = setInterval(() => {
       this.spawnNote();
     }, 1200);
 
+    /* KEYBOARD LISTENER */
     window.addEventListener("keydown", (e) => {
-      if (e.key === "1") this.activatePatternMode();
+
+      if (e.key === "1") {
+        this.activatePatternMode();
+      }
+
     });
   },
 
-  /* ============================== */
-  onResize(width, height) {
+  /* ================= PATTERN MODE ================= */
 
-    this.centerX = width / 2;
-    this.centerY = height / 2;
-
-    const base = Math.min(width, height);
-
-    this.baseOuterRadius = base * 0.25 * this.ringScale;
-    this.innerRadius = this.baseOuterRadius * 0.85;
-
-    this.currentOuterRadius = this.baseOuterRadius;
-
-    this.noteSpeed = this.baseOuterRadius * 0.6;
-  },
-
-  /* ============================== */
   activatePatternMode() {
 
     this.mode = "pattern";
 
+    // random values (max 5)
     this.pattern.skip = Math.floor(Math.random() * 5) + 1;
     this.pattern.collect = Math.floor(Math.random() * 5) + 1;
 
@@ -107,7 +96,7 @@ const Game1 = {
   spawnNote() {
 
     const angle = Math.random() * Math.PI * 2;
-    const spawnRadius = this.baseOuterRadius * 1.4;
+    const spawnRadius = 350;
 
     const numberToSpawn = this.currentNumber;
 
@@ -118,19 +107,19 @@ const Game1 = {
     this.notes.push({
       x: this.centerX + Math.cos(angle) * spawnRadius,
       y: this.centerY + Math.sin(angle) * spawnRadius,
-      radius: this.baseOuterRadius * 0.12,
+      radius: 25,
       value: numberToSpawn
     });
   },
 
   /* ============================== */
-  update(ctx, fingers, dt = 1 / 60) {
+  update(ctx, fingers) {
 
     const fingerInRing = this.isFingerInsideRing(fingers);
 
-    this.drawRings(ctx, fingerInRing, dt);
+    this.drawRings(ctx, fingerInRing);
     this.drawTitle(ctx);
-    this.drawNotes(ctx, dt);
+    this.drawNotes(ctx);
 
     fingers.forEach(finger => {
       this.drawFinger(ctx, finger.x, finger.y);
@@ -142,10 +131,12 @@ const Game1 = {
     this.drawHitText(ctx);
   },
 
-  /* ============================== */
+  /* ================= COLLECT LOGIC ================= */
+
   shouldCollect(number) {
 
     if (this.mode === "default") {
+      // multiples of skipAmount
       return number % this.skipAmount === 0;
     }
 
@@ -157,6 +148,7 @@ const Game1 = {
       const position =
         (number - 1) % cycleLength;
 
+      // skip first N, collect next M
       return position >= this.pattern.skip;
     }
 
@@ -187,22 +179,21 @@ const Game1 = {
     ctx.fillText(this.gameTitle, this.centerX, 50);
   },
 
+  /* ============================== */
   drawFinger(ctx, x, y) {
     ctx.fillStyle = "#00FFCC";
     ctx.beginPath();
-    ctx.arc(x, y, this.baseOuterRadius * 0.08, 0, 2 * Math.PI);
+    ctx.arc(x, y, 15, 0, 2 * Math.PI);
     ctx.fill();
   },
 
   /* ============================== */
-  drawRings(ctx, active, dt) {
+  drawRings(ctx, active) {
 
     let targetRadius = this.baseOuterRadius;
 
     if (active) {
-
-      this.pulseTime += this.pulseSpeed * dt;
-
+      this.pulseTime += this.pulseSpeed;
       const pulseOffset =
         Math.sin(this.pulseTime) * this.pulseAmount;
 
@@ -220,6 +211,9 @@ const Game1 = {
 
     this.currentOuterRadius +=
       (targetRadius - this.currentOuterRadius) * 0.12;
+
+    if (this.currentOuterRadius < this.baseOuterRadius)
+      this.currentOuterRadius = this.baseOuterRadius;
 
     ctx.lineWidth = 6;
     ctx.beginPath();
@@ -247,7 +241,7 @@ const Game1 = {
   },
 
   /* ============================== */
-  drawNotes(ctx, dt) {
+  drawNotes(ctx) {
 
     this.notes.forEach((note, index) => {
 
@@ -255,10 +249,8 @@ const Game1 = {
       const dy = this.centerY - note.y;
       const length = Math.sqrt(dx * dx + dy * dy);
 
-      const speed = this.noteSpeed * dt;
-
-      note.x += (dx / length) * speed;
-      note.y += (dy / length) * speed;
+      note.x += (dx / length) * this.noteSpeed;
+      note.y += (dy / length) * this.noteSpeed;
 
       const shouldCollect =
         this.shouldCollect(note.value);
@@ -276,6 +268,7 @@ const Game1 = {
       ctx.textBaseline = "middle";
       ctx.fillText(note.value, note.x, note.y);
 
+      // Missed correct note = combo break
       if (length < 15) {
 
         if (shouldCollect) {
@@ -343,6 +336,7 @@ const Game1 = {
     ctx.fillText("Score: " + this.score, 20, 40);
   },
 
+  /* ============================== */
   drawCombo(ctx) {
     ctx.fillStyle = "#FFD700";
     ctx.font = "bold 22px Arial";
@@ -353,6 +347,7 @@ const Game1 = {
     );
   },
 
+  /* ============================== */
   drawHitText(ctx) {
 
     if (this.hitTextTimer > 0) {
