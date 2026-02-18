@@ -10,7 +10,7 @@ const Game4 = {
   PIVOT_OFFSET: 120, 
   PIVOT_RADIUS: 15,
   ARM_LENGTH: 140,
-  BALL_RADIUS: 22,
+  BALL_RADIUS: 30,
   MAX_BALLS: 6,
   
   // Physics Tweaks
@@ -76,6 +76,8 @@ const Game4 = {
     this.spawnTimer = 0;
     this.lastTime = performance.now();
     this.gameStarted = false;
+    const video = document.getElementById("input_video");
+    if (video) video.style.opacity = "1";
     
     // Reset Score Anim
     this.scoreScale = 1;
@@ -84,7 +86,7 @@ const Game4 = {
     this.pivotLocked = { left: false, right: false };
     this.pivotLockTimer = { left: 0, right: 0 };
     this.armFlash = { left: 0, right: 0 };
-
+    
     this.initPose();
     this.resize()
   },
@@ -249,17 +251,19 @@ resize() {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
+     if (this.gameStarted) {
+       ctx.fillStyle = "black";
+        ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+        this.drawBalls(ctx);
+        this.drawArms(ctx);
+    }
 
     this.drawBackground(ctx);
     this.drawEdgeZones(ctx); 
     this.drawCross(ctx);     
     this.drawPivots(ctx);
     
-    if (this.gameStarted) {
-        this.drawBalls(ctx);
-        this.drawArms(ctx);
-    }
-
+    
     this.drawParticles(ctx);
     this.drawFloaters(ctx);
     this.drawUI(ctx);
@@ -472,6 +476,9 @@ resize() {
 
     if (this.pivotLocked.left && this.pivotLocked.right) {
         this.gameStarted = true;
+        
+    const video = document.getElementById("input_video");
+    if (video) video.style.opacity = "0";
         this.spawnFloatingText(cx, cy, "START!", "white");
     }
   },
