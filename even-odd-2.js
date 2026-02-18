@@ -515,6 +515,7 @@ const Game4 = {
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
   },
+  
 
   drawCross(ctx) {
     ctx.strokeStyle = "rgba(255,255,255,0.2)";
