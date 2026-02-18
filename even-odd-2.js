@@ -583,7 +583,7 @@ resize() {
   drawBalls(ctx) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = "bold 16px Arial";
+    ctx.font = `bold ${16*this.scale}px Arial`;
 
     for (let b of this.balls) {
       // Trail
