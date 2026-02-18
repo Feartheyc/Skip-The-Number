@@ -90,67 +90,100 @@ const Game4 = {
   },
 
   initPose() {
-    if (this.pose) return;
+  if (this.pose) return;
 
-    this.pose = new Pose({
-      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-    });
+  this.pose = new Pose({
+    locateFile: (file) =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+  });
 
-    this.pose.setOptions({
-      modelComplexity: 1,
-      smoothLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
+  this.pose.setOptions({
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6
+  });
 
-    this.pose.onResults(this.onPoseResults.bind(this));
+  this.pose.onResults(this.onPoseResults.bind(this));
 
-    window.sendFrameToPose = async (image) => {
-      if (!this.running) return;
+  // ✅ ADD LOCK
+  this.poseBusy = false;
+
+  window.sendFrameToPose = async (image) => {
+
+    if (!this.running) return;
+    if (this.poseBusy) return;   // ⭐ prevents crash
+
+    this.poseBusy = true;
+
+    try {
       await this.pose.send({ image });
-    };
-  },
+    } catch (e) {
+      console.error("POSE ERROR:", e);
+    }
+
+    this.poseBusy = false;
+  };
+},
+
 
   onPoseResults(results) {
-    if (!results.poseLandmarks) return;
-    const lm = results.poseLandmarks;
+  if (!results.poseLandmarks) return;
 
-    const mapPoint = (p) => ({
-      x: canvasElement.width - (p.x * canvasElement.width), 
-      y: p.y * canvasElement.height
-    });
+  const lm = results.poseLandmarks;
 
-    const updateArm = (side, elbowLm, wristLm) => {
-      const elbow = mapPoint(elbowLm);
-      const wrist = mapPoint(wristLm);
-
-      const vel = this.armVelocity[side];
-      if (vel.last) {
-        // Calculate velocity
-        const currVx = elbow.x - vel.last.x;
-        const currVy = elbow.y - vel.last.y;
-        
-        // Less smoothing for more responsive hits
-        vel.vx = vel.vx * 0.3 + currVx * 0.7;
-        vel.vy = vel.vy * 0.3 + currVy * 0.7;
-      }
-      vel.last = { x: elbow.x, y: elbow.y };
-
-      this.armData[side] = { elbow, wrist };
-    };
-
-    updateArm("left", lm[13], lm[15]);
-    updateArm("right", lm[14], lm[16]);
-  },
+  const mapPoint = (p) => ({
+  x: (1 - p.x) * canvasElement.width,
+  y: p.y * canvasElement.height
+});
 
 
+  const updateArm = (side, elbowLm, wristLm) => {
+
+    if (!elbowLm || !wristLm) return;
+
+    // relax visibility for debugging
+    if (elbowLm.visibility < 0.3 || wristLm.visibility < 0.3) return;
+
+    const elbow = mapPoint(elbowLm);
+    const wrist = mapPoint(wristLm);
+
+    const vel = this.armVelocity[side];
+
+    if (vel.last) {
+      const currVx = wrist.x - vel.last.x;
+      const currVy = wrist.y - vel.last.y;
+
+      vel.vx = vel.vx * 0.3 + currVx * 0.7;
+      vel.vy = vel.vy * 0.3 + currVy * 0.7;
+    }
+
+    vel.last = { x: wrist.x, y: wrist.y };
+
+    this.armData[side] = { elbow, wrist };
+  };
+
+  // ⭐ CRITICAL — THIS WAS MISSING
+  // swap because camera is mirrored
+updateArm("right", lm[14], lm[16]);
+updateArm("left", lm[13], lm[15]);
+
+},
 
 
-  resize() {
+
+resize() {
+
+  const rect = canvasElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+
+  canvasElement.width = rect.width * dpr;
+  canvasElement.height = rect.height * dpr;
 
   const w = canvasElement.width;
   const h = canvasElement.height;
 
+  // ✅ calculate scale FIRST
   this.scale = Math.min(
     w / this.BASE_WIDTH,
     h / this.BASE_HEIGHT
@@ -158,9 +191,18 @@ const Game4 = {
 
   if (!this.scale || this.scale <= 0) this.scale = 1;
 
+  // ✅ centered play area
+  this.playWidth = this.BASE_WIDTH * this.scale;
+  this.playHeight = this.BASE_HEIGHT * this.scale;
+
+  this.offsetX = (w - this.playWidth) / 2;
+  this.offsetY = (h - this.playHeight) / 2;
+
   this.CENTER_X = w / 2;
   this.CENTER_Y = h / 2;
 },
+
+
 
   /* ==============================
      UPDATE LOOP
@@ -204,6 +246,9 @@ const Game4 = {
         this.shakeTimer *= 0.9;
         if (this.shakeTimer < 0.5) this.shakeTimer = 0;
     }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
 
     this.drawBackground(ctx);
     this.drawEdgeZones(ctx); 
@@ -239,7 +284,7 @@ const Game4 = {
     const number = Math.floor(Math.random() * 100) + 1;
     const isOdd = number % 2 !== 0;
     const side = Math.floor(Math.random() * 4);
-    const speed = 4 + (Math.random() * 2)*this.scale; // Slightly faster base speed
+    const speed = (4 + Math.random() * 2)*this.scale; // Slightly faster base speed
 
     let x, y, vx, vy;
 
@@ -318,7 +363,7 @@ const Game4 = {
 
           // 3. MINIMUM SPEED CHECK
           // Ensure ball doesn't get stuck or stop
-          const minSpeed = 8;
+          const minSpeed = 8 * this.scale;
           const currentSpeed = Math.sqrt(b.vx**2 + b.vy**2);
           if (currentSpeed < minSpeed) {
               const scale = minSpeed / currentSpeed;
@@ -327,7 +372,7 @@ const Game4 = {
           }
 
           // 4. MAX SPEED CLAMP
-          const maxSpeed = 25;
+          const maxSpeed = 25 * this.scale;
           if (currentSpeed > maxSpeed) {
              const scale = maxSpeed / currentSpeed;
              b.vx *= scale;
@@ -335,8 +380,8 @@ const Game4 = {
           }
 
           // 5. PUSH OUT (Prevent sticking)
-          b.x += nx * (this.ballRadius - dist + 5);
-          b.y += ny * (this.ballRadius - dist + 5);
+          b.x += nx * (this.ballRadius - dist + 5 * this.scale);
+          b.y += ny * (this.ballRadius - dist + 5 * this.scale);
 
           b.hitCooldown = 12;
           this.shakeTimer = 8; // Screen Shake
@@ -414,7 +459,7 @@ const Game4 = {
         if (!arm?.elbow) return;
         const dist = Math.hypot(arm.elbow.x - px, arm.elbow.y - cy);
         
-        if (dist < 40*this.scale) {
+        if (dist < 120 *this.scale) {
             this.pivotLockTimer[side] += dt;
             if (this.pivotLockTimer[side] > this.LOCK_TIME) this.pivotLocked[side] = true;
         } else {
@@ -538,7 +583,7 @@ const Game4 = {
       if (b.trail.length > 1) {
           ctx.beginPath();
           ctx.strokeStyle = b.color;
-          ctx.lineWidth = b.scale * this.ballRadius * 0.8;
+          ctx.lineWidth = b.scale * this.ballRadius * 1.2;
           ctx.lineCap = "round";
           ctx.globalAlpha = 0.3;
           ctx.moveTo(b.trail[0].x, b.trail[0].y);
@@ -573,15 +618,19 @@ const Game4 = {
         
         // Flash White on Hit
         ctx.strokeStyle = this.armFlash[side] > 0 ? "white" : (side === "left" ? "#FF8888" : "#8888FF");
-        ctx.lineWidth = this.armFlash[side] > 0 ? 12 : 8;
+        ctx.lineWidth = this.armFlash[side] > 0 ? 12 *this.scale: 8 * this.scale;
         
         ctx.shadowBlur = 20;
         ctx.shadowColor = ctx.strokeStyle;
         ctx.stroke();
         ctx.shadowBlur = 0;
 
+        ctx.fillStyle = "yellow";
+      ctx.beginPath();
+      ctx.arc(arm.elbow.x, arm.elbow.y, 10 * this.scale, 0, Math.PI * 2);
+      ctx.fill();
         ctx.beginPath();
-        ctx.arc(tipX, tipY, 8, 0, Math.PI*2);
+        ctx.arc(tipX, tipY, 8*this.scale, 0, Math.PI*2);
         ctx.fillStyle = "#FFCC00";
         ctx.fill();
     };
@@ -593,13 +642,13 @@ const Game4 = {
   drawPivots(ctx) {
      const drawRing = (x, y, locked, progress) => {
          ctx.beginPath();
-         ctx.arc(x, y, 15, 0, Math.PI*2);
+         ctx.arc(x, y, this.pivotRadius, 0, Math.PI*2);
          ctx.fillStyle = locked ? "#00FF00" : "#444";
          ctx.fill();
          
          if (!locked && progress > 0) {
              ctx.beginPath();
-             ctx.arc(x, y, 25, -Math.PI/2, (-Math.PI/2) + (Math.PI*2 * progress));
+             ctx.arc(x, y, this.pivotRadius, -Math.PI/2, (-Math.PI/2) + (Math.PI*2 * progress));
              ctx.strokeStyle = "yellow";
              ctx.lineWidth = 4;
              ctx.stroke();
@@ -611,6 +660,7 @@ const Game4 = {
 
      drawRing(this.CENTER_X - this.pivotOffset, this.CENTER_Y, this.pivotLocked.left, leftProg);
      drawRing(this.CENTER_X + this.pivotOffset, this.CENTER_Y, this.pivotLocked.right, rightProg);
+     
   },
 
   drawParticles(ctx) {

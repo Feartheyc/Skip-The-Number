@@ -82,10 +82,16 @@ window.startGame = function (gameName) {
 
 function gameLoop(currentTime) {
 
-  const deltaTime = (currentTime - lastTime) / 1000; // seconds
+  const deltaTime = (currentTime - lastTime) / 1000;
   lastTime = currentTime;
 
   canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+  const video = document.getElementById("input_video");
+
+  if (window.sendFrameToPose && video && video.readyState >= 2) {
+    window.sendFrameToPose(video);
+  }
 
   if (window.currentGame && window.currentGame.update) {
     window.currentGame.update(
@@ -97,5 +103,6 @@ function gameLoop(currentTime) {
 
   requestAnimationFrame(gameLoop);
 }
+
 
 requestAnimationFrame(gameLoop);
