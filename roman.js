@@ -27,7 +27,7 @@ const Game5 = {
   snapDistance: 45, 
   jumpLimit: 0.15, 
 
-  // Roman Numeral Data (FIXED: III is perfectly symmetrical now)
+  // Roman Numeral Data
   levels: [
     { symbol: "I", number: "1", strokes: [ { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 } ] },
     { symbol: "V", number: "5", strokes: [
@@ -43,9 +43,9 @@ const Game5 = {
         { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 }  
       ] },
     { symbol: "III", number: "3", strokes: [
-        { x1: 0.3, y1: 0.2, x2: 0.3, y2: 0.8 },
-        { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 },
-        { x1: 0.7, y1: 0.2, x2: 0.7, y2: 0.8 }
+        { x1: 0.35, y1: 0.2, x2: 0.35, y2: 0.8 },
+        { x1: 0.45, y1: 0.2, x2: 0.45, y2: 0.8 },
+        { x1: 0.55, y1: 0.2, x2: 0.55, y2: 0.8 }
       ] }
   ],
 
@@ -55,7 +55,7 @@ const Game5 = {
   offCtx: null, 
 
   /* ==============================
-     INIT & HIGH-DPI SCALING
+     INIT
   ============================== */
   init() {
     this.running = true;
@@ -71,7 +71,6 @@ const Game5 = {
         this.offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
     }
 
-    // Generate perfect pixel templates
     this.levels.forEach(level => {
         let pathStrokes = level.strokes.map(s => [ {x: s.x1, y: s.y1}, {x: s.x2, y: s.y2} ]);
         level.templateData = this.rasterizeStrokes(pathStrokes);
@@ -86,11 +85,12 @@ const Game5 = {
     }
   },
 
+  // --- THE FIX: Bypassing the Window Zoom Bug ---
   resizeCanvas() {
     const canvas = document.getElementById('game_canvas');
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = window.innerWidth * dpr;
-    canvas.height = window.innerHeight * dpr;
+    // Lock the internal resolution directly to the CSS box size, ignoring window zoom entirely.
+    canvas.width = canvas.clientWidth || window.innerWidth;
+    canvas.height = canvas.clientHeight || window.innerHeight;
   },
 
   setMode(newMode) {
@@ -114,8 +114,18 @@ const Game5 = {
     this.cursorColor = "white"; 
   },
 
+  getPoint(sx, sy, w, h) {
+      const size = Math.min(w, h) * 0.75; 
+      const cx = w / 2;
+      const cy = h / 2 - 30; 
+      return {
+          x: cx + (sx - 0.5) * size,
+          y: cy + (sy - 0.5) * size
+      };
+  },
+
   /* ==============================
-     INPUT HANDLING
+     INPUT HANDLING (Locked to Ink)
   ============================== */
   addInputListeners() {
     const canvas = document.getElementById('game_canvas');
@@ -153,7 +163,7 @@ const Game5 = {
             this.tracePoints = []; 
             this.cursorColor = "white"; 
         } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
-            this.submitTimer = 120; // 2 seconds to allow kids to pause between strokes
+            this.submitTimer = 120; 
         }
     };
 
@@ -165,13 +175,20 @@ const Game5 = {
     window.addEventListener('touchend', endDraw);
   },
 
+  // --- THE FIX: Bulletproof Coordinate Mapping ---
   updateCursor(e) {
     const canvas = document.getElementById('game_canvas');
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    this.cursor.x = (e.clientX - rect.left) * scaleX;
-    this.cursor.y = (e.clientY - rect.top) * scaleY;
+    
+    if (e.touches && e.touches.length > 0) {
+        // Tablets/Phones
+        const rect = canvas.getBoundingClientRect();
+        this.cursor.x = (e.touches[0].clientX - rect.left) * (canvas.width / rect.width);
+        this.cursor.y = (e.touches[0].clientY - rect.top) * (canvas.height / rect.height);
+    } else {
+        // Desktop/Mouse (offsetX/Y is natively immune to CSS zooming bugs!)
+        this.cursor.x = e.offsetX * (canvas.width / canvas.clientWidth);
+        this.cursor.y = e.offsetY * (canvas.height / canvas.clientHeight);
+    }
   },
 
   checkButtonClicks() {
@@ -261,8 +278,8 @@ const Game5 = {
     const stroke = level.strokes[this.activeStrokeIndex];
     if (!stroke) return;
 
-    const p1 = { x: stroke.x1 * w, y: stroke.y1 * h };
-    const p2 = { x: stroke.x2 * w, y: stroke.y2 * h };
+    const p1 = this.getPoint(stroke.x1, stroke.y1, w, h);
+    const p2 = this.getPoint(stroke.x2, stroke.y2, w, h);
 
     const lineLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     const distToStart = Math.hypot(this.cursor.x - p1.x, this.cursor.y - p1.y);
@@ -330,9 +347,6 @@ const Game5 = {
       let coverage = templateInk === 0 ? 0 : intersection / templateInk;
       let neatness = userInk === 0 ? 0 : intersection / userInk;
 
-      console.log(`Checking shape... Coverage: ${(coverage*100).toFixed(0)}%, Neatness: ${(neatness*100).toFixed(0)}%`);
-
-      // HIGHLY forgiving thresholds: 40% of shape covered, and up to 75% of ink can be messy.
       if (coverage > 0.40 && neatness > 0.25) { 
           this.levelCompleteTimer = 1;
           this.score += 20; 
@@ -348,15 +362,12 @@ const Game5 = {
       }
   },
 
-  // Flattens aspect ratio AND removes stray dots
   rasterizeStrokes(strokes) {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       let validStrokes = [];
 
-      // 1. FILTER OUT STRAY TAPS & GET BOUNDS
       strokes.forEach(stroke => {
           if (stroke.length < 2) return;
-          
           let sMinX = Infinity, sMaxX = -Infinity, sMinY = Infinity, sMaxY = -Infinity;
           stroke.forEach(pt => {
               if (pt.x < sMinX) sMinX = pt.x;
@@ -365,9 +376,7 @@ const Game5 = {
               if (pt.y > sMaxY) sMaxY = pt.y;
           });
 
-          // Ignore tiny accidental dots that mess up the bounding box
-          if ((sMaxX - sMinX) < 0.01 && (sMaxY - sMinY) < 0.01) return;
-
+          if ((sMaxX - sMinX) < 0.001 && (sMaxY - sMinY) < 0.001) return;
           validStrokes.push(stroke);
 
           if (sMinX < minX) minX = sMinX;
@@ -379,20 +388,16 @@ const Game5 = {
       const ctx = this.offCtx;
       ctx.clearRect(0,0,64,64);
 
-      if (validStrokes.length === 0) {
-          return ctx.getImageData(0,0,64,64).data;
-      }
+      if (validStrokes.length === 0) return ctx.getImageData(0,0,64,64).data;
 
       let w = maxX - minX; let h = maxY - minY;
       let cx = minX + w/2; let cy = minY + h/2;
 
-      // 2. DRAW NORMALIZED SHAPE
-      ctx.lineWidth = 18; // Super thick virtual ink so wobbly lines still pass
+      ctx.lineWidth = 18; 
       ctx.lineCap = "round"; ctx.lineJoin = "round";
       ctx.strokeStyle = "white";
 
       let stretchX = w; let stretchY = h;
-      // Prevent straight lines from getting infinitely fat
       if (w < h * 0.25) stretchX = h; 
       if (h < w * 0.25) stretchY = w;
       if (stretchX < 0.001) stretchX = 1;
@@ -428,11 +433,15 @@ const Game5 = {
                   index === this.activeStrokeIndex ? "#555" : "#2a2a2a";
 
       ctx.strokeStyle = color;
-      ctx.moveTo(s.x1 * w, s.y1 * h);
-      ctx.lineTo(s.x2 * w, s.y2 * h);
+      
+      let p1 = this.getPoint(s.x1, s.y1, w, h);
+      let p2 = this.getPoint(s.x2, s.y2, w, h);
+      
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
       ctx.stroke();
 
-      if (index === this.activeStrokeIndex) this.drawArrow(ctx, s.x1*w, s.y1*h, s.x2*w, s.y2*h, baseUnit);
+      if (index === this.activeStrokeIndex) this.drawArrow(ctx, p1.x, p1.y, p2.x, p2.y, baseUnit);
     });
 
     const active = level.strokes[this.activeStrokeIndex];
@@ -440,7 +449,8 @@ const Game5 = {
       const pulse = Math.sin(Date.now() / 150) * (baseUnit * 0.01);
       ctx.fillStyle = "#FFCC00"; 
       ctx.beginPath(); 
-      ctx.arc(active.x1 * w, active.y1 * h, (baseUnit * 0.03) + pulse, 0, Math.PI*2); 
+      let startP = this.getPoint(active.x1, active.y1, w, h);
+      ctx.arc(startP.x, startP.y, (baseUnit * 0.03) + pulse, 0, Math.PI*2); 
       ctx.fill();
     }
   },
@@ -506,7 +516,7 @@ const Game5 = {
     ctx.shadowBlur = 0;
 
     if (this.mode === "FREEHAND" && this.submitTimer > 0 && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
-        let progress = this.submitTimer / 120; // Matches 2 second timer
+        let progress = this.submitTimer / 120; 
         let barW = baseUnit * 0.4;
         ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
         ctx.fillRect(w/2 - barW/2, baseUnit * 0.15, barW, baseUnit*0.015);
@@ -573,12 +583,12 @@ const Game5 = {
 
   spawnParticle(x, y, burst = false, baseUnit) {
     const angle = Math.random() * Math.PI * 2;
-    const mult = baseUnit * 0.005; 
+    const mult = baseUnit ? baseUnit * 0.005 : 2; 
     const speed = burst ? (Math.random() * 5 + 2) * mult : (Math.random() * 2 + 1) * mult;
     this.particles.push({ 
         x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, 
         life: 1.0, color: `hsl(${Math.random()*60 + 160}, 100%, 70%)`,
-        size: baseUnit * 0.008 
+        size: baseUnit ? baseUnit * 0.008 : 4
     });
   },
   
@@ -589,10 +599,10 @@ const Game5 = {
       } 
   },
   
-  drawParticles(ctx) { 
+  drawParticles(ctx, baseUnit) { 
       for (let p of this.particles) { 
           ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.beginPath(); 
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); 
+          ctx.arc(p.x, p.y, p.size || (baseUnit*0.008), 0, Math.PI*2); ctx.fill(); 
       } 
       ctx.globalAlpha = 1.0; 
   }
