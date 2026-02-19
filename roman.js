@@ -27,7 +27,7 @@ const Game5 = {
   snapDistance: 45, 
   jumpLimit: 0.15, 
 
-  // Roman Numeral Data
+  // Roman Numeral Data (FIXED: III is perfectly symmetrical now)
   levels: [
     { symbol: "I", number: "1", strokes: [ { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 } ] },
     { symbol: "V", number: "5", strokes: [
@@ -43,19 +43,19 @@ const Game5 = {
         { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 }  
       ] },
     { symbol: "III", number: "3", strokes: [
-        { x1: 0.35, y1: 0.2, x2: 0.35, y2: 0.8 },
-        { x1: 0.45, y1: 0.2, x2: 0.45, y2: 0.8 },
-        { x1: 0.60, y1: 0.2, x2: 0.60, y2: 0.8 }
+        { x1: 0.3, y1: 0.2, x2: 0.3, y2: 0.8 },
+        { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 },
+        { x1: 0.7, y1: 0.2, x2: 0.7, y2: 0.8 }
       ] }
   ],
 
   levelCompleteTimer: 0,
-  levelFailedTimer: 0, // <<< NEW: Tracks failure animation
+  levelFailedTimer: 0, 
   listenersAdded: false,
   offCtx: null, 
 
   /* ==============================
-     INIT
+     INIT & HIGH-DPI SCALING
   ============================== */
   init() {
     this.running = true;
@@ -71,6 +71,7 @@ const Game5 = {
         this.offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
     }
 
+    // Generate perfect pixel templates
     this.levels.forEach(level => {
         let pathStrokes = level.strokes.map(s => [ {x: s.x1, y: s.y1}, {x: s.x2, y: s.y2} ]);
         level.templateData = this.rasterizeStrokes(pathStrokes);
@@ -87,8 +88,9 @@ const Game5 = {
 
   resizeCanvas() {
     const canvas = document.getElementById('game_canvas');
-    canvas.width = window.innerWidth;
-    canvas.height = window.innerHeight;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = window.innerWidth * dpr;
+    canvas.height = window.innerHeight * dpr;
   },
 
   setMode(newMode) {
@@ -106,7 +108,7 @@ const Game5 = {
     this.submitTimer = 0;
 
     this.levelCompleteTimer = 0;
-    this.levelFailedTimer = 0; // Reset fail state
+    this.levelFailedTimer = 0; 
     this.isDrawing = false;
     this.particles = [];
     this.cursorColor = "white"; 
@@ -124,7 +126,6 @@ const Game5 = {
         this.isDrawing = true;
 
         if (this.mode === "FREEHAND") {
-            // If they start drawing while the fail screen is up, instantly clear it
             if (this.levelFailedTimer > 0) {
                 this.levelFailedTimer = 0;
                 this.freehandStrokes = [];
@@ -152,7 +153,7 @@ const Game5 = {
             this.tracePoints = []; 
             this.cursorColor = "white"; 
         } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
-            this.submitTimer = 90; // Start 1.5s countdown to check
+            this.submitTimer = 120; // 2 seconds to allow kids to pause between strokes
         }
     };
 
@@ -174,10 +175,16 @@ const Game5 = {
   },
 
   checkButtonClicks() {
-    const canvas = document.getElementById('game_canvas');
-    const w = canvas.width; const h = canvas.height;
-    const btnW = 140; const btnH = 50; const btnY = h - 80; 
-    const traceX = w / 2 - 150; const freeX = w / 2 + 10;
+    const w = document.getElementById('game_canvas').width;
+    const h = document.getElementById('game_canvas').height;
+    const baseUnit = Math.min(w, h);
+    
+    const btnW = Math.max(140, baseUnit * 0.3); 
+    const btnH = Math.max(40, baseUnit * 0.1); 
+    const btnY = h - btnH - (baseUnit * 0.05); 
+    
+    const traceX = w / 2 - btnW - (baseUnit * 0.02); 
+    const freeX = w / 2 + (baseUnit * 0.02);
 
     if (this.cursor.x >= traceX && this.cursor.x <= traceX + btnW && this.cursor.y >= btnY && this.cursor.y <= btnY + btnH) {
       this.setMode("TRACE"); return true;
@@ -196,40 +203,39 @@ const Game5 = {
 
     const w = ctx.canvas.width;
     const h = ctx.canvas.height;
+    const baseUnit = Math.min(w, h); 
 
     ctx.fillStyle = "#222"; 
     ctx.fillRect(0, 0, w, h);
 
     ctx.save();
     if (this.shakeTimer > 0) {
-        ctx.translate((Math.random()-0.5)*20, (Math.random()-0.5)*20);
+        const shakeAmt = baseUnit * 0.02;
+        ctx.translate((Math.random()-0.5)*shakeAmt, (Math.random()-0.5)*shakeAmt);
         this.shakeTimer--;
     }
 
-    // Only process drawing if no animation is currently playing
     if (this.levelCompleteTimer === 0 && this.levelFailedTimer === 0) {
         if (this.mode === "TRACE" && this.isDrawing) {
-            this.handleTracing(w, h);
+            this.handleTracing(w, h, baseUnit);
         } else if (this.mode === "FREEHAND") {
-            this.handleFreehand();
+            this.handleFreehand(baseUnit);
         }
     }
     
     this.updateParticles();
 
-    this.drawTemplate(ctx, w, h);
-    this.drawUserInk(ctx);
-    this.drawParticles(ctx); 
-    this.drawCursor(ctx); 
+    this.drawTemplate(ctx, w, h, baseUnit);
+    this.drawUserInk(ctx, baseUnit);
+    this.drawParticles(ctx, baseUnit); 
+    this.drawCursor(ctx, baseUnit); 
     
     ctx.restore(); 
-    this.drawUI(ctx);
+    this.drawUI(ctx, w, h, baseUnit);
 
-    // --- SUCCESS LOGIC ---
     if (this.levelCompleteTimer > 0) {
       this.levelCompleteTimer++;
-      this.drawSuccessEffect(ctx, w, h);
-      
+      this.drawSuccessEffect(ctx, w, h, baseUnit);
       if (this.levelCompleteTimer > 80) { 
         this.currentLevel++;
         if (this.currentLevel >= this.levels.length) this.currentLevel = 0;
@@ -237,15 +243,12 @@ const Game5 = {
       }
     }
 
-    // --- FAIL LOGIC ---
     if (this.levelFailedTimer > 0) {
         this.levelFailedTimer++;
-        this.drawFailEffect(ctx, w, h);
-        
-        // Wait 2 seconds (120 frames) before clearing board
+        this.drawFailEffect(ctx, w, h, baseUnit);
         if (this.levelFailedTimer > 120) {
             this.levelFailedTimer = 0;
-            this.freehandStrokes = []; // Clear the bad drawing
+            this.freehandStrokes = []; 
         }
     }
   },
@@ -253,7 +256,7 @@ const Game5 = {
   /* ==============================
      1. TRACE MODE LOGIC 
   ============================== */
-  handleTracing(w, h) {
+  handleTracing(w, h, baseUnit) {
     const level = this.levels[this.currentLevel];
     const stroke = level.strokes[this.activeStrokeIndex];
     if (!stroke) return;
@@ -265,29 +268,31 @@ const Game5 = {
     const distToStart = Math.hypot(this.cursor.x - p1.x, this.cursor.y - p1.y);
     const distToLine = this.pointToLineDist(this.cursor.x, this.cursor.y, p1.x, p1.y, p2.x, p2.y);
 
-    if (distToLine > 60) { this.cursorColor = "#FF4444"; return; }
+    const snapAllowed = baseUnit * 0.12; 
+
+    if (distToLine > snapAllowed) { this.cursorColor = "#FF4444"; return; }
 
     const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
     
     if (this.currentStrokeProgress === 0 && newProgress > 0.15) { this.cursorColor = "#FF4444"; return; }
-    if (newProgress > this.currentStrokeProgress + this.jumpLimit) return; 
+    if (newProgress > this.currentStrokeProgress + 0.15) return; 
 
     if (newProgress > this.currentStrokeProgress) {
       this.currentStrokeProgress = newProgress;
       this.tracePoints.push({ x: this.cursor.x, y: this.cursor.y });
       this.cursorColor = "#00FFCC"; 
-      if (Math.random() > 0.5) this.spawnParticle(this.cursor.x, this.cursor.y);
+      if (Math.random() > 0.5) this.spawnParticle(this.cursor.x, this.cursor.y, false, baseUnit);
     }
 
-    if (this.currentStrokeProgress >= 0.95) this.completeStroke();
+    if (this.currentStrokeProgress >= 0.95) this.completeStroke(baseUnit);
   },
 
-  completeStroke() {
+  completeStroke(baseUnit) {
     this.activeStrokeIndex++;
     this.currentStrokeProgress = 0;
     this.tracePoints = []; 
     this.score += 10;
-    for(let i=0; i<20; i++) this.spawnParticle(this.cursor.x, this.cursor.y, true);
+    for(let i=0; i<20; i++) this.spawnParticle(this.cursor.x, this.cursor.y, true, baseUnit);
 
     if (this.activeStrokeIndex >= this.levels[this.currentLevel].strokes.length) {
       this.levelCompleteTimer = 1; 
@@ -297,24 +302,22 @@ const Game5 = {
   /* ==============================
      2. FREEHAND MODE LOGIC
   ============================== */
-  handleFreehand() {
+  handleFreehand(baseUnit) {
       if (!this.isDrawing && this.freehandStrokes.length > 0) {
           if (this.submitTimer > 0) {
               this.submitTimer--;
               if (this.submitTimer <= 0) {
-                  this.evaluateShape();
+                  this.evaluateShape(baseUnit);
               }
           }
       }
   },
 
-  evaluateShape() {
+  evaluateShape(baseUnit) {
       let userData = this.rasterizeStrokes(this.freehandStrokes);
       let targetData = this.levels[this.currentLevel].templateData;
 
-      let intersection = 0;
-      let templateInk = 0;
-      let userInk = 0;
+      let intersection = 0, templateInk = 0, userInk = 0;
 
       for(let i = 3; i < userData.length; i += 4) {
           let u = userData[i] > 128;
@@ -327,52 +330,75 @@ const Game5 = {
       let coverage = templateInk === 0 ? 0 : intersection / templateInk;
       let neatness = userInk === 0 ? 0 : intersection / userInk;
 
-      if (coverage > 0.55 && neatness > 0.40) { 
+      console.log(`Checking shape... Coverage: ${(coverage*100).toFixed(0)}%, Neatness: ${(neatness*100).toFixed(0)}%`);
+
+      // HIGHLY forgiving thresholds: 40% of shape covered, and up to 75% of ink can be messy.
+      if (coverage > 0.40 && neatness > 0.25) { 
           this.levelCompleteTimer = 1;
           this.score += 20; 
           this.cursorColor = "#00FFCC";
           let lastPoint = this.freehandStrokes[this.freehandStrokes.length-1].slice(-1)[0];
           if (lastPoint) {
-              for(let i=0; i<40; i++) this.spawnParticle(lastPoint.x, lastPoint.y, true);
+              for(let i=0; i<40; i++) this.spawnParticle(lastPoint.x, lastPoint.y, true, baseUnit);
           }
       } else {
-          // FAILURE TRIGGER
           this.levelFailedTimer = 1;
           this.shakeTimer = 25; 
           this.cursorColor = "#FF4444";
       }
   },
 
+  // Flattens aspect ratio AND removes stray dots
   rasterizeStrokes(strokes) {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      strokes.forEach(stroke => {
-          stroke.forEach(pt => {
-              if (pt.x < minX) minX = pt.x;
-              if (pt.x > maxX) maxX = pt.x;
-              if (pt.y < minY) minY = pt.y;
-              if (pt.y > maxY) maxY = pt.y;
-          });
-      });
+      let validStrokes = [];
 
-      let w = maxX - minX;
-      let h = maxY - minY;
-      let cx = minX + w/2;
-      let cy = minY + h/2;
+      // 1. FILTER OUT STRAY TAPS & GET BOUNDS
+      strokes.forEach(stroke => {
+          if (stroke.length < 2) return;
+          
+          let sMinX = Infinity, sMaxX = -Infinity, sMinY = Infinity, sMaxY = -Infinity;
+          stroke.forEach(pt => {
+              if (pt.x < sMinX) sMinX = pt.x;
+              if (pt.x > sMaxX) sMaxX = pt.x;
+              if (pt.y < sMinY) sMinY = pt.y;
+              if (pt.y > sMaxY) sMaxY = pt.y;
+          });
+
+          // Ignore tiny accidental dots that mess up the bounding box
+          if ((sMaxX - sMinX) < 0.01 && (sMaxY - sMinY) < 0.01) return;
+
+          validStrokes.push(stroke);
+
+          if (sMinX < minX) minX = sMinX;
+          if (sMaxX > maxX) maxX = sMaxX;
+          if (sMinY < minY) minY = sMinY;
+          if (sMaxY > maxY) maxY = sMaxY;
+      });
 
       const ctx = this.offCtx;
       ctx.clearRect(0,0,64,64);
-      ctx.lineWidth = 12; 
-      ctx.lineCap = "round";
-      ctx.lineJoin = "round";
+
+      if (validStrokes.length === 0) {
+          return ctx.getImageData(0,0,64,64).data;
+      }
+
+      let w = maxX - minX; let h = maxY - minY;
+      let cx = minX + w/2; let cy = minY + h/2;
+
+      // 2. DRAW NORMALIZED SHAPE
+      ctx.lineWidth = 18; // Super thick virtual ink so wobbly lines still pass
+      ctx.lineCap = "round"; ctx.lineJoin = "round";
       ctx.strokeStyle = "white";
 
-      let stretchX = w > h * 0.2 ? w : h; 
-      let stretchY = h > w * 0.2 ? h : w;
+      let stretchX = w; let stretchY = h;
+      // Prevent straight lines from getting infinitely fat
+      if (w < h * 0.25) stretchX = h; 
+      if (h < w * 0.25) stretchY = w;
       if (stretchX < 0.001) stretchX = 1;
       if (stretchY < 0.001) stretchY = 1;
 
-      strokes.forEach(stroke => {
-          if(stroke.length === 0) return;
+      validStrokes.forEach(stroke => {
           ctx.beginPath();
           for(let i=0; i<stroke.length; i++) {
               let px = 32 + ((stroke[i].x - cx) / stretchX) * 40;
@@ -387,9 +413,9 @@ const Game5 = {
   },
 
   /* ==============================
-     DRAWING HELPERS
+     DRAWING HELPERS 
   ============================== */
-  drawTemplate(ctx, w, h) {
+  drawTemplate(ctx, w, h, baseUnit) {
     if (this.mode === "FREEHAND") return; 
 
     const level = this.levels[this.currentLevel];
@@ -397,7 +423,7 @@ const Game5 = {
 
     level.strokes.forEach((s, index) => {
       ctx.beginPath();
-      ctx.lineWidth = 40;
+      ctx.lineWidth = baseUnit * 0.06;
       let color = index < this.activeStrokeIndex ? "#00FF66" : 
                   index === this.activeStrokeIndex ? "#555" : "#2a2a2a";
 
@@ -406,38 +432,38 @@ const Game5 = {
       ctx.lineTo(s.x2 * w, s.y2 * h);
       ctx.stroke();
 
-      if (index === this.activeStrokeIndex) this.drawArrow(ctx, s.x1*w, s.y1*h, s.x2*w, s.y2*h);
+      if (index === this.activeStrokeIndex) this.drawArrow(ctx, s.x1*w, s.y1*h, s.x2*w, s.y2*h, baseUnit);
     });
 
     const active = level.strokes[this.activeStrokeIndex];
     if (active) {
-      const pulse = Math.sin(Date.now() / 150) * 4;
+      const pulse = Math.sin(Date.now() / 150) * (baseUnit * 0.01);
       ctx.fillStyle = "#FFCC00"; 
-      ctx.beginPath(); ctx.arc(active.x1 * w, active.y1 * h, 14 + pulse, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); 
+      ctx.arc(active.x1 * w, active.y1 * h, (baseUnit * 0.03) + pulse, 0, Math.PI*2); 
+      ctx.fill();
     }
   },
 
-  drawArrow(ctx, x1, y1, x2, y2) {
+  drawArrow(ctx, x1, y1, x2, y2, baseUnit) {
     const angle = Math.atan2(y2 - y1, x2 - x1);
+    const size = baseUnit * 0.02; 
     ctx.save(); ctx.translate((x1 + x2)/2, (y1 + y2)/2); ctx.rotate(angle);
     ctx.fillStyle = "rgba(255,255,255,0.3)";
-    ctx.beginPath(); ctx.moveTo(-12, -12); ctx.lineTo(12, 0); ctx.lineTo(-12, 12); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(-size, -size); ctx.lineTo(size, 0); ctx.lineTo(-size, size); ctx.fill();
     ctx.restore();
   },
 
-  drawUserInk(ctx) {
-    ctx.lineWidth = 20;
+  drawUserInk(ctx, baseUnit) {
+    ctx.lineWidth = baseUnit * 0.04; 
     
-    // Turn ink red if they failed
     if (this.levelFailedTimer > 0) {
-        ctx.strokeStyle = "#FF4444"; 
-        ctx.shadowColor = "red";
+        ctx.strokeStyle = "#FF4444"; ctx.shadowColor = "red";
     } else {
-        ctx.strokeStyle = "#00FFFF"; 
-        ctx.shadowColor = "cyan";
+        ctx.strokeStyle = "#00FFFF"; ctx.shadowColor = "cyan";
     }
     
-    ctx.shadowBlur = 15;
+    ctx.shadowBlur = baseUnit * 0.02;
     ctx.lineCap = "round"; ctx.lineJoin = "round";
 
     if (this.mode === "TRACE" && this.tracePoints.length > 1) {
@@ -458,42 +484,46 @@ const Game5 = {
     ctx.shadowBlur = 0;
   },
 
-  drawCursor(ctx) {
-      if (this.levelFailedTimer > 0 || this.levelCompleteTimer > 0) return; // Hide cursor during animations
+  drawCursor(ctx, baseUnit) {
+      if (this.levelFailedTimer > 0 || this.levelCompleteTimer > 0) return; 
       
       ctx.beginPath(); ctx.fillStyle = this.cursorColor;
-      ctx.arc(this.cursor.x, this.cursor.y, 12, 0, Math.PI*2); ctx.fill();
+      ctx.arc(this.cursor.x, this.cursor.y, baseUnit * 0.02, 0, Math.PI*2); ctx.fill();
       ctx.strokeStyle = "black"; ctx.lineWidth = 2; ctx.stroke();
   },
 
-  drawUI(ctx) {
-    const w = ctx.canvas.width; const h = ctx.canvas.height;
-
-    ctx.fillStyle = "white"; ctx.font = "bold 30px Arial";
+  drawUI(ctx, w, h, baseUnit) {
+    ctx.fillStyle = "white"; 
+    ctx.font = `bold ${Math.max(20, baseUnit * 0.05)}px Arial`;
     ctx.textAlign = "left"; ctx.textBaseline = "top";
-    ctx.fillText("Score: " + this.score, 20, 20);
+    ctx.fillText("Score: " + this.score, baseUnit * 0.03, baseUnit * 0.03);
 
     const level = this.levels[this.currentLevel];
-    ctx.textAlign = "center"; ctx.font = "bold 60px Arial";
+    ctx.textAlign = "center"; 
+    ctx.font = `bold ${Math.max(30, baseUnit * 0.08)}px Arial`;
     ctx.fillStyle = "#FFCC00"; ctx.shadowBlur = 10; ctx.shadowColor = "rgba(255, 204, 0, 0.5)";
-    ctx.fillText("Number: " + level.number, w / 2, 50);
+    ctx.fillText("Number: " + level.number, w / 2, baseUnit * 0.05);
     ctx.shadowBlur = 0;
 
     if (this.mode === "FREEHAND" && this.submitTimer > 0 && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
-        let progress = this.submitTimer / 90;
+        let progress = this.submitTimer / 120; // Matches 2 second timer
+        let barW = baseUnit * 0.4;
         ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-        ctx.fillRect(w/2 - 100, 110, 200, 8);
+        ctx.fillRect(w/2 - barW/2, baseUnit * 0.15, barW, baseUnit*0.015);
         ctx.fillStyle = "#00FFCC";
-        ctx.fillRect(w/2 - 100, 110, 200 * progress, 8);
+        ctx.fillRect(w/2 - barW/2, baseUnit * 0.15, barW * progress, baseUnit*0.015);
     } else if (this.mode === "FREEHAND" && this.freehandStrokes.length === 0 && this.levelFailedTimer === 0) {
-        ctx.font = "20px Arial"; ctx.fillStyle = "#888";
-        ctx.fillText("Draw anywhere! Any size!", w / 2, 120);
+        ctx.font = `${Math.max(16, baseUnit * 0.04)}px Arial`; ctx.fillStyle = "#888";
+        ctx.fillText("Draw anywhere! Any size!", w / 2, baseUnit * 0.15);
     }
 
-    const btnW = 160; const btnH = 50; const btnY = h - 80; 
-    const traceX = w / 2 - 170; const freeX = w / 2 + 10;
+    const btnW = Math.max(140, baseUnit * 0.3); 
+    const btnH = Math.max(40, baseUnit * 0.1); 
+    const btnY = h - btnH - (baseUnit * 0.05); 
+    const traceX = w / 2 - btnW - (baseUnit * 0.02); 
+    const freeX = w / 2 + (baseUnit * 0.02);
 
-    ctx.font = "bold 20px Arial"; ctx.textBaseline = "middle";
+    ctx.font = `bold ${Math.max(14, baseUnit * 0.03)}px Arial`; ctx.textBaseline = "middle";
 
     ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#444";
     ctx.fillRect(traceX, btnY, btnW, btnH);
@@ -508,37 +538,27 @@ const Game5 = {
     ctx.fillText("FREEHAND", freeX + btnW/2, btnY + btnH/2);
   },
 
-  drawSuccessEffect(ctx, w, h) {
+  drawSuccessEffect(ctx, w, h, baseUnit) {
     ctx.save();
     ctx.fillStyle = "rgba(0, 255, 100, 0.2)"; ctx.fillRect(0, 0, w, h);
-    ctx.fillStyle = "white"; ctx.font = "bold 100px Arial";
+    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.15}px Arial`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.shadowBlur = 20; ctx.shadowColor = "#00FF66";
     ctx.fillText("NICE!", w/2, h/2);
     ctx.restore();
   },
 
-  // --- NEW FAIL OVERLAY ---
-  drawFailEffect(ctx, w, h) {
+  drawFailEffect(ctx, w, h, baseUnit) {
     ctx.save();
     ctx.fillStyle = "rgba(255, 50, 50, 0.15)"; 
     ctx.fillRect(0, 0, w, h);
-    
-    ctx.textAlign = "center"; 
-    ctx.textBaseline = "middle";
-
-    ctx.fillStyle = "#FF4444"; 
-    ctx.font = "bold 90px Arial";
-    ctx.shadowBlur = 20; 
-    ctx.shadowColor = "rgba(255, 0, 0, 0.8)";
-    ctx.fillText("WRONG!", w/2, h/2 - 20);
-
-    ctx.fillStyle = "white"; 
-    ctx.font = "bold 30px Arial";
-    ctx.shadowBlur = 10; 
-    ctx.shadowColor = "black";
-    ctx.fillText("Use TRACE mode if you forgot!", w/2, h/2 + 60);
-
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#FF4444"; ctx.font = `bold ${baseUnit * 0.15}px Arial`;
+    ctx.shadowBlur = 20; ctx.shadowColor = "rgba(255, 0, 0, 0.8)";
+    ctx.fillText("WRONG!", w/2, h/2 - (baseUnit * 0.05));
+    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.05}px Arial`;
+    ctx.shadowBlur = 10; ctx.shadowColor = "black";
+    ctx.fillText("Use TRACE mode if you forgot!", w/2, h/2 + (baseUnit * 0.1));
     ctx.restore();
   },
 
@@ -551,11 +571,29 @@ const Game5 = {
     const dx = px - xx; const dy = py - yy; return Math.sqrt(dx * dx + dy * dy);
   },
 
-  spawnParticle(x, y, burst = false) {
+  spawnParticle(x, y, burst = false, baseUnit) {
     const angle = Math.random() * Math.PI * 2;
-    const speed = burst ? Math.random() * 5 + 2 : Math.random() * 2 + 1;
-    this.particles.push({ x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, life: 1.0, color: `hsl(${Math.random()*60 + 160}, 100%, 70%)` });
+    const mult = baseUnit * 0.005; 
+    const speed = burst ? (Math.random() * 5 + 2) * mult : (Math.random() * 2 + 1) * mult;
+    this.particles.push({ 
+        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, 
+        life: 1.0, color: `hsl(${Math.random()*60 + 160}, 100%, 70%)`,
+        size: baseUnit * 0.008 
+    });
   },
-  updateParticles() { for (let i = this.particles.length - 1; i >= 0; i--) { let p = this.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.05; if (p.life <= 0) this.particles.splice(i, 1); } },
-  drawParticles(ctx) { for (let p of this.particles) { ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill(); } ctx.globalAlpha = 1.0; }
+  
+  updateParticles() { 
+      for (let i = this.particles.length - 1; i >= 0; i--) { 
+          let p = this.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.05; 
+          if (p.life <= 0) this.particles.splice(i, 1); 
+      } 
+  },
+  
+  drawParticles(ctx) { 
+      for (let p of this.particles) { 
+          ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.beginPath(); 
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); 
+      } 
+      ctx.globalAlpha = 1.0; 
+  }
 };
