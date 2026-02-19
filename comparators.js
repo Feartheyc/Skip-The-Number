@@ -203,8 +203,7 @@ const Game3 = {
   const h2 = fingers[1];
 
   /* --- 6. Trails + gameplay --- */
-  this.drawNeonTrail(ctx, this.trails.left, h1, "#00eaff");
-  this.drawNeonTrail(ctx, this.trails.right, h2, "#00ffa6");
+  
 
   this.checkPose(ctx, h1, h2, dt);
   this.drawArmSymbol(ctx, h1, h2);
