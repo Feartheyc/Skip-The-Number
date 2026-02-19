@@ -87,7 +87,7 @@ const Game1 = {
     const base = Math.min(width, height);
 
     this.baseOuterRadius = base * 0.25 * this.ringScale;
-    this.baseInnerRadius = this.baseOuterRadius * 0.85;
+    this.baseInnerRadius = this.baseOuterRadius * 0.80;
 
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
@@ -109,13 +109,15 @@ const Game1 = {
   },
 
   /* ============================== */
-  spawnNote() {
-
+spawnNote() {
     const angle = Math.random() * Math.PI * 2;
-    const spawnRadius = this.baseOuterRadius * 1.4;
+
+    // Spawn radius outside the outer ring
+    const minRadius = this.currentOuterRadius + 150;
+    const maxRadius = this.currentOuterRadius + 200; // can adjust distance
+    const spawnRadius = Math.random() * (maxRadius - minRadius) + minRadius;
 
     const numberToSpawn = this.currentNumber;
-
     this.currentNumber++;
     if (this.currentNumber > this.maxNumber)
       this.currentNumber = 1;
@@ -126,7 +128,9 @@ const Game1 = {
       radius: this.baseOuterRadius * 0.12,
       value: numberToSpawn
     });
-  },
+},
+
+
 
   /* ============================== */
   update(ctx, fingers, dt = 1 / 60) {
@@ -259,7 +263,7 @@ const Game1 = {
     const dy = this.centerY - note.y;
     const length = Math.sqrt(dx * dx + dy * dy);
 
-    const speed = this.noteSpeed * dt;
+    const speed = this.noteSpeed * dt ;
 
     note.x += (dx / length) * speed;
     note.y += (dy / length) * speed;
