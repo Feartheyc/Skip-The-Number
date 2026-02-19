@@ -1,6 +1,7 @@
 const Game6 = {
 
-  running: false,
+  running: false,   
+  
 
   player: {
     x: 320,
@@ -47,6 +48,8 @@ const Game6 = {
     if (window.stopCamera) {
       window.stopCamera();
     }
+    document.getElementById("menu").style.display = "none";
+
 
     const video = document.getElementById("input_video");
     if (video) video.style.display = "none";
@@ -60,14 +63,18 @@ const Game6 = {
 
     canvas.addEventListener("mousedown", (e) => {
 
-      const rect = canvas.getBoundingClientRect();
+  const rect = canvas.getBoundingClientRect();
 
-      const x = e.clientX - rect.left;
-      const y = e.clientY - rect.top;
+  const scaleX = canvas.width / rect.width;
+  const scaleY = canvas.height / rect.height;
 
-      this.handleClick(x, y);
+  const x = (e.clientX - rect.left) * scaleX;
+  const y = (e.clientY - rect.top) * scaleY;
 
-    });
+  this.handleClick(x, y);
+
+});
+
 
     this.targets = [];
     this.spawnTimer = 0;
@@ -183,7 +190,8 @@ const Game6 = {
   ========================= */
   drawBallUI(ctx) {
 
-    const startX = this.canvasWidth / 2 - 200;
+    const startX = this.canvasWidth / 2 - (this.balls.length * 100) / 2;
+
     const y = this.canvasHeight - 80;
 
     ctx.textAlign = "center";
@@ -206,25 +214,26 @@ const Game6 = {
   },
 
 
-  handleClick(x, y) {
+handleClick(x, y) {
 
-    const startX = this.canvasWidth / 2 - 200;
-    const uiY = this.canvasHeight - 80;
+  const startX = this.canvasWidth / 2 - (this.balls.length * 100) / 2;
+  const yPos = this.canvasHeight - 80;
 
-    this.balls.forEach((ball, i) => {
+  this.balls.forEach((ball, i) => {
 
-      const bx = startX + i * 100;
-      const by = uiY;
+    const bx = startX + i * 100;
 
-      const dx = x - bx;
-      const dy = y - by;
+    const dist = Math.hypot(x - bx, y - yPos);
 
-      if (Math.sqrt(dx * dx + dy * dy) < 30) {
-        this.selectedBall = ball.type;
-      }
+    if (dist < 30) {
+      this.selectedBall = ball.type;
+      console.log("Selected:", ball);
+    }
 
-    });
-  },
+  });
+
+},
+
 
 
   /* =========================
@@ -403,8 +412,20 @@ const Game6 = {
   return "th";
 },
 
+getOrdinalSuffix(num) {
 
+  const lastTwo = num % 100;
 
+  if (lastTwo >= 11 && lastTwo <= 13) return "th";
+
+  const lastDigit = num % 10;
+
+  if (lastDigit === 1) return "st";
+  if (lastDigit === 2) return "nd";
+  if (lastDigit === 3) return "rd";
+
+  return "th";
+},
 
 
   /* =========================
