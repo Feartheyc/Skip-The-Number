@@ -40,11 +40,12 @@ const Game3 = {
   feedbackAlpha: 0,
 
   /* === New Systems === */
-  particles: [],
   popups: [],
   trails: { left: [], right: [] },
   shakeTime: 0,
   shakeMag: 0,
+
+  bgHue: 0,
 
   /* ============================== */
   init() {
@@ -69,14 +70,11 @@ const Game3 = {
   onResize(width, height) {
     this.centerX = width / 2;
     this.centerY = height / 2;
-
     const base = Math.min(width, height);
     this.scale = base / 600;
-
     this.margin = 80 * this.scale;
   },
 
-  /* ============================== */
   setDifficulty(grade) {
     this.currentGrade = grade;
     this.score = 0;
@@ -84,13 +82,11 @@ const Game3 = {
     this.spawnNumbers();
   },
 
-  /* ============================== */
   getBrightColor() {
     const hue = Math.floor(Math.random() * 360);
     return `hsl(${hue}, 90%, 60%)`;
   },
 
-  /* ============================== */
   spawnNumbers() {
     this.gameState = "PLAYING";
     this.winHoldTime = 0;
@@ -115,16 +111,8 @@ const Game3 = {
     this.feedbackScale = 0;
     this.feedbackAlpha = 0;
 
-    // spawn floating symbols
-    for (let i = 0; i < 8; i++) {
-      this.particles.push({
-        x: Math.random() * this.centerX * 2,
-        y: Math.random() * this.centerY * 2,
-        symbol: ["<", ">", "="][Math.floor(Math.random() * 3)],
-        speed: 20 + Math.random() * 20,
-        alpha: 0.2 + Math.random() * 0.5
-      });
-    }
+    this.trails.left = [];
+    this.trails.right = [];
   },
 
   spawnIntegers(min, max) {
@@ -134,10 +122,8 @@ const Game3 = {
 
     this.leftValue = n1;
     this.rightValue = n2;
-
     this.leftText = n1.toString();
     this.rightText = n2.toString();
-
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
@@ -149,10 +135,8 @@ const Game3 = {
 
     this.leftValue = n1 / den;
     this.rightValue = n2 / den;
-
     this.leftText = `${n1}/${den}`;
     this.rightText = `${n2}/${den}`;
-
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
@@ -167,147 +151,112 @@ const Game3 = {
 
     this.leftValue = n1/d1;
     this.rightValue = n2/d2;
-
     this.leftText = `${n1}/${d1}`;
     this.rightText = `${n2}/${d2}`;
-
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
   /* ============================== */
   update(ctx, fingers, dt = 1/60) {
 
-    // Screen shake
-    if (this.shakeTime > 0) {
-      this.shakeTime -= dt;
-      ctx.save();
-      ctx.translate(
-        (Math.random()-0.5)*this.shakeMag,
-        (Math.random()-0.5)*this.shakeMag
-      );
-    }
+  /* --- 1. ALWAYS draw background in world space (no transforms) --- */
+  this.drawAnimatedBackground(ctx);
 
-    // animations
-    this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
-    this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
+  /* --- 2. Apply shake ONLY to gameplay layer --- */
+  ctx.save();
 
-    if (this.gameState !== "PLAYING") {
-      this.feedbackAlpha = Math.min(1, this.feedbackAlpha + dt * 4);
-      this.feedbackScale = Math.min(1, this.feedbackScale + dt * 5);
-    }
+  if (this.shakeTime > 0) {
+    this.shakeTime -= dt;
+    ctx.translate(
+      (Math.random() - 0.5) * this.shakeMag,
+      (Math.random() - 0.5) * this.shakeMag
+    );
+  }
 
-    this.drawParticles(ctx);
-    this.drawUI(ctx);
-    this.drawPopups(ctx, dt);
+  /* --- 3. Animations --- */
+  this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
+  this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
 
-    if (this.gameState !== "PLAYING") {
-      if (this.shakeTime > 0) ctx.restore();
-      return;
-    }
+  if (this.gameState !== "PLAYING") {
+    this.feedbackAlpha = Math.min(1, this.feedbackAlpha + dt * 4);
+    this.feedbackScale = Math.min(1, this.feedbackScale + dt * 5);
+  }
 
-    if (fingers.length < 2) {
-      this.drawFeedback(ctx, "Need 2 Hands!", "orange");
-      if (this.shakeTime > 0) ctx.restore();
-      return;
-    }
+  /* --- 4. UI + Popups --- */
+  this.drawUI(ctx);
+  this.drawPopups(ctx, dt);
 
-    fingers.sort((a,b)=>a.y-b.y);
-    const h1 = fingers[0];
-    const h2 = fingers[1];
+  if (this.gameState !== "PLAYING") {
+    ctx.restore();
+    return;
+  }
 
-    this.drawTrails(ctx, h1, h2);
-    this.checkPose(ctx, h1, h2, dt);
-    this.drawArmSymbol(ctx, h1, h2);
+  /* --- 5. Input validation --- */
+  if (fingers.length < 2) {
+    this.drawFeedback(ctx, "Need 2 Hands!", "orange");
+    ctx.restore();
+    return;
+  }
 
-    if (this.shakeTime > 0) ctx.restore();
-  },
+  fingers.sort((a, b) => a.y - b.y);
+  const h1 = fingers[0];
+  const h2 = fingers[1];
 
-  /* ============================== */
-  drawParticles(ctx){
-    ctx.font = `${40*this.scale}px Arial`;
-    this.particles.forEach(p=>{
-      p.y -= p.speed * 0.01;
-      if(p.y < -20) p.y = this.centerY*2 + 20;
-      ctx.globalAlpha = p.alpha;
-      ctx.fillStyle = "#ffffff";
-      ctx.fillText(p.symbol, p.x, p.y);
-    });
-    ctx.globalAlpha = 1;
-  },
+  /* --- 6. Trails + gameplay --- */
+  this.drawNeonTrail(ctx, this.trails.left, h1, "#00eaff");
+  this.drawNeonTrail(ctx, this.trails.right, h2, "#00ffa6");
+
+  this.checkPose(ctx, h1, h2, dt);
+  this.drawArmSymbol(ctx, h1, h2);
+
+  /* --- 7. Restore to original world space --- */
+  ctx.restore();
+},
+
+
 
   /* ============================== */
-  drawTrails(ctx, h1, h2){
-    this.trails.left.push({x:h1.x,y:h1.y});
-    this.trails.right.push({x:h2.x,y:h2.y});
-    if(this.trails.left.length>10) this.trails.left.shift();
-    if(this.trails.right.length>10) this.trails.right.shift();
+ drawAnimatedBackground(ctx){
+  this.bgHue += 20 * 0.016;
 
-    const drawTrail = (trail,color)=>{
-      ctx.beginPath();
-      for(let i=0;i<trail.length;i++){
-        const t=trail[i];
-        ctx.globalAlpha=i/trail.length;
-        ctx.lineTo(t.x,t.y);
-      }
-      ctx.strokeStyle=color;
-      ctx.lineWidth=6*this.scale;
-      ctx.stroke();
-      ctx.globalAlpha=1;
-    };
+  const canvas = ctx.canvas;
 
-    drawTrail(this.trails.left,"#00ffff");
-    drawTrail(this.trails.right,"#ff00ff");
-  },
+  const grad = ctx.createLinearGradient(
+    0, 0,
+    canvas.width,
+    canvas.height
+  );
+
+  grad.addColorStop(0, `hsl(${this.bgHue % 360}, 70%, 15%)`);
+  grad.addColorStop(1, `hsl(${(this.bgHue + 60) % 360}, 70%, 10%)`);
+
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+},
+
 
   /* ============================== */
-  handleSuccess(){
-    this.gameState="SUCCESS";
-    this.score+=10;
-    this.combo++;
+  drawNeonTrail(ctx, trailArray, finger, color){
+    trailArray.push({x:finger.x, y:finger.y});
+    if(trailArray.length > 15) trailArray.shift();
 
-    this.popups.push({
-      text:"+10",
-      x:this.centerX,
-      y:this.centerY,
-      vy:-30,
-      life:1,
-      color:"#00FF66"
-    });
+    ctx.save();
+    ctx.beginPath();
 
-    setTimeout(()=>this.spawnNumbers(),900);
-  },
+    for(let i=0;i<trailArray.length;i++){
+      const p = trailArray[i];
+      if(i===0) ctx.moveTo(p.x,p.y);
+      else ctx.lineTo(p.x,p.y);
+    }
 
-  handleFail(){
-    this.gameState="GAME_OVER";
-    this.score=Math.max(0,this.score-5);
-    this.combo=0;
-    this.shakeTime=0.4;
-    this.shakeMag=10*this.scale;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 8 * this.scale;
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 20 * this.scale;
+    ctx.globalAlpha = 0.9;
+    ctx.stroke();
 
-    this.popups.push({
-      text:"-5",
-      x:this.centerX,
-      y:this.centerY,
-      vy:30,
-      life:1,
-      color:"#FF4444"
-    });
-
-    setTimeout(()=>this.spawnNumbers(),1200);
-  },
-
-  /* ============================== */
-  drawPopups(ctx,dt){
-    this.popups.forEach(p=>{
-      p.y+=p.vy*dt;
-      p.life-=dt;
-      ctx.globalAlpha=Math.max(0,p.life);
-      ctx.fillStyle=p.color;
-      ctx.font=`bold ${40*this.scale}px Arial`;
-      ctx.fillText(p.text,p.x,p.y);
-    });
-    ctx.globalAlpha=1;
-    this.popups=this.popups.filter(p=>p.life>0);
+    ctx.restore();
   },
 
   /* ============================== */
@@ -335,6 +284,55 @@ const Game3 = {
   },
 
   /* ============================== */
+  handleSuccess(){
+    this.gameState="SUCCESS";
+    this.score+=10;
+    this.combo++;
+
+    this.popups.push({
+      text:"Correct",
+      x:this.centerX,
+      y:this.centerY,
+      vy:-30,
+      life:1,
+      color:"#00FF66"
+    });
+
+    setTimeout(()=>this.spawnNumbers(),900);
+  },
+
+  handleFail(){
+    this.gameState="GAME_OVER";
+    this.score=Math.max(0,this.score-5);
+    this.combo=0;
+    this.shakeTime=0.4;
+    this.shakeMag=10*this.scale;
+
+    this.popups.push({
+      text:"Wrong!!!",
+      x:this.centerX,
+      y:this.centerY,
+      vy:30,
+      life:1,
+      color:"#FF4444"
+    });
+
+    setTimeout(()=>this.spawnNumbers(),1200);
+  },
+
+  drawPopups(ctx,dt){
+    this.popups.forEach(p=>{
+      p.y+=p.vy*dt;
+      p.life-=dt;
+      ctx.globalAlpha=Math.max(0,p.life);
+      ctx.fillStyle=p.color;
+      ctx.font=`bold ${40*this.scale}px Arial`;
+      ctx.fillText(p.text,p.x,p.y);
+    });
+    ctx.globalAlpha=1;
+    this.popups=this.popups.filter(p=>p.life>0);
+  },
+
   drawArmSymbol(ctx,h1,h2){
     ctx.lineWidth=12*this.scale;
     ctx.lineCap="round";
@@ -350,15 +348,7 @@ const Game3 = {
   },
 
   /* ============================== */
-  drawUI(ctx){
-
-    const gradeColors={
-      1:"#4CAF50",
-      2:"#2196F3",
-      3:"#FF9800",
-      4:"#9C27B0"
-    };
-
+    drawUI(ctx){
     ctx.textAlign="center";
     ctx.textBaseline="middle";
 
@@ -384,40 +374,26 @@ const Game3 = {
 
     ctx.globalAlpha=1;
 
+    /* ===== SCORE ===== */
     ctx.font=`bold ${36*this.scale}px Arial`;
-    ctx.fillStyle=gradeColors[this.currentGrade];
-    ctx.fillText(`Grade ${this.currentGrade}`,120*this.scale,60*this.scale);
-
     ctx.fillStyle="white";
     ctx.fillText(`Score: ${this.score}`,this.centerX,60*this.scale);
 
+    /* ===== COMBO ===== */
     if(this.combo>=2){
       ctx.fillStyle="#FFD700";
-      ctx.fillText(`🔥 Combo x${this.combo}`,this.centerX,100*this.scale);
+      ctx.fillText(`Combo x${this.combo}`,this.centerX,100*this.scale);
     }
 
-    if(this.gameState==="SUCCESS"){
-      ctx.save();
-      ctx.translate(this.centerX,this.centerY+120*this.scale);
-      ctx.scale(this.feedbackScale,this.feedbackScale);
-      ctx.globalAlpha=this.feedbackAlpha;
-      ctx.fillStyle="#00FF66";
-      ctx.font=`bold ${60*this.scale}px Arial`;
-      ctx.fillText("CORRECT!",0,0);
-      ctx.restore();
-    }
+    /* ===== GRADE TEXT (NEW) ===== */
+    ctx.textAlign="left";
+    ctx.font=`bold ${32*this.scale}px Arial`;
+    ctx.fillStyle="#FFFFFF";
+    ctx.fillText(`Grade: ${this.currentGrade}`, 30*this.scale, 40*this.scale);
 
-    if(this.gameState==="GAME_OVER"){
-      ctx.save();
-      ctx.translate(this.centerX,this.centerY);
-      ctx.scale(this.feedbackScale,this.feedbackScale);
-      ctx.globalAlpha=this.feedbackAlpha;
-      ctx.fillStyle="#FF0000";
-      ctx.font=`bold ${70*this.scale}px Arial`;
-      ctx.fillText("WRONG!",0,0);
-      ctx.restore();
-    }
+    ctx.textAlign="center"; // reset alignment
   },
+
 
   drawFeedback(ctx,text,color){
     ctx.fillStyle=color;
@@ -427,7 +403,6 @@ const Game3 = {
 
   drawProgressBar(ctx,percentage,color){
     if(percentage<=0) return;
-
     const width=220*this.scale;
     const height=20*this.scale;
 
