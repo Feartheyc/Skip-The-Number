@@ -332,82 +332,131 @@ const Game5 = {
       }
   },
 
-  evaluateShapeVector(baseUnit) {
-      // 1. Gather all drawn points
-      let pts = [];
-      this.freehandStrokes.forEach(s => pts.push(...s));
-      
-      // Filter out accidental clicks
-      if (pts.length < 5) { this.triggerFail(); return; }
+ evaluateShapeVector(baseUnit) {
+    let pts = [];
+    this.freehandStrokes.forEach(s => pts.push(...s));
+    if (pts.length < 6) { this.triggerFail(); return; }
 
-      // 2. Find the bounding box of whatever they drew
-      let minX = Math.min(...pts.map(p=>p.x)), maxX = Math.max(...pts.map(p=>p.x));
-      let minY = Math.min(...pts.map(p=>p.y)), maxY = Math.max(...pts.map(p=>p.y));
-      
-      let w = maxX - minX;
-      let h = maxY - minY;
-      
-      // Fix for straight vertical/horizontal lines
-      if (w < 40) { minX -= 20; w = 40; }
-      if (h < 40) { minY -= 20; h = 40; }
+    const level = this.levels[this.currentLevel];
+    const template = level.localStrokes;
 
-      // 3. Normalize all points to 0.0 - 1.0 based on their own drawing
-      let normPts = pts.map(p => ({
-          x: (p.x - minX) / w,
-          y: (p.y - minY) / h
-      }));
+    /* ===============================
+       NORMALIZE POINTS
+    =============================== */
+    let minX = Math.min(...pts.map(p => p.x));
+    let maxX = Math.max(...pts.map(p => p.x));
+    let minY = Math.min(...pts.map(p => p.y));
+    let maxY = Math.max(...pts.map(p => p.y));
 
-      const level = this.levels[this.currentLevel];
-      const template = level.localStrokes;
+    let w = Math.max(30, maxX - minX);
+    let h = Math.max(30, maxY - minY);
 
-      // --- TEST 1: Neatness (Did they scribble outside the lines?) ---
-      let neatPoints = 0;
-      normPts.forEach(p => {
-          let closestDist = Infinity;
-          template.forEach(ts => {
-              let d = this.pointToLineDist(p.x, p.y, ts.x1, ts.y1, ts.x2, ts.y2);
-              if (d < closestDist) closestDist = d;
-          });
-          // Allow a 20% margin of error off the perfect line
-          if (closestDist < 0.20) neatPoints++; 
-      });
-      let neatness = neatPoints / normPts.length;
+    let normPts = pts.map(p => ({
+        x: (p.x - minX) / w,
+        y: (p.y - minY) / h
+    }));
 
-      // --- TEST 2: Coverage (Did they draw the whole letter?) ---
-      let totalSamples = 0;
-      let coveredSamples = 0;
-      
-      template.forEach(ts => {
-          let steps = 15; // Sample 15 checkpoints along every perfect line
-          for(let i=0; i<=steps; i++) {
-              totalSamples++;
-              let targetX = ts.x1 + (ts.x2 - ts.x1) * (i/steps);
-              let targetY = ts.y1 + (ts.y2 - ts.y1) * (i/steps);
-              
-              let closestDist = Infinity;
-              normPts.forEach(p => {
-                  let d = Math.hypot(p.x - targetX, p.y - targetY);
-                  if (d < closestDist) closestDist = d;
-              });
-              // Must draw within 25% of the checkpoint
-              if (closestDist < 0.25) coveredSamples++;
-          }
-      });
-      let coverage = coveredSamples / totalSamples;
+    /* ===============================
+       1. STROKE COUNT MATCH
+       (Wrong numerals fail here)
+    =============================== */
+    const strokeCountUser = this.freehandStrokes.length;
+    const strokeCountTemplate = template.length;
+    let strokeScore = 1 - Math.abs(strokeCountUser - strokeCountTemplate) / Math.max(1, strokeCountTemplate);
 
-      console.log(`Vector AI -> Coverage: ${(coverage*100).toFixed(0)}% | Neatness: ${(neatness*100).toFixed(0)}%`);
+    /* ===============================
+       2. ANGLE CLUSTER MATCH
+    =============================== */
+    let templateAngles = template.map(ts => {
+        return Math.atan2(ts.y2 - ts.y1, ts.x2 - ts.x1);
+    });
 
-      // 4. Final Decision
-      if (coverage > 0.60 && neatness > 0.60) {
-          this.levelCompleteTimer = 1;
-          this.score += 20; 
-          this.cursorColor = "#00FFCC";
-          let lastPoint = pts[pts.length-1];
-          for(let i=0; i<40; i++) this.spawnParticle(lastPoint.x, lastPoint.y, true, baseUnit);
-      } else {
-          this.triggerFail();
-      }
-  },
+    let goodAngleSegs = 0;
+    let totalSegs = 0;
+
+    for (let i = 1; i < normPts.length; i++) {
+        let dx = normPts[i].x - normPts[i-1].x;
+        let dy = normPts[i].y - normPts[i-1].y;
+        let len = Math.hypot(dx, dy);
+        if (len < 0.005) continue;
+
+        totalSegs++;
+        let ang = Math.atan2(dy, dx);
+
+        for (let t of templateAngles) {
+            let diff = Math.abs(Math.atan2(Math.sin(ang - t), Math.cos(ang - t)));
+            if (diff < 0.45) { goodAngleSegs++; break; }
+        }
+    }
+
+    let angleScore = goodAngleSegs / Math.max(1, totalSegs);
+
+    /* ===============================
+       3. SHAPE CENTER ALIGNMENT
+       (rejects wrong placement scribbles)
+    =============================== */
+    let cx = normPts.reduce((s,p)=>s+p.x,0)/normPts.length;
+    let cy = normPts.reduce((s,p)=>s+p.y,0)/normPts.length;
+
+    let tMinX = Math.min(...template.map(t => Math.min(t.x1,t.x2)));
+    let tMaxX = Math.max(...template.map(t => Math.max(t.x1,t.x2)));
+    let tMinY = Math.min(...template.map(t => Math.min(t.y1,t.y2)));
+    let tMaxY = Math.max(...template.map(t => Math.max(t.y1,t.y2)));
+
+    let tcx = (tMinX + tMaxX) / 2;
+    let tcy = (tMinY + tMaxY) / 2;
+
+    let centerDist = Math.hypot(cx - tcx, cy - tcy);
+
+    /* ===============================
+       4. DISTANCE STRICTNESS
+    =============================== */
+    let avgDist = 0;
+    normPts.forEach(p => {
+        let best = Infinity;
+        template.forEach(ts => {
+            let d = this.pointToLineDist(p.x,p.y,ts.x1,ts.y1,ts.x2,ts.y2);
+            if (d < best) best = d;
+        });
+        avgDist += best;
+    });
+    avgDist /= normPts.length;
+
+    console.log(
+        `AI -> stroke:${strokeScore.toFixed(2)} angle:${angleScore.toFixed(2)} center:${centerDist.toFixed(2)} dist:${avgDist.toFixed(2)}`
+    );
+
+    /* ===============================
+       🎯 MODE-BASED DECISION
+    =============================== */
+    let pass = false;
+
+    if (this.mode === "TRACE") {
+        // strict tracing
+        pass =
+            strokeScore > 0.8 &&
+            angleScore > 0.75 &&
+            centerDist < 0.25 &&
+            avgDist < 0.18;
+    } else {
+        // freehand forgiving but still shape-correct
+        pass =
+            strokeScore > 0.6 &&
+            angleScore > 0.55 &&
+            centerDist < 0.45 &&
+            avgDist < 0.35;
+    }
+
+    if (pass) {
+        this.levelCompleteTimer = 1;
+        this.score += 20;
+        this.cursorColor = "#00FFCC";
+        let last = pts[pts.length - 1];
+        for (let i = 0; i < 40; i++) this.spawnParticle(last.x,last.y,true,baseUnit);
+    } else {
+        this.triggerFail();
+    }
+},
 
   triggerFail() {
       this.levelFailedTimer = 1;
