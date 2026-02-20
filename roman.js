@@ -30,35 +30,34 @@ const Game5 = {
   cursor: { x: 0, y: 0 },
   cursorColor: "white", 
 
-  // Roman Numeral Data 
+  // NEW AI: Added "localStrokes" which are the pure math blueprints (0.0 to 1.0)
   levels: [
-    { symbol: "I", number: "1", strokes: [ { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 } ] },
-    { symbol: "V", number: "5", strokes: [
-        { x1: 0.3, y1: 0.2, x2: 0.5, y2: 0.8 }, 
-        { x1: 0.5, y1: 0.8, x2: 0.7, y2: 0.2 }  
-      ] },
-    { symbol: "X", number: "10", strokes: [
-        { x1: 0.3, y1: 0.2, x2: 0.7, y2: 0.8 }, 
-        { x1: 0.7, y1: 0.2, x2: 0.3, y2: 0.8 } 
-      ] },
-    { symbol: "L", number: "50", strokes: [
-        { x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8 }, 
-        { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 }  
-      ] },
-    { symbol: "III", number: "3", strokes: [
-        { x1: 0.35, y1: 0.2, x2: 0.35, y2: 0.8 },
-        { x1: 0.45, y1: 0.2, x2: 0.45, y2: 0.8 },
-        { x1: 0.55, y1: 0.2, x2: 0.55, y2: 0.8 }
-      ] }
+    { symbol: "I", number: "1", 
+      strokes: [ { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 } ],
+      localStrokes: [ {x1: 0.5, y1: 0, x2: 0.5, y2: 1} ] 
+    },
+    { symbol: "V", number: "5", 
+      strokes: [ { x1: 0.3, y1: 0.2, x2: 0.5, y2: 0.8 }, { x1: 0.5, y1: 0.8, x2: 0.7, y2: 0.2 } ],
+      localStrokes: [ {x1: 0, y1: 0, x2: 0.5, y2: 1}, {x1: 0.5, y1: 1, x2: 1, y2: 0} ] 
+    },
+    { symbol: "X", number: "10", 
+      strokes: [ { x1: 0.3, y1: 0.2, x2: 0.7, y2: 0.8 }, { x1: 0.7, y1: 0.2, x2: 0.3, y2: 0.8 } ],
+      localStrokes: [ {x1: 0, y1: 0, x2: 1, y2: 1}, {x1: 1, y1: 0, x2: 0, y2: 1} ] 
+    },
+    { symbol: "L", number: "50", 
+      strokes: [ { x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8 }, { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 } ],
+      localStrokes: [ {x1: 0, y1: 0, x2: 0, y2: 1}, {x1: 0, y1: 1, x2: 1, y2: 1} ] 
+    },
+    { symbol: "III", number: "3", 
+      strokes: [ { x1: 0.35, y1: 0.2, x2: 0.35, y2: 0.8 }, { x1: 0.45, y1: 0.2, x2: 0.45, y2: 0.8 }, { x1: 0.55, y1: 0.2, x2: 0.55, y2: 0.8 } ],
+      localStrokes: [ {x1: 0, y1: 0, x2: 0, y2: 1}, {x1: 0.5, y1: 0, x2: 0.5, y2: 1}, {x1: 1, y1: 0, x2: 1, y2: 1} ] 
+    }
   ],
 
   levelCompleteTimer: 0,
   levelFailedTimer: 0, 
   listenersAdded: false,
 
-  /* ==============================
-     INIT
-  ============================== */
   init() {
     this.running = true;
     this.score = 0;
@@ -69,18 +68,10 @@ const Game5 = {
     
     const menu = document.getElementById("menu");
     if (menu) menu.style.display = "none";
-
     const video = document.getElementById("input_video");
     if (video) video.style.display = "none";
     
     this.resizeCanvas();
-    
-    // Generate the perfect templates using the new Fat Blob AI
-    this.levels.forEach(level => {
-        let pathStrokes = level.strokes.map(s => [ {x: s.x1, y: s.y1}, {x: s.x2, y: s.y2} ]);
-        level.templateData = this.createGrid(pathStrokes);
-    });
-
     this.resetLevel();
 
     if (!this.listenersAdded) {
@@ -127,10 +118,7 @@ const Game5 = {
       const size = Math.min(w, h) * 0.50; 
       const cx = w / 2;
       const cy = h / 2 - (h * 0.05); 
-      return {
-          x: cx + (sx - 0.5) * size,
-          y: cy + (sy - 0.5) * size
-      };
+      return { x: cx + (sx - 0.5) * size, y: cy + (sy - 0.5) * size };
   },
 
   /* ==============================
@@ -160,9 +148,9 @@ const Game5 = {
         if (this.isDrawing) {
             this.updateCursor(e);
             if (this.mode === "FREEHAND" && this.currentStroke) {
-                // Prevent adding duplicate coordinates to keep arrays lean
+                // Only save points if finger moved significantly (keeps math clean)
                 let lastP = this.currentStroke[this.currentStroke.length - 1];
-                if(Math.hypot(lastP.x - this.cursor.x, lastP.y - this.cursor.y) > 2) {
+                if(Math.hypot(lastP.x - this.cursor.x, lastP.y - this.cursor.y) > 5) {
                     this.currentStroke.push({x: this.cursor.x, y: this.cursor.y});
                     this.submitTimer = 0; 
                 }
@@ -178,7 +166,7 @@ const Game5 = {
             this.tracePoints = []; 
             this.cursorColor = "white"; 
         } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
-            this.submitTimer = 120; // 2 seconds to allow multi-stroke letters
+            this.submitTimer = 120; // Give them 2 seconds to draw next line
         }
     };
 
@@ -199,7 +187,6 @@ const Game5 = {
     const rect = document.getElementById("game_canvas").getBoundingClientRect();
     let rawX = e.clientX - rect.left;
     let rawY = e.clientY - rect.top;
-
     this.cursor.x = (rawX - this.offsetX) / this.scale;
     this.cursor.y = (rawY - this.offsetY) / this.scale;
   },
@@ -214,7 +201,6 @@ const Game5 = {
     const btnY = h - btnH - (baseUnit * 0.05); 
     const traceX = w / 2 - btnW - (baseUnit * 0.02); 
     const freeX = w / 2 + (baseUnit * 0.02);
-    
     const pad = 50; 
 
     if (this.cursor.x >= traceX - pad && this.cursor.x <= traceX + btnW + pad && this.cursor.y >= btnY - pad && this.cursor.y <= btnY + btnH + pad) {
@@ -297,7 +283,7 @@ const Game5 = {
   },
 
   /* ==============================
-     1. TRACE MODE LOGIC 
+     1. TRACE MODE LOGIC
   ============================== */
   handleTracing(w, h, baseUnit) {
     const level = this.levels[this.currentLevel];
@@ -342,129 +328,100 @@ const Game5 = {
   },
 
   /* ==============================
-     2. NEW FAT-BLOB GRID AI
+     2. THE NEW FROM-SCRATCH AI
   ============================== */
   handleFreehand(baseUnit) {
       if (!this.isDrawing && this.freehandStrokes.length > 0) {
           if (this.submitTimer > 0) {
               this.submitTimer--;
               if (this.submitTimer <= 0) {
-                  this.evaluateShape(baseUnit);
+                  this.evaluateShapeVector(baseUnit);
               }
           }
       }
   },
 
-  evaluateShape(baseUnit) {
-      // Safely filter out tiny dots that ruin bounding boxes
-      let validUserStrokes = this.freehandStrokes.filter(s => {
-          if(s.length < 2) return false;
-          let dist = 0;
-          for(let i=0; i<s.length-1; i++) dist += Math.hypot(s[i+1].x-s[i].x, s[i+1].y-s[i].y);
-          return dist > 15; 
+  evaluateShapeVector(baseUnit) {
+      // 1. Gather all drawn points
+      let pts = [];
+      this.freehandStrokes.forEach(s => pts.push(...s));
+      
+      // Filter out accidental clicks
+      if (pts.length < 5) { this.triggerFail(); return; }
+
+      // 2. Find the bounding box of whatever they drew
+      let minX = Math.min(...pts.map(p=>p.x)), maxX = Math.max(...pts.map(p=>p.x));
+      let minY = Math.min(...pts.map(p=>p.y)), maxY = Math.max(...pts.map(p=>p.y));
+      
+      let w = maxX - minX;
+      let h = maxY - minY;
+      
+      // Fix for straight vertical/horizontal lines
+      if (w < 40) { minX -= 20; w = 40; }
+      if (h < 40) { minY -= 20; h = 40; }
+
+      // 3. Normalize all points to 0.0 - 1.0 based on their own drawing
+      let normPts = pts.map(p => ({
+          x: (p.x - minX) / w,
+          y: (p.y - minY) / h
+      }));
+
+      const level = this.levels[this.currentLevel];
+      const template = level.localStrokes;
+
+      // --- TEST 1: Neatness (Did they scribble outside the lines?) ---
+      let neatPoints = 0;
+      normPts.forEach(p => {
+          let closestDist = Infinity;
+          template.forEach(ts => {
+              let d = this.pointToLineDist(p.x, p.y, ts.x1, ts.y1, ts.x2, ts.y2);
+              if (d < closestDist) closestDist = d;
+          });
+          // Allow a 20% margin of error off the perfect line
+          if (closestDist < 0.20) neatPoints++; 
       });
+      let neatness = neatPoints / normPts.length;
 
-      if (validUserStrokes.length === 0) {
-          this.levelFailedTimer = 1;
-          this.shakeTimer = 25; 
-          this.cursorColor = "#FF4444";
-          return;
-      }
-
-      // Generate the massive blobs
-      let userGrid = this.createGrid(validUserStrokes);
-      let targetGrid = this.levels[this.currentLevel].templateData;
-
-      let intersection = 0, templateInk = 0, userInk = 0;
-
-      for(let y=0; y<50; y++) {
-          for(let x=0; x<50; x++) {
-              let u = userGrid[y][x];
-              let t = targetGrid[y][x];
-              if (u) userInk++;
-              if (t) templateInk++;
-              if (u && t) intersection++;
+      // --- TEST 2: Coverage (Did they draw the whole letter?) ---
+      let totalSamples = 0;
+      let coveredSamples = 0;
+      
+      template.forEach(ts => {
+          let steps = 15; // Sample 15 checkpoints along every perfect line
+          for(let i=0; i<=steps; i++) {
+              totalSamples++;
+              let targetX = ts.x1 + (ts.x2 - ts.x1) * (i/steps);
+              let targetY = ts.y1 + (ts.y2 - ts.y1) * (i/steps);
+              
+              let closestDist = Infinity;
+              normPts.forEach(p => {
+                  let d = Math.hypot(p.x - targetX, p.y - targetY);
+                  if (d < closestDist) closestDist = d;
+              });
+              // Must draw within 25% of the checkpoint
+              if (closestDist < 0.25) coveredSamples++;
           }
-      }
+      });
+      let coverage = coveredSamples / totalSamples;
 
-      // Math calculates how much of the blobs overlap
-      let coverage = templateInk === 0 ? 0 : intersection / templateInk;
-      let neatness = userInk === 0 ? 0 : intersection / userInk;
+      console.log(`Vector AI -> Coverage: ${(coverage*100).toFixed(0)}% | Neatness: ${(neatness*100).toFixed(0)}%`);
 
-      console.log(`AI Overlap -> Coverage: ${(coverage*100).toFixed(0)}% | Neatness: ${(neatness*100).toFixed(0)}%`);
-
-      // SUPER FORGIVING THRESHOLDS (Perfect for Kids!)
-      // Only needs to touch 30% of the shape!
-      if (coverage > 0.30 && neatness > 0.20) { 
+      // 4. Final Decision
+      if (coverage > 0.60 && neatness > 0.60) {
           this.levelCompleteTimer = 1;
           this.score += 20; 
           this.cursorColor = "#00FFCC";
-          let lastPoint = validUserStrokes[validUserStrokes.length-1].slice(-1)[0];
-          if (lastPoint) {
-              for(let i=0; i<40; i++) this.spawnParticle(lastPoint.x, lastPoint.y, true, baseUnit);
-          }
+          let lastPoint = pts[pts.length-1];
+          for(let i=0; i<40; i++) this.spawnParticle(lastPoint.x, lastPoint.y, true, baseUnit);
       } else {
-          this.levelFailedTimer = 1;
-          this.shakeTimer = 25; 
-          this.cursorColor = "#FF4444";
+          this.triggerFail();
       }
   },
 
-  // Converts any drawing into a massive, highly-forgiving 50x50 boolean array
-  createGrid(strokes) {
-      let grid = Array.from({length: 50}, () => Array(50).fill(0));
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-
-      strokes.forEach(s => s.forEach(p => {
-          if(p.x < minX) minX = p.x;
-          if(p.x > maxX) maxX = p.x;
-          if(p.y < minY) minY = p.y;
-          if(p.y > maxY) maxY = p.y;
-      }));
-
-      let w = maxX - minX; let h = maxY - minY;
-      let cx = minX + w/2; let cy = minY + h/2;
-
-      let stretchX = w; let stretchY = h;
-      
-      // Stop vertical lines like 'I' from stretching infinitely horizontal
-      if(w < h * 0.25) stretchX = h; 
-      if(h < w * 0.25) stretchY = w;
-      if(stretchX < 0.001) stretchX = 1;
-      if(stretchY < 0.001) stretchY = 1;
-
-      strokes.forEach(s => {
-          for(let i=0; i<s.length-1; i++) {
-              let p1 = s[i], p2 = s[i+1];
-              let dist = Math.hypot((p2.x-p1.x)/stretchX, (p2.y-p1.y)/stretchY);
-              let steps = Math.max(1, Math.floor(dist * 100)); // Smooth interpolation
-
-              for(let j=0; j<=steps; j++) {
-                  let t = j/steps;
-                  let x = p1.x + (p2.x-p1.x)*t;
-                  let y = p1.y + (p2.y-p1.y)*t;
-
-                  let nx = ((x - cx) / stretchX) + 0.5;
-                  let ny = ((y - cy) / stretchY) + 0.5;
-
-                  // Map into a 30x30 core inside the 50x50 grid
-                  let gx = Math.floor(10 + nx * 30);
-                  let gy = Math.floor(10 + ny * 30);
-
-                  // HUGE BRUSH (Radius 5) makes it incredibly forgiving
-                  for(let dy=-5; dy<=5; dy++) {
-                      for(let dx=-5; dx<=5; dx++) {
-                          if (dx*dx + dy*dy <= 25) { 
-                              if(gy+dy >= 0 && gy+dy < 50 && gx+dx >= 0 && gx+dx < 50) {
-                                  grid[gy+dy][gx+dx] = 1;
-                              }
-                          }
-                      }
-                  }
-              }
-          }
-      });
-      return grid;
+  triggerFail() {
+      this.levelFailedTimer = 1;
+      this.shakeTimer = 25; 
+      this.cursorColor = "#FF4444";
   },
 
   /* ==============================
@@ -483,7 +440,6 @@ const Game5 = {
                   index === this.activeStrokeIndex ? "#555" : "#2a2a2a";
 
       ctx.strokeStyle = color;
-      
       let p1 = this.getPoint(s.x1, s.y1, w, h);
       let p2 = this.getPoint(s.x2, s.y2, w, h);
       
@@ -589,9 +545,7 @@ const Game5 = {
 
     ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#444";
     ctx.fillRect(traceX, btnY, btnW, btnH);
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = baseUnit * 0.005;
-    ctx.strokeRect(traceX, btnY, btnW, btnH);
+    ctx.strokeStyle = "white"; ctx.lineWidth = baseUnit * 0.005; ctx.strokeRect(traceX, btnY, btnW, btnH);
     ctx.fillStyle = this.mode === "TRACE" ? "black" : "white";
     ctx.fillText("TRACE", traceX + btnW/2, btnY + btnH/2);
 
@@ -610,12 +564,9 @@ const Game5 = {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore(); 
 
-    ctx.fillStyle = "white"; 
-    ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
-    ctx.textAlign = "center"; 
-    ctx.textBaseline = "middle";
-    ctx.shadowBlur = 20; 
-    ctx.shadowColor = "#00FF66";
+    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.shadowBlur = 20; ctx.shadowColor = "#00FF66";
     ctx.fillText("NICE!", w/2, h/2);
   },
 
@@ -627,18 +578,13 @@ const Game5 = {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore(); 
 
-    ctx.textAlign = "center"; 
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#FF4444"; 
-    ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
-    ctx.shadowBlur = 20; 
-    ctx.shadowColor = "rgba(255, 0, 0, 0.8)";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = "#FF4444"; ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
+    ctx.shadowBlur = 20; ctx.shadowColor = "rgba(255, 0, 0, 0.8)";
     ctx.fillText("WRONG!", w/2, h/2 - (baseUnit * 0.05));
     
-    ctx.fillStyle = "white"; 
-    ctx.font = `bold ${baseUnit * 0.04}px Arial`; 
-    ctx.shadowBlur = 10; 
-    ctx.shadowColor = "black";
+    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.04}px Arial`; 
+    ctx.shadowBlur = 10; ctx.shadowColor = "black";
     ctx.fillText("Use TRACE mode if you forgot!", w/2, h/2 + (baseUnit * 0.08));
   },
 
