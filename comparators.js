@@ -29,29 +29,24 @@ const Game3 = {
   margin: 0,
   detectedSymbol: "None",
 
-  /* === Animations === */
   fadeAlpha: 0,
   fadeSpeed: 2.5,
 
   popScale: 0,
   popSpeed: 6,
 
-  feedbackScale: 0,
-  feedbackAlpha: 0,
-
-  /* === New Systems === */
   popups: [],
-  trails: { left: [], right: [] },
-  particles: [],   // ⭐ PARTICLES ADDED
+  particles: [],
+  confetti: [], // ⭐ FLOATING MATH SYMBOLS
   shakeTime: 0,
   shakeMag: 0,
-
-  bgHue: 0,
 
   init() {
     const rect = document.getElementById("container").getBoundingClientRect();
     this.onResize(rect.width, rect.height);
     this.score = 0;
+
+    this.createConfetti();
 
     window.addEventListener('keydown', (e) => {
       if (e.key === '1') this.setDifficulty(1);
@@ -71,6 +66,21 @@ const Game3 = {
     this.margin = 80 * this.scale;
   },
 
+  createConfetti(){
+    const symbols = ["+", "-", "×", "÷", "<", ">", "="];
+    this.confetti = [];
+    for(let i=0;i<5;i++){
+      this.confetti.push({
+        x: Math.random()*window.innerWidth,
+        y: Math.random()*window.innerHeight,
+        symbol: symbols[Math.floor(Math.random()*symbols.length)],
+        size: (60 + Math.random()*40),
+        speed: 20 + Math.random()*10,
+        color: this.getBrightColor()
+      });
+    }
+  },
+
   setDifficulty(grade) {
     this.currentGrade = grade;
     this.score = 0;
@@ -80,7 +90,7 @@ const Game3 = {
 
   getBrightColor() {
     const hue = Math.floor(Math.random() * 360);
-    return `hsl(${hue}, 90%, 60%)`;
+    return `hsl(${hue}, 900%, 60%)`;
   },
 
   spawnNumbers() {
@@ -95,20 +105,13 @@ const Game3 = {
       if (Math.random() > 0.5) this.spawnIntegers(100, 999);
       else this.spawnLikeFractions();
     }
-    else if (this.currentGrade === 4) {
-      this.spawnIrregularFractions();
-    }
+    else if (this.currentGrade === 4) this.spawnIrregularFractions();
 
     this.leftColor = this.getBrightColor();
     this.rightColor = this.getBrightColor();
 
     this.fadeAlpha = 0;
     this.popScale = 0.5;
-    this.feedbackScale = 0;
-    this.feedbackAlpha = 0;
-
-    this.trails.left = [];
-    this.trails.right = [];
   },
 
   spawnIntegers(min, max) {
@@ -155,12 +158,11 @@ const Game3 = {
   update(ctx, fingers, dt = 1/60) {
     ctx.save();
 
+    this.drawConfetti(ctx, dt); // ⭐ FLOATING SYMBOLS
+
     if (this.shakeTime > 0) {
       this.shakeTime -= dt;
-      ctx.translate(
-        (Math.random() - 0.5) * this.shakeMag,
-        (Math.random() - 0.5) * this.shakeMag
-      );
+      ctx.translate((Math.random()-0.5)*this.shakeMag,(Math.random()-0.5)*this.shakeMag);
     }
 
     this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
@@ -168,12 +170,9 @@ const Game3 = {
 
     this.drawUI(ctx);
     this.drawPopups(ctx, dt);
-    this.drawParticles(ctx, dt); // ⭐ PARTICLES DRAW
+    this.drawParticles(ctx, dt);
 
-    if (this.gameState !== "PLAYING") {
-      ctx.restore();
-      return;
-    }
+    if (this.gameState !== "PLAYING") { ctx.restore(); return; }
 
     if (fingers.length < 2) {
       this.drawFeedback(ctx, "Need 2 Hands!", "orange");
@@ -181,14 +180,31 @@ const Game3 = {
       return;
     }
 
-    fingers.sort((a, b) => a.y - b.y);
-    const h1 = fingers[0];
-    const h2 = fingers[1];
+    fingers.sort((a,b)=>a.y-b.y);
+    const h1=fingers[0];
+    const h2=fingers[1];
 
-    this.checkPose(ctx, h1, h2, dt);
-    this.drawArmSymbol(ctx, h1, h2);
+    this.checkPose(ctx,h1,h2,dt);
+    this.drawArmSymbol(ctx,h1,h2);
 
     ctx.restore();
+  },
+
+  drawConfetti(ctx,dt){
+    ctx.textAlign="center";
+    ctx.textBaseline="middle";
+    this.confetti.forEach(c=>{
+      c.y += c.speed * dt;
+      if(c.y > window.innerHeight + 50){
+        c.y = -50;
+        c.x = Math.random()*window.innerWidth;
+      }
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = c.color;
+      ctx.font = `bold ${c.size*this.scale}px Arial`;
+      ctx.fillText(c.symbol, c.x, c.y);
+    });
+    ctx.globalAlpha=1;
   },
 
   checkPose(ctx,h1,h2,dt){
@@ -201,15 +217,13 @@ const Game3 = {
     if(this.detectedSymbol===this.currentRelation){
       this.winHoldTime+=dt;
       this.failHoldTime=0;
-      const progress=this.winHoldTime/this.winHoldThreshold;
-      this.drawProgressBar(ctx,progress,"#00FFCC");
+      this.drawProgressBar(ctx,this.winHoldTime/this.winHoldThreshold,"#00FFCC");
       if(this.winHoldTime>=this.winHoldThreshold) this.handleSuccess();
     }
     else if(this.detectedSymbol===wrongRelation){
       this.failHoldTime+=dt;
       this.winHoldTime=0;
-      const failProgress=this.failHoldTime/this.failHoldThreshold;
-      this.drawProgressBar(ctx,failProgress,"#FF0000");
+      this.drawProgressBar(ctx,this.failHoldTime/this.failHoldThreshold,"#FF0000");
       if(this.failHoldTime>=this.failHoldThreshold) this.handleFail();
     }
   },
@@ -219,27 +233,18 @@ const Game3 = {
     this.score+=10;
     this.combo++;
 
-    // ⭐ PARTICLE BURST
-    for(let i=0;i<25;i++){
+    for(let i=0;i<20;i++){
       this.particles.push({
         x:this.centerX,
         y:this.centerY,
-        vx:(Math.random()-0.5)*400,
-        vy:(Math.random()-0.5)*400,
+        vx:(Math.random()-0.5)*300,
+        vy:(Math.random()-0.5)*300,
         life:1,
         color:this.getBrightColor()
       });
     }
 
-    this.popups.push({
-      text:"Correct",
-      x:this.centerX,
-      y:this.centerY,
-      vy:-30,
-      life:1,
-      color:"#00FF66"
-    });
-
+    this.popups.push({text:"Correct",x:this.centerX,y:this.centerY,vy:-30,life:1,color:"#00FF66"});
     setTimeout(()=>this.spawnNumbers(),900);
   },
 
@@ -250,15 +255,7 @@ const Game3 = {
     this.shakeTime=0.4;
     this.shakeMag=10*this.scale;
 
-    this.popups.push({
-      text:"Wrong!!!",
-      x:this.centerX,
-      y:this.centerY,
-      vy:30,
-      life:1,
-      color:"#FF4444"
-    });
-
+    this.popups.push({text:"Wrong!!!",x:this.centerX,y:this.centerY,vy:30,life:1,color:"#FF4444"});
     setTimeout(()=>this.spawnNumbers(),1200);
   },
 
@@ -267,7 +264,6 @@ const Game3 = {
       p.x+=p.vx*dt;
       p.y+=p.vy*dt;
       p.life-=dt;
-
       ctx.globalAlpha=Math.max(0,p.life);
       ctx.fillStyle=p.color;
       ctx.beginPath();
@@ -296,7 +292,6 @@ const Game3 = {
     ctx.lineCap="round";
     ctx.shadowBlur=15*this.scale;
     ctx.strokeStyle="#00ff37";
-
     ctx.beginPath();
     ctx.moveTo(h1.x,h1.y);
     ctx.lineTo(this.centerX,this.centerY);
@@ -343,7 +338,7 @@ const Game3 = {
     ctx.textAlign="left";
     ctx.font=`bold ${32*this.scale}px Arial`;
     ctx.fillStyle="#FFFFFF";
-    ctx.fillText(`Grade: ${this.currentGrade}`, 30*this.scale, 40*this.scale);
+    ctx.fillText(`Grade: ${this.currentGrade}`,30*this.scale,40*this.scale);
     ctx.textAlign="center";
   },
 
