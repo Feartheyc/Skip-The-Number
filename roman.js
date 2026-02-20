@@ -192,25 +192,39 @@ const Game5 = {
   },
 
   checkButtonClicks() {
-    const w = this.BASE_WIDTH;
-    const h = this.BASE_HEIGHT;
-    const baseUnit = Math.min(w, h);
-    
-    const btnW = Math.max(140, baseUnit * 0.25); 
-    const btnH = Math.max(50, baseUnit * 0.08); 
-    const btnY = h - btnH - (baseUnit * 0.05); 
-    const traceX = w / 2 - btnW - (baseUnit * 0.02); 
-    const freeX = w / 2 + (baseUnit * 0.02);
-    const pad = 50; 
+  const w = this.BASE_WIDTH;
+  const h = this.BASE_HEIGHT;
+  const baseUnit = Math.min(w, h);
 
-    if (this.cursor.x >= traceX - pad && this.cursor.x <= traceX + btnW + pad && this.cursor.y >= btnY - pad && this.cursor.y <= btnY + btnH + pad) {
-      this.setMode("TRACE"); return true;
-    }
-    if (this.cursor.x >= freeX - pad && this.cursor.x <= freeX + btnW + pad && this.cursor.y >= btnY - pad && this.cursor.y <= btnY + btnH + pad) {
-      this.setMode("FREEHAND"); return true;
-    }
-    return false;
-  },
+  const btnW = Math.max(140, baseUnit * 0.25);
+  const btnH = Math.max(50, baseUnit * 0.08);
+  const btnY = h - btnH - (baseUnit * 0.05);
+  const traceX = w / 2 - btnW - (baseUnit * 0.02);
+  const freeX = w / 2 + (baseUnit * 0.02);
+
+  const x = this.cursor.x;
+  const y = this.cursor.y;
+
+  const insideTrace =
+    x >= traceX && x <= traceX + btnW &&
+    y >= btnY && y <= btnY + btnH;
+
+  const insideFree =
+    x >= freeX && x <= freeX + btnW &&
+    y >= btnY && y <= btnY + btnH;
+
+  if (insideTrace) {
+    this.setMode("TRACE");
+    return true;
+  }
+
+  if (insideFree) {
+    this.setMode("FREEHAND");
+    return true;
+  }
+
+  return false;
+},
 
   /* ==============================
      UPDATE LOOP
@@ -621,5 +635,13 @@ const Game5 = {
           ctx.arc(p.x, p.y, p.size || (baseUnit*0.008), 0, Math.PI*2); ctx.fill(); 
       } 
       ctx.globalAlpha = 1.0; 
-  }
+  },
+
+  setMode(newMode) {
+  if (this.mode === newMode) return;
+  this.mode = newMode;
+
+  // Reset all drawing state when switching modes
+  this.resetLevel();
+}
 };
