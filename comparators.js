@@ -29,32 +29,24 @@ const Game3 = {
   margin: 0,
   detectedSymbol: "None",
 
-  /* === Animations === */
   fadeAlpha: 0,
   fadeSpeed: 2.5,
 
   popScale: 0,
   popSpeed: 6,
 
-  feedbackScale: 0,
-  feedbackAlpha: 0,
-
-  /* === New Systems === */
   popups: [],
-  trails: { left: [], right: [] },
+  particles: [],
+  confetti: [], // ⭐ FLOATING MATH SYMBOLS
   shakeTime: 0,
   shakeMag: 0,
 
-  bgHue: 0,
-
-  /* ============================== */
   init() {
-    const rect = document
-      .getElementById("container")
-      .getBoundingClientRect();
-
+    const rect = document.getElementById("container").getBoundingClientRect();
     this.onResize(rect.width, rect.height);
     this.score = 0;
+
+    this.createConfetti();
 
     window.addEventListener('keydown', (e) => {
       if (e.key === '1') this.setDifficulty(1);
@@ -66,13 +58,27 @@ const Game3 = {
     this.spawnNumbers();
   },
 
-  /* ============================== */
   onResize(width, height) {
     this.centerX = width / 2;
     this.centerY = height / 2;
     const base = Math.min(width, height);
     this.scale = base / 600;
     this.margin = 80 * this.scale;
+  },
+
+  createConfetti(){
+    const symbols = ["+", "-", "×", "÷", "<", ">", "="];
+    this.confetti = [];
+    for(let i=0;i<5;i++){
+      this.confetti.push({
+        x: Math.random()*window.innerWidth,
+        y: Math.random()*window.innerHeight,
+        symbol: symbols[Math.floor(Math.random()*symbols.length)],
+        size: (60 + Math.random()*40),
+        speed: 20 + Math.random()*10,
+        color: this.getBrightColor()
+      });
+    }
   },
 
   setDifficulty(grade) {
@@ -84,7 +90,7 @@ const Game3 = {
 
   getBrightColor() {
     const hue = Math.floor(Math.random() * 360);
-    return `hsl(${hue}, 90%, 60%)`;
+    return `hsl(${hue}, 900%, 60%)`;
   },
 
   spawnNumbers() {
@@ -99,20 +105,13 @@ const Game3 = {
       if (Math.random() > 0.5) this.spawnIntegers(100, 999);
       else this.spawnLikeFractions();
     }
-    else if (this.currentGrade === 4) {
-      this.spawnIrregularFractions();
-    }
+    else if (this.currentGrade === 4) this.spawnIrregularFractions();
 
     this.leftColor = this.getBrightColor();
     this.rightColor = this.getBrightColor();
 
     this.fadeAlpha = 0;
     this.popScale = 0.5;
-    this.feedbackScale = 0;
-    this.feedbackAlpha = 0;
-
-    this.trails.left = [];
-    this.trails.right = [];
   },
 
   spawnIntegers(min, max) {
@@ -156,109 +155,58 @@ const Game3 = {
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
-  /* ============================== */
   update(ctx, fingers, dt = 1/60) {
-
-  /* --- 1. ALWAYS draw background in world space (no transforms) --- */
-  this.drawAnimatedBackground(ctx);
-
-  /* --- 2. Apply shake ONLY to gameplay layer --- */
-  ctx.save();
-
-  if (this.shakeTime > 0) {
-    this.shakeTime -= dt;
-    ctx.translate(
-      (Math.random() - 0.5) * this.shakeMag,
-      (Math.random() - 0.5) * this.shakeMag
-    );
-  }
-
-  /* --- 3. Animations --- */
-  this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
-  this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
-
-  if (this.gameState !== "PLAYING") {
-    this.feedbackAlpha = Math.min(1, this.feedbackAlpha + dt * 4);
-    this.feedbackScale = Math.min(1, this.feedbackScale + dt * 5);
-  }
-
-  /* --- 4. UI + Popups --- */
-  this.drawUI(ctx);
-  this.drawPopups(ctx, dt);
-
-  if (this.gameState !== "PLAYING") {
-    ctx.restore();
-    return;
-  }
-
-  /* --- 5. Input validation --- */
-  if (fingers.length < 2) {
-    this.drawFeedback(ctx, "Need 2 Hands!", "orange");
-    ctx.restore();
-    return;
-  }
-
-  fingers.sort((a, b) => a.y - b.y);
-  const h1 = fingers[0];
-  const h2 = fingers[1];
-
-  /* --- 6. Trails + gameplay --- */
-  
-
-  this.checkPose(ctx, h1, h2, dt);
-  this.drawArmSymbol(ctx, h1, h2);
-
-  /* --- 7. Restore to original world space --- */
-  ctx.restore();
-},
-
-
-
-  /* ============================== */
- drawAnimatedBackground(ctx){
-  this.bgHue += 20 * 0.016;
-
-  const canvas = ctx.canvas;
-
-  const grad = ctx.createLinearGradient(
-    0, 0,
-    canvas.width,
-    canvas.height
-  );
-
-  grad.addColorStop(0, `hsl(${this.bgHue % 360}, 70%, 15%)`);
-  grad.addColorStop(1, `hsl(${(this.bgHue + 60) % 360}, 70%, 10%)`);
-
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-},
-
-
-  /* ============================== */
-  drawNeonTrail(ctx, trailArray, finger, color){
-    trailArray.push({x:finger.x, y:finger.y});
-    if(trailArray.length > 15) trailArray.shift();
-
     ctx.save();
-    ctx.beginPath();
 
-    for(let i=0;i<trailArray.length;i++){
-      const p = trailArray[i];
-      if(i===0) ctx.moveTo(p.x,p.y);
-      else ctx.lineTo(p.x,p.y);
+    this.drawConfetti(ctx, dt); // ⭐ FLOATING SYMBOLS
+
+    if (this.shakeTime > 0) {
+      this.shakeTime -= dt;
+      ctx.translate((Math.random()-0.5)*this.shakeMag,(Math.random()-0.5)*this.shakeMag);
     }
 
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 8 * this.scale;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 20 * this.scale;
-    ctx.globalAlpha = 0.9;
-    ctx.stroke();
+    this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
+    this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
+
+    this.drawUI(ctx);
+    this.drawPopups(ctx, dt);
+    this.drawParticles(ctx, dt);
+
+    if (this.gameState !== "PLAYING") { ctx.restore(); return; }
+
+    if (fingers.length < 2) {
+      this.drawFeedback(ctx, "Need 2 Hands!", "orange");
+      ctx.restore();
+      return;
+    }
+
+    fingers.sort((a,b)=>a.y-b.y);
+    const h1=fingers[0];
+    const h2=fingers[1];
+
+    this.checkPose(ctx,h1,h2,dt);
+    this.drawArmSymbol(ctx,h1,h2);
 
     ctx.restore();
   },
 
-  /* ============================== */
+  drawConfetti(ctx,dt){
+    ctx.textAlign="center";
+    ctx.textBaseline="middle";
+    this.confetti.forEach(c=>{
+      c.y += c.speed * dt;
+      if(c.y > window.innerHeight + 50){
+        c.y = -50;
+        c.x = Math.random()*window.innerWidth;
+      }
+      ctx.globalAlpha = 0.8;
+      ctx.fillStyle = c.color;
+      ctx.font = `bold ${c.size*this.scale}px Arial`;
+      ctx.fillText(c.symbol, c.x, c.y);
+    });
+    ctx.globalAlpha=1;
+  },
+
   checkPose(ctx,h1,h2,dt){
     if(h1.x<this.centerX-this.margin && h2.x<this.centerX-this.margin) this.detectedSymbol=">";
     else if(h1.x>this.centerX+this.margin && h2.x>this.centerX+this.margin) this.detectedSymbol="<";
@@ -269,34 +217,34 @@ const Game3 = {
     if(this.detectedSymbol===this.currentRelation){
       this.winHoldTime+=dt;
       this.failHoldTime=0;
-      const progress=this.winHoldTime/this.winHoldThreshold;
-      this.drawProgressBar(ctx,progress,"#00FFCC");
+      this.drawProgressBar(ctx,this.winHoldTime/this.winHoldThreshold,"#00FFCC");
       if(this.winHoldTime>=this.winHoldThreshold) this.handleSuccess();
     }
     else if(this.detectedSymbol===wrongRelation){
       this.failHoldTime+=dt;
       this.winHoldTime=0;
-      const failProgress=this.failHoldTime/this.failHoldThreshold;
-      this.drawProgressBar(ctx,failProgress,"#FF0000");
+      this.drawProgressBar(ctx,this.failHoldTime/this.failHoldThreshold,"#FF0000");
       if(this.failHoldTime>=this.failHoldThreshold) this.handleFail();
     }
   },
 
-  /* ============================== */
   handleSuccess(){
     this.gameState="SUCCESS";
     this.score+=10;
     this.combo++;
 
-    this.popups.push({
-      text:"Correct",
-      x:this.centerX,
-      y:this.centerY,
-      vy:-30,
-      life:1,
-      color:"#00FF66"
-    });
+    for(let i=0;i<20;i++){
+      this.particles.push({
+        x:this.centerX,
+        y:this.centerY,
+        vx:(Math.random()-0.5)*300,
+        vy:(Math.random()-0.5)*300,
+        life:1,
+        color:this.getBrightColor()
+      });
+    }
 
+    this.popups.push({text:"Correct",x:this.centerX,y:this.centerY,vy:-30,life:1,color:"#00FF66"});
     setTimeout(()=>this.spawnNumbers(),900);
   },
 
@@ -307,16 +255,23 @@ const Game3 = {
     this.shakeTime=0.4;
     this.shakeMag=10*this.scale;
 
-    this.popups.push({
-      text:"Wrong!!!",
-      x:this.centerX,
-      y:this.centerY,
-      vy:30,
-      life:1,
-      color:"#FF4444"
-    });
-
+    this.popups.push({text:"Wrong!!!",x:this.centerX,y:this.centerY,vy:30,life:1,color:"#FF4444"});
     setTimeout(()=>this.spawnNumbers(),1200);
+  },
+
+  drawParticles(ctx,dt){
+    this.particles.forEach(p=>{
+      p.x+=p.vx*dt;
+      p.y+=p.vy*dt;
+      p.life-=dt;
+      ctx.globalAlpha=Math.max(0,p.life);
+      ctx.fillStyle=p.color;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,6*this.scale,0,Math.PI*2);
+      ctx.fill();
+    });
+    ctx.globalAlpha=1;
+    this.particles=this.particles.filter(p=>p.life>0);
   },
 
   drawPopups(ctx,dt){
@@ -337,7 +292,6 @@ const Game3 = {
     ctx.lineCap="round";
     ctx.shadowBlur=15*this.scale;
     ctx.strokeStyle="#00ff37";
-
     ctx.beginPath();
     ctx.moveTo(h1.x,h1.y);
     ctx.lineTo(this.centerX,this.centerY);
@@ -346,8 +300,7 @@ const Game3 = {
     ctx.shadowBlur=0;
   },
 
-  /* ============================== */
-    drawUI(ctx){
+  drawUI(ctx){
     ctx.textAlign="center";
     ctx.textBaseline="middle";
 
@@ -373,26 +326,21 @@ const Game3 = {
 
     ctx.globalAlpha=1;
 
-    /* ===== SCORE ===== */
     ctx.font=`bold ${36*this.scale}px Arial`;
     ctx.fillStyle="white";
     ctx.fillText(`Score: ${this.score}`,this.centerX,60*this.scale);
 
-    /* ===== COMBO ===== */
     if(this.combo>=2){
       ctx.fillStyle="#FFD700";
       ctx.fillText(`Combo x${this.combo}`,this.centerX,100*this.scale);
     }
 
-    /* ===== GRADE TEXT (NEW) ===== */
     ctx.textAlign="left";
     ctx.font=`bold ${32*this.scale}px Arial`;
     ctx.fillStyle="#FFFFFF";
-    ctx.fillText(`Grade: ${this.currentGrade}`, 30*this.scale, 40*this.scale);
-
-    ctx.textAlign="center"; // reset alignment
+    ctx.fillText(`Grade: ${this.currentGrade}`,30*this.scale,40*this.scale);
+    ctx.textAlign="center";
   },
-
 
   drawFeedback(ctx,text,color){
     ctx.fillStyle=color;
