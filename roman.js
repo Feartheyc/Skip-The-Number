@@ -30,29 +30,6 @@ const Game5 = {
   cursor: { x: 0, y: 0 },
   cursorColor: "white", 
 
-  // NEW AI: Added "localStrokes" which are the pure math blueprints (0.0 to 1.0)
-  levels: [
-    { symbol: "I", number: "1", 
-      strokes: [ { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 } ],
-      localStrokes: [ {x1: 0.5, y1: 0, x2: 0.5, y2: 1} ] 
-    },
-    { symbol: "V", number: "5", 
-      strokes: [ { x1: 0.3, y1: 0.2, x2: 0.5, y2: 0.8 }, { x1: 0.5, y1: 0.8, x2: 0.7, y2: 0.2 } ],
-      localStrokes: [ {x1: 0, y1: 0, x2: 0.5, y2: 1}, {x1: 0.5, y1: 1, x2: 1, y2: 0} ] 
-    },
-    { symbol: "X", number: "10", 
-      strokes: [ { x1: 0.3, y1: 0.2, x2: 0.7, y2: 0.8 }, { x1: 0.7, y1: 0.2, x2: 0.3, y2: 0.8 } ],
-      localStrokes: [ {x1: 0, y1: 0, x2: 1, y2: 1}, {x1: 1, y1: 0, x2: 0, y2: 1} ] 
-    },
-    { symbol: "L", number: "50", 
-      strokes: [ { x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8 }, { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 } ],
-      localStrokes: [ {x1: 0, y1: 0, x2: 0, y2: 1}, {x1: 0, y1: 1, x2: 1, y2: 1} ] 
-    },
-    { symbol: "III", number: "3", 
-      strokes: [ { x1: 0.35, y1: 0.2, x2: 0.35, y2: 0.8 }, { x1: 0.45, y1: 0.2, x2: 0.45, y2: 0.8 }, { x1: 0.55, y1: 0.2, x2: 0.55, y2: 0.8 } ],
-      localStrokes: [ {x1: 0, y1: 0, x2: 0, y2: 1}, {x1: 0.5, y1: 0, x2: 0.5, y2: 1}, {x1: 1, y1: 0, x2: 1, y2: 1} ] 
-    }
-  ],
 
   levelCompleteTimer: 0,
   levelFailedTimer: 0, 
@@ -70,10 +47,10 @@ const Game5 = {
     if (menu) menu.style.display = "none";
     const video = document.getElementById("input_video");
     if (video) video.style.display = "none";
-    
+    this.generateLevels();
     this.resizeCanvas();
     this.resetLevel();
-
+    this.generateLevels();
     if (!this.listenersAdded) {
       this.addInputListeners();
       window.addEventListener('resize', () => { if (this.running) this.resizeCanvas(); });
@@ -643,5 +620,126 @@ const Game5 = {
 
   // Reset all drawing state when switching modes
   this.resetLevel();
+},
+
+
+toRoman(num) {
+  const map = [
+    { value: 100, numeral: "C" },
+    { value: 90, numeral: "XC" },
+    { value: 50, numeral: "L" },
+    { value: 40, numeral: "XL" },
+    { value: 10, numeral: "X" },
+    { value: 9, numeral: "IX" },
+    { value: 5, numeral: "V" },
+    { value: 4, numeral: "IV" },
+    { value: 1, numeral: "I" }
+  ];
+
+  let result = "";
+
+  for (let i = 0; i < map.length; i++) {
+    while (num >= map[i].value) {
+      result += map[i].numeral;
+      num -= map[i].value;
+    }
+  }
+
+  return result;
+},
+
+
+generateLevels() {
+  this.levels = [];
+
+  for (let i = 1; i <= 100; i++) {
+    const roman = this.toRoman(i);
+
+    this.levels.push({
+      symbol: roman,
+      number: i.toString(),
+      strokes: this.buildStrokesFromRoman(roman),
+      localStrokes: this.buildLocalFromRoman(roman)
+    });
+  }
+},
+
+buildStrokesFromRoman(roman) {
+  const chars = roman.split("");
+  const strokes = [];
+
+  const spacing = 0.15;
+  const startX = 0.5 - (chars.length - 1) * spacing / 2;
+
+  chars.forEach((ch, index) => {
+    const offset = startX + index * spacing;
+
+    if (ch === "I") {
+      strokes.push({ x1: offset, y1: 0.2, x2: offset, y2: 0.8 });
+    }
+
+    if (ch === "V") {
+      strokes.push(
+        { x1: offset - 0.05, y1: 0.2, x2: offset, y2: 0.8 },
+        { x1: offset, y1: 0.8, x2: offset + 0.05, y2: 0.2 }
+      );
+    }
+
+    if (ch === "X") {
+      strokes.push(
+        { x1: offset - 0.05, y1: 0.2, x2: offset + 0.05, y2: 0.8 },
+        { x1: offset + 0.05, y1: 0.2, x2: offset - 0.05, y2: 0.8 }
+      );
+    }
+
+    if (ch === "L") {
+      strokes.push(
+        { x1: offset - 0.05, y1: 0.2, x2: offset - 0.05, y2: 0.8 },
+        { x1: offset - 0.05, y1: 0.8, x2: offset + 0.05, y2: 0.8 }
+      );
+    }
+
+    if (ch === "C") {
+      // Simple C shape using 2 lines
+      strokes.push(
+        { x1: offset + 0.05, y1: 0.2, x2: offset - 0.05, y2: 0.5 },
+        { x1: offset - 0.05, y1: 0.5, x2: offset + 0.05, y2: 0.8 }
+      );
+    }
+  });
+
+  return strokes;
+},
+
+buildLocalFromRoman(roman) {
+  const chars = roman.split("");
+  const strokes = [];
+
+  chars.forEach((ch) => {
+    if (ch === "I") strokes.push({ x1: 0.5, y1: 0, x2: 0.5, y2: 1 });
+
+    if (ch === "V") strokes.push(
+      { x1: 0, y1: 0, x2: 0.5, y2: 1 },
+      { x1: 0.5, y1: 1, x2: 1, y2: 0 }
+    );
+
+    if (ch === "X") strokes.push(
+      { x1: 0, y1: 0, x2: 1, y2: 1 },
+      { x1: 1, y1: 0, x2: 0, y2: 1 }
+    );
+
+    if (ch === "L") strokes.push(
+      { x1: 0, y1: 0, x2: 0, y2: 1 },
+      { x1: 0, y1: 1, x2: 1, y2: 1 }
+    );
+
+    if (ch === "C") strokes.push(
+      { x1: 1, y1: 0, x2: 0, y2: 0.5 },
+      { x1: 0, y1: 0.5, x2: 1, y2: 1 }
+    );
+  });
+
+  return strokes;
 }
+
 };
