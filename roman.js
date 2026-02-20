@@ -2,7 +2,13 @@ const Game5 = {
 
   running: false,
   score: 0,
-  
+  BASE_WIDTH: 1280,
+BASE_HEIGHT: 720,
+scale: 1,
+offsetX: 0,
+offsetY: 0,
+playWidth: 0,
+playHeight: 0,
   // State
   mode: "TRACE", 
   currentLevel: 0,
@@ -62,7 +68,14 @@ const Game5 = {
     this.score = 0;
     this.currentLevel = 0;
     this.mode = "TRACE"; 
-    
+    if (window.stopCamera) {
+      window.stopCamera();
+    }
+    document.getElementById("menu").style.display = "none";
+
+
+    const video = document.getElementById("input_video");
+    if (video) video.style.display = "none";
     this.resizeCanvas();
     
     if (!this.offCtx) {
@@ -87,17 +100,31 @@ const Game5 = {
   },
 
   resizeCanvas() {
-    const canvas = document.getElementById('game_canvas');
-    const dpr = window.devicePixelRatio || 1;
-    canvas.width = window.innerWidth * dpr;
-    canvas.height = window.innerHeight * dpr;
-  },
+  const canvas = document.getElementById("game_canvas");
 
-  setMode(newMode) {
-    if (this.mode === newMode) return;
-    this.mode = newMode;
-    this.resetLevel();
-  },
+  const cssWidth = window.innerWidth;
+  const cssHeight = window.innerHeight;
+
+  canvas.width = cssWidth;
+  canvas.height = cssHeight;
+
+  canvas.style.width = cssWidth + "px";
+  canvas.style.height = cssHeight + "px";
+
+  const screenW = canvas.width;
+  const screenH = canvas.height;
+
+  this.scale = Math.min(
+    screenW / this.BASE_WIDTH,
+    screenH / this.BASE_HEIGHT
+  );
+
+  this.playWidth = this.BASE_WIDTH * this.scale;
+  this.playHeight = this.BASE_HEIGHT * this.scale;
+
+  this.offsetX = (screenW - this.playWidth) / 2;
+  this.offsetY = (screenH - this.playHeight) / 2;
+},
 
   resetLevel() {
     this.tracePoints = [];
@@ -166,18 +193,21 @@ const Game5 = {
   },
 
   updateCursor(e) {
-    const canvas = document.getElementById('game_canvas');
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    this.cursor.x = (e.clientX - rect.left) * scaleX;
-    this.cursor.y = (e.clientY - rect.top) * scaleY;
-  },
+  const rect = document
+    .getElementById("game_canvas")
+    .getBoundingClientRect();
+
+  const rawX = e.clientX - rect.left;
+  const rawY = e.clientY - rect.top;
+
+  this.cursor.x = (rawX - this.offsetX) / this.scale;
+  this.cursor.y = (rawY - this.offsetY) / this.scale;
+},
 
   checkButtonClicks() {
-    const w = document.getElementById('game_canvas').width;
-    const h = document.getElementById('game_canvas').height;
-    const baseUnit = Math.min(w, h);
+    const w = this.BASE_WIDTH;
+    const h = this.BASE_HEIGHT;
+    const baseUnit = Math.min(this.BASE_WIDTH, this.BASE_HEIGHT);
     
     const btnW = Math.max(140, baseUnit * 0.3); 
     const btnH = Math.max(40, baseUnit * 0.1); 
@@ -201,14 +231,32 @@ const Game5 = {
   update(ctx) {
     if (!this.running) return;
 
-    const w = ctx.canvas.width;
-    const h = ctx.canvas.height;
-    const baseUnit = Math.min(w, h); 
+const canvas = ctx.canvas;
+const screenW = canvas.width;
+const screenH = canvas.height;
 
-    ctx.fillStyle = "#222"; 
-    ctx.fillRect(0, 0, w, h);
+// Clear screen
+ctx.fillStyle = "#222";
+ctx.fillRect(0, 0, screenW, screenH);
 
-    ctx.save();
+ctx.save();
+
+// ----- SHAKE -----
+if (this.shakeTimer > 0) {
+  const shake = 10 * this.scale;
+  ctx.translate(
+    (Math.random() - 0.5) * shake,
+    (Math.random() - 0.5) * shake
+  );
+}
+
+// ----- CENTER GAME -----
+ctx.translate(this.offsetX, this.offsetY);
+ctx.scale(this.scale, this.scale);
+
+const w = this.BASE_WIDTH;
+const h = this.BASE_HEIGHT;
+const baseUnit = Math.min(w, h);
     if (this.shakeTimer > 0) {
         const shakeAmt = baseUnit * 0.02;
         ctx.translate((Math.random()-0.5)*shakeAmt, (Math.random()-0.5)*shakeAmt);
@@ -229,9 +277,9 @@ const Game5 = {
     this.drawUserInk(ctx, baseUnit);
     this.drawParticles(ctx, baseUnit); 
     this.drawCursor(ctx, baseUnit); 
+    this.drawUI(ctx, w, h, baseUnit);
     
     ctx.restore(); 
-    this.drawUI(ctx, w, h, baseUnit);
 
     if (this.levelCompleteTimer > 0) {
       this.levelCompleteTimer++;
@@ -349,7 +397,7 @@ const Game5 = {
   },
 
   // Flattens aspect ratio AND removes stray dots
-  rasterizeStrokes(strokes) {
+  rasterizeStrokes(strokes,baseUnit=720) {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
       let validStrokes = [];
 
@@ -387,7 +435,7 @@ const Game5 = {
       let cx = minX + w/2; let cy = minY + h/2;
 
       // 2. DRAW NORMALIZED SHAPE
-      ctx.lineWidth = 18; // Super thick virtual ink so wobbly lines still pass
+      ctx.lineWidth = baseUnit * 0.06; //Super thick virtual ink so wobbly lines still pass
       ctx.lineCap = "round"; ctx.lineJoin = "round";
       ctx.strokeStyle = "white";
 
@@ -489,7 +537,9 @@ const Game5 = {
       
       ctx.beginPath(); ctx.fillStyle = this.cursorColor;
       ctx.arc(this.cursor.x, this.cursor.y, baseUnit * 0.02, 0, Math.PI*2); ctx.fill();
-      ctx.strokeStyle = "black"; ctx.lineWidth = 2; ctx.stroke();
+      ctx.strokeStyle = "black";
+      ctx.lineWidth = baseUnit * 0.06;
+      ctx.stroke();
   },
 
   drawUI(ctx, w, h, baseUnit) {
@@ -527,7 +577,9 @@ const Game5 = {
 
     ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#444";
     ctx.fillRect(traceX, btnY, btnW, btnH);
-    ctx.strokeStyle = "white"; ctx.lineWidth = 2; ctx.strokeRect(traceX, btnY, btnW, btnH);
+    ctx.strokeStyle = "white";
+     ctx.lineWidth = baseUnit * 0.06;
+     ctx.strokeRect(traceX, btnY, btnW, btnH);
     ctx.fillStyle = this.mode === "TRACE" ? "black" : "white";
     ctx.fillText("TRACE", traceX + btnW/2, btnY + btnH/2);
 
