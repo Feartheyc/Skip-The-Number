@@ -30,12 +30,15 @@ html, body {
 
 /* Canvas overlay */
 #game_canvas {
-  position: absolute;
+  position: fixed;
+  top:0;
+  left:0;
   inset: 0;
-  width: 100%;
-  height: 100%;
+  width: 100vh;
+  height: 100vh;
   z-index: 1;
   pointer-events: auto;
+  display: block;
 }
 
 /* MENU */
