@@ -1,54 +1,41 @@
 const Game4 = {
 
-
-
   BASE_WIDTH: 1280,
   BASE_HEIGHT: 720,
   scale: 1,
 
-  // --- CONFIGURATION ---
-  PIVOT_OFFSET: 120, 
+  PIVOT_OFFSET: 120,
   PIVOT_RADIUS: 15,
   ARM_LENGTH: 140,
   BALL_RADIUS: 30,
   MAX_BALLS: 6,
-  
-  // Physics Tweaks
+
   LOCK_TIME: 2000,
-  ELASTICITY: 1.3, // 1.3 = Ball gains 30% speed on bounce (Pinball feel)
-  ARM_POWER: 0.8,  // How much arm speed transfers to ball (0.0 to 1.0)
+  ELASTICITY: 1.3,
+  ARM_POWER: 0.8,
 
-  // Visuals
-  EDGE_SIZE: 35, 
-  LINE_GAP: 40,  
+  EDGE_SIZE: 35,
+  LINE_GAP: 40,
 
-  // State
   gameStarted: false,
   running: false,
   score: 0,
-  
-  // Score Animation State
+
   scoreScale: 1,
   scoreColor: "white",
-  
-  // Entities
+
   balls: [],
-  particles: [], 
-  floaters: [],  
-  
-  // Timers
+  particles: [],
+  floaters: [],
+
   spawnTimer: 0,
   lastTime: 0,
-  shakeTimer: 0, 
+  shakeTimer: 0,
 
-  // Pivots
   pivotLockTimer: { left: 0, right: 0 },
   pivotLocked: { left: false, right: false },
-  
-  // Arm Flash State (Visual feedback on hit)
   armFlash: { left: 0, right: 0 },
 
-  // Pose Data
   pose: null,
   armData: { left: null, right: null },
   armVelocity: {
@@ -59,15 +46,16 @@ const Game4 = {
   CENTER_X: 0,
   CENTER_Y: 0,
 
-  /* ==============================
-     INIT
-  ============================== */
+  SMOOTH: 0.6,
+  MIN_ARM_LENGTH: 25,
+
   init() {
     this.CENTER_X = canvasElement.width / 2;
     this.CENTER_Y = canvasElement.height / 2;
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
+
     this.running = true;
     this.score = 0;
     this.balls = [];
@@ -76,139 +64,109 @@ const Game4 = {
     this.spawnTimer = 0;
     this.lastTime = performance.now();
     this.gameStarted = false;
-    const video = document.getElementById("input_video");
-    if (video) video.style.opacity = "1";
-    
-    // Reset Score Anim
+
     this.scoreScale = 1;
     this.scoreColor = "white";
-    
+
     this.pivotLocked = { left: false, right: false };
     this.pivotLockTimer = { left: 0, right: 0 };
     this.armFlash = { left: 0, right: 0 };
-    
+
     this.initPose();
-    this.resize()
   },
 
   initPose() {
-  if (this.pose) return;
+    if (this.pose) return;
 
-  this.pose = new Pose({
-    locateFile: (file) =>
-      `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
-  });
+    this.pose = new Pose({
+      locateFile: (file) =>
+        `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+    });
 
-  this.pose.setOptions({
-    modelComplexity: 1,
-    smoothLandmarks: true,
-    minDetectionConfidence: 0.6,
-    minTrackingConfidence: 0.6
-  });
+    this.pose.setOptions({
+      modelComplexity: 1,
+      smoothLandmarks: true,
+      minDetectionConfidence: 0.6,
+      minTrackingConfidence: 0.6
+    });
 
-  this.pose.onResults(this.onPoseResults.bind(this));
-
-  // ✅ ADD LOCK
-  this.poseBusy = false;
-
-  window.sendFrameToPose = async (image) => {
-
-    if (!this.running) return;
-    if (this.poseBusy) return;   // ⭐ prevents crash
-
-    this.poseBusy = true;
-
-    try {
-      await this.pose.send({ image });
-    } catch (e) {
-      console.error("POSE ERROR:", e);
-    }
-
+    this.pose.onResults(this.onPoseResults.bind(this));
     this.poseBusy = false;
-  };
-},
 
+    window.sendFrameToPose = async (image) => {
+      if (!this.running || this.poseBusy) return;
+      this.poseBusy = true;
+      try {
+        await this.pose.send({ image });
+      } catch (e) {
+        console.error(e);
+      }
+      this.poseBusy = false;
+    };
+  },
 
   onPoseResults(results) {
-  if (!results.poseLandmarks) return;
+    if (!results.poseLandmarks) return;
+    const lm = results.poseLandmarks;
 
-  const lm = results.poseLandmarks;
+    const mapPoint = (p) => ({
+      x: (1 - p.x) * canvasElement.width,
+      y: p.y * canvasElement.height
+    });
 
-  const mapPoint = (p) => ({
-  x: (1 - p.x) * canvasElement.width,
-  y: p.y * canvasElement.height
-});
+    const smooth = (oldP, newP) => {
+      if (!oldP) return newP;
+      return {
+        x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
+        y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
+      };
+    };
 
+    const updateArm = (side, elbowLm, wristLm) => {
+      if (!elbowLm || !wristLm) return;
+      if (elbowLm.visibility < 0.4 || wristLm.visibility < 0.4) return;
 
-  const updateArm = (side, elbowLm, wristLm) => {
+      let elbow = mapPoint(elbowLm);
+      let wrist = mapPoint(wristLm);
 
-    if (!elbowLm || !wristLm) return;
+      const prev = this.armData[side];
+      elbow = smooth(prev?.elbow, elbow);
+      wrist = smooth(prev?.wrist, wrist);
 
-    // relax visibility for debugging
-    if (elbowLm.visibility < 0.3 || wristLm.visibility < 0.3) return;
+      const dx = wrist.x - elbow.x;
+      const dy = wrist.y - elbow.y;
+      if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
 
-    const elbow = mapPoint(elbowLm);
-    const wrist = mapPoint(wristLm);
+      const vel = this.armVelocity[side];
+      if (vel.last) {
+        vel.vx = vel.vx * 0.5 + (wrist.x - vel.last.x) * 0.5;
+        vel.vy = vel.vy * 0.5 + (wrist.y - vel.last.y) * 0.5;
+      }
+      vel.last = { x: wrist.x, y: wrist.y };
 
-    const vel = this.armVelocity[side];
+      this.armData[side] = { elbow, wrist };
+    };
 
-    if (vel.last) {
-      const currVx = wrist.x - vel.last.x;
-      const currVy = wrist.y - vel.last.y;
+    updateArm("right", lm[14], lm[16]);
+    updateArm("left", lm[13], lm[15]);
+  },
 
-      vel.vx = vel.vx * 0.3 + currVx * 0.7;
-      vel.vy = vel.vy * 0.3 + currVy * 0.7;
-    }
+  resize() {
+    const rect = canvasElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvasElement.width = rect.width * dpr;
+    canvasElement.height = rect.height * dpr;
 
-    vel.last = { x: wrist.x, y: wrist.y };
+    const w = canvasElement.width;
+    const h = canvasElement.height;
 
-    this.armData[side] = { elbow, wrist };
-  };
+    this.scale = Math.min(w / this.BASE_WIDTH, h / this.BASE_HEIGHT);
+    if (!this.scale || this.scale <= 0) this.scale = 1;
 
-  // ⭐ CRITICAL — THIS WAS MISSING
-  // swap because camera is mirrored
-updateArm("right", lm[14], lm[16]);
-updateArm("left", lm[13], lm[15]);
+    this.CENTER_X = w / 2;
+    this.CENTER_Y = h / 2;
+  },
 
-},
-
-
-
-resize() {
-
-  const rect = canvasElement.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-
-  canvasElement.width = rect.width * dpr;
-  canvasElement.height = rect.height * dpr;
-
-  const w = canvasElement.width;
-  const h = canvasElement.height;
-
-  // ✅ calculate scale FIRST
-  this.scale = Math.min(
-    w / this.BASE_WIDTH,
-    h / this.BASE_HEIGHT
-  );
-
-  if (!this.scale || this.scale <= 0) this.scale = 1;
-
-  // ✅ centered play area
-  this.playWidth = this.BASE_WIDTH * this.scale;
-  this.playHeight = this.BASE_HEIGHT * this.scale;
-
-  this.offsetX = (w - this.playWidth) / 2;
-  this.offsetY = (h - this.playHeight) / 2;
-
-  this.CENTER_X = w / 2;
-  this.CENTER_Y = h / 2;
-},
-
-
-
-  /* ==============================
-     UPDATE LOOP
-  ============================== */
   update(ctx) {
     if (!this.running) return;
 
@@ -216,180 +174,175 @@ resize() {
     const deltaTime = now - this.lastTime;
     this.lastTime = now;
 
-    if (!this.gameStarted) {
-      this.checkPivotLock(deltaTime);
-    } else {
+    if (!this.gameStarted) this.checkPivotLock(deltaTime);
+    else {
       this.handleSpawning(deltaTime);
-      this.updateBalls(deltaTime / 16.67); 
+      this.updateBalls(deltaTime / 16.67);
       this.checkPhysics();
       this.checkScoring();
     }
-    
+
     this.updateParticles();
     this.updateFloaters();
 
-    // Score Animation Decay
-    if (this.scoreScale > 1) {
-        this.scoreScale -= 0.05; // Shrink back
-    } else {
-        this.scoreScale = 1;
-        this.scoreColor = "white"; // Reset color when settled
-    }
-
-    // Arm Flash Decay
-    if (this.armFlash.left > 0) this.armFlash.left--;
-    if (this.armFlash.right > 0) this.armFlash.right--;
-
-    // Shake Effect
-    ctx.save();
-    if (this.shakeTimer > 0) {
-        const intensity = this.shakeTimer;
-        ctx.translate((Math.random()-0.5)*intensity, (Math.random()-0.5)*intensity);
-        this.shakeTimer *= 0.9;
-        if (this.shakeTimer < 0.5) this.shakeTimer = 0;
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-     if (this.gameStarted) {
-       ctx.fillStyle = "black";
-        ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
-        this.drawBalls(ctx);
-        this.drawArms(ctx);
+    if (this.gameStarted) {
+      ctx.fillStyle = "black";
+      ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+      this.drawBalls(ctx);
+      this.drawArms(ctx);
     }
 
     this.drawBackground(ctx);
-    this.drawEdgeZones(ctx); 
-    this.drawCross(ctx);     
+    this.drawEdgeZones(ctx);
+    this.drawCross(ctx);
     this.drawPivots(ctx);
-    
-    
     this.drawParticles(ctx);
     this.drawFloaters(ctx);
     this.drawUI(ctx);
-    
-    ctx.restore();
   },
 
-  /* ==============================
-     GAMEPLAY LOGIC
-  ============================== */
   handleSpawning(dt) {
     this.spawnTimer += dt;
-    const spawnRate = Math.max(500, 1000 - (this.score * 2)); 
+    const spawnRate = Math.max(500, 1000 - (this.score * 2));
 
     if (this.spawnTimer > spawnRate && this.balls.length < this.MAX_BALLS) {
-       this.spawnBall();
-       this.spawnTimer = 0;
+      this.spawnBall();
+      this.spawnTimer = 0;
     }
   },
 
   spawnBall() {
-    const number = Math.floor(Math.random() * 100) + 1;
-    const isOdd = number % 2 !== 0;
-    const side = Math.floor(Math.random() * 4);
-    const speed = (4 + Math.random() * 2)*this.scale; // Slightly faster base speed
+  const number = Math.floor(Math.random() * 100) + 1;
+  const isOdd = number % 2 !== 0;
+  const side = Math.floor(Math.random() * 4);
+  const speed = (4 + Math.random() * 2) * this.scale;
 
-    let x, y, vx, vy;
+  let x, y, vx, vy;
 
-    if (side === 0) { x = this.CENTER_X; y = -30*this.scale; vx = (Math.random()-0.5)*3; vy = speed; } 
-    else if (side === 1) { x = this.CENTER_X; y = canvasElement.height + 30; vx = (Math.random()-0.5)*3; vy = -speed; } 
-    else if (side === 2) { x = -30*this.scale; y = this.CENTER_Y; vx = speed; vy = (Math.random()-0.5)*3; } 
-    else { x = canvasElement.width + 30; y = this.CENTER_Y; vx = -speed; vy = (Math.random()-0.5)*3; } 
+  // TOP → straight down
+  if (side === 0) {
+    x = this.CENTER_X;
+    y = -50;
+    vx = 0;
+    vy = speed;
+  }
 
-    this.balls.push({
-      x, y, vx, vy,
-      number,
-      isOdd,
-      color: isOdd ? "#00FFFF" : "#FF0055", 
-      trail: [],
-      hitCooldown: 0,
-      scored: false,
-      scale: 1
-    });
-  },
+  // BOTTOM → straight up
+  else if (side === 1) {
+    x = this.CENTER_X;
+    y = canvasElement.height + 50;
+    vx = 0;
+    vy = -speed;
+  }
 
-  updateBalls(dt) {
-    for (let b of this.balls) {
-      if (b.scored) continue;
+  // LEFT → straight right
+  else if (side === 2) {
+    x = -50;
+    y = this.CENTER_Y;
+    vx = speed;
+    vy = 0;
+  }
 
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      b.hitCooldown -= dt;
+  // RIGHT → straight left
+  else {
+    x = canvasElement.width + 50;
+    y = this.CENTER_Y;
+    vx = -speed;
+    vy = 0;
+  }
 
-      b.trail.push({x: b.x, y: b.y});
-      if (b.trail.length > 8) b.trail.shift();
+  this.balls.push({
+    x, y, vx, vy,
+    number,
+    isOdd,
+    color: isOdd ? "#00FFFF" : "#FF0055",
+    trail: [],
+    hitCooldown: 0,
+    scored: false
+  });
+},
+updateBalls(dt) {
+  for (let b of this.balls) {
+    if (b.scored) continue;
 
-      // Screen Bounds Bounce (Top/Bottom)
-      if (b.y < 0 && b.vy < 0) b.vy *= -1;
-      if (b.y > canvasElement.height && b.vy > 0) b.vy *= -1;
+    // Move ball
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.hitCooldown -= dt;
+
+    // ❌ Remove vertical bounce (this was blocking entry behavior)
+    // if (b.y < 0 && b.vy < 0) b.vy *= -1;
+    // if (b.y > canvasElement.height && b.vy > 0) b.vy *= -1;
+
+    // OPTIONAL: remove ball if fully off screen (cleanup)
+    if (
+      b.x < -100 || b.x > canvasElement.width + 100 ||
+      b.y < -100 || b.y > canvasElement.height + 100
+    ) {
+      b.remove = true;
     }
-  },
+  }
 
-  // --- NEW PHYSICS ENGINE ---
+  // Clean removed balls
+  this.balls = this.balls.filter(b => !b.remove);
+},
+
   checkPhysics() {
+    const margin = this.ballRadius + 5;
+
     const checkArmCollision = (arm, pivot, side) => {
       if (!arm?.wrist || !arm?.elbow) return;
 
-      const angle = Math.atan2(arm.wrist.y - arm.elbow.y, arm.wrist.x - arm.elbow.x);
+      const angle = Math.atan2(
+        arm.wrist.y - arm.elbow.y,
+        arm.wrist.x - arm.elbow.x
+      );
+
       const tipX = pivot.x + Math.cos(angle) * this.armLength;
       const tipY = pivot.y + Math.sin(angle) * this.armLength;
 
       const ax = tipX - pivot.x;
       const ay = tipY - pivot.y;
-      const armLen = Math.sqrt(ax*ax + ay*ay);
-      const nx = -ay / armLen; // Normal
-      const ny = ax / armLen;  
+      const armLen = Math.hypot(ax, ay);
+      const nx = -ay / armLen;
+      const ny = ax / armLen;
 
       const armVel = this.armVelocity[side];
 
       for (let b of this.balls) {
         if (b.hitCooldown > 0 || b.scored) continue;
 
+        if (
+          b.x < -margin || b.x > canvasElement.width + margin ||
+          b.y < -margin || b.y > canvasElement.height + margin
+        ) continue;
+
         const dist = this.pointToLineDistance(b.x, b.y, pivot.x, pivot.y, tipX, tipY);
 
-        // HIT DETECTED
-        if (dist < this.ballRadius + 8) {
-          
-          // 1. REFLECTION LOGIC (Bumper Physics)
-          // Calculate dot product
+        if (dist < this.ballRadius + 5) {
           const dot = b.vx * nx + b.vy * ny;
-          
-          // Elastic Collision formula: v' = v - 2(v.n)n
-          // We multiply by ELASTICITY (>1) to add energy (Pinball feel)
           b.vx = (b.vx - 2 * dot * nx) * this.ELASTICITY;
           b.vy = (b.vy - 2 * dot * ny) * this.ELASTICITY;
 
-          // 2. SMASH LOGIC (Add Arm Velocity)
-          // Add a percentage of the arm's movement vector to the ball
           b.vx += armVel.vx * this.ARM_POWER;
           b.vy += armVel.vy * this.ARM_POWER;
 
-          // 3. MINIMUM SPEED CHECK
-          // Ensure ball doesn't get stuck or stop
+          const speed = Math.hypot(b.vx, b.vy);
           const minSpeed = 8 * this.scale;
-          const currentSpeed = Math.sqrt(b.vx**2 + b.vy**2);
-          if (currentSpeed < minSpeed) {
-              const scale = minSpeed / currentSpeed;
-              b.vx *= scale;
-              b.vy *= scale;
-          }
-
-          // 4. MAX SPEED CLAMP
           const maxSpeed = 25 * this.scale;
-          if (currentSpeed > maxSpeed) {
-             const scale = maxSpeed / currentSpeed;
-             b.vx *= scale;
-             b.vy *= scale;
+
+          if (speed < minSpeed) {
+            const s = minSpeed / speed;
+            b.vx *= s; b.vy *= s;
+          }
+          if (speed > maxSpeed) {
+            const s = maxSpeed / speed;
+            b.vx *= s; b.vy *= s;
           }
 
-          // 5. PUSH OUT (Prevent sticking)
-          b.x += nx * (this.ballRadius - dist + 5 * this.scale);
-          b.y += ny * (this.ballRadius - dist + 5 * this.scale);
-
-          b.hitCooldown = 12;
-          this.shakeTimer = 8; // Screen Shake
-          this.armFlash[side] = 5; // Flash Arm
+          b.hitCooldown = 10;
           this.spawnExplosion(b.x, b.y, "white", 8);
         }
       }
