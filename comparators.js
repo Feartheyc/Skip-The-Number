@@ -42,17 +42,14 @@ const Game3 = {
   /* === New Systems === */
   popups: [],
   trails: { left: [], right: [] },
+  particles: [],   // ⭐ PARTICLES ADDED
   shakeTime: 0,
   shakeMag: 0,
 
   bgHue: 0,
 
-  /* ============================== */
   init() {
-    const rect = document
-      .getElementById("container")
-      .getBoundingClientRect();
-
+    const rect = document.getElementById("container").getBoundingClientRect();
     this.onResize(rect.width, rect.height);
     this.score = 0;
 
@@ -66,7 +63,6 @@ const Game3 = {
     this.spawnNumbers();
   },
 
-  /* ============================== */
   onResize(width, height) {
     this.centerX = width / 2;
     this.centerY = height / 2;
@@ -156,109 +152,45 @@ const Game3 = {
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
-  /* ============================== */
   update(ctx, fingers, dt = 1/60) {
-
-  /* --- 1. ALWAYS draw background in world space (no transforms) --- */
-  this.drawAnimatedBackground(ctx);
-
-  /* --- 2. Apply shake ONLY to gameplay layer --- */
-  ctx.save();
-
-  if (this.shakeTime > 0) {
-    this.shakeTime -= dt;
-    ctx.translate(
-      (Math.random() - 0.5) * this.shakeMag,
-      (Math.random() - 0.5) * this.shakeMag
-    );
-  }
-
-  /* --- 3. Animations --- */
-  this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
-  this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
-
-  if (this.gameState !== "PLAYING") {
-    this.feedbackAlpha = Math.min(1, this.feedbackAlpha + dt * 4);
-    this.feedbackScale = Math.min(1, this.feedbackScale + dt * 5);
-  }
-
-  /* --- 4. UI + Popups --- */
-  this.drawUI(ctx);
-  this.drawPopups(ctx, dt);
-
-  if (this.gameState !== "PLAYING") {
-    ctx.restore();
-    return;
-  }
-
-  /* --- 5. Input validation --- */
-  if (fingers.length < 2) {
-    this.drawFeedback(ctx, "Need 2 Hands!", "orange");
-    ctx.restore();
-    return;
-  }
-
-  fingers.sort((a, b) => a.y - b.y);
-  const h1 = fingers[0];
-  const h2 = fingers[1];
-
-  /* --- 6. Trails + gameplay --- */
-  
-
-  this.checkPose(ctx, h1, h2, dt);
-  this.drawArmSymbol(ctx, h1, h2);
-
-  /* --- 7. Restore to original world space --- */
-  ctx.restore();
-},
-
-
-
-  /* ============================== */
- drawAnimatedBackground(ctx){
-  this.bgHue += 20 * 0.016;
-
-  const canvas = ctx.canvas;
-
-  const grad = ctx.createLinearGradient(
-    0, 0,
-    canvas.width,
-    canvas.height
-  );
-
-  grad.addColorStop(0, `hsl(${this.bgHue % 360}, 70%, 15%)`);
-  grad.addColorStop(1, `hsl(${(this.bgHue + 60) % 360}, 70%, 10%)`);
-
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-},
-
-
-  /* ============================== */
-  drawNeonTrail(ctx, trailArray, finger, color){
-    trailArray.push({x:finger.x, y:finger.y});
-    if(trailArray.length > 15) trailArray.shift();
-
     ctx.save();
-    ctx.beginPath();
 
-    for(let i=0;i<trailArray.length;i++){
-      const p = trailArray[i];
-      if(i===0) ctx.moveTo(p.x,p.y);
-      else ctx.lineTo(p.x,p.y);
+    if (this.shakeTime > 0) {
+      this.shakeTime -= dt;
+      ctx.translate(
+        (Math.random() - 0.5) * this.shakeMag,
+        (Math.random() - 0.5) * this.shakeMag
+      );
     }
 
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 8 * this.scale;
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 20 * this.scale;
-    ctx.globalAlpha = 0.9;
-    ctx.stroke();
+    this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
+    this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
+
+    this.drawUI(ctx);
+    this.drawPopups(ctx, dt);
+    this.drawParticles(ctx, dt); // ⭐ PARTICLES DRAW
+
+    if (this.gameState !== "PLAYING") {
+      ctx.restore();
+      return;
+    }
+
+    if (fingers.length < 2) {
+      this.drawFeedback(ctx, "Need 2 Hands!", "orange");
+      ctx.restore();
+      return;
+    }
+
+    fingers.sort((a, b) => a.y - b.y);
+    const h1 = fingers[0];
+    const h2 = fingers[1];
+
+    this.checkPose(ctx, h1, h2, dt);
+    this.drawArmSymbol(ctx, h1, h2);
 
     ctx.restore();
   },
 
-  /* ============================== */
   checkPose(ctx,h1,h2,dt){
     if(h1.x<this.centerX-this.margin && h2.x<this.centerX-this.margin) this.detectedSymbol=">";
     else if(h1.x>this.centerX+this.margin && h2.x>this.centerX+this.margin) this.detectedSymbol="<";
@@ -282,11 +214,22 @@ const Game3 = {
     }
   },
 
-  /* ============================== */
   handleSuccess(){
     this.gameState="SUCCESS";
     this.score+=10;
     this.combo++;
+
+    // ⭐ PARTICLE BURST
+    for(let i=0;i<25;i++){
+      this.particles.push({
+        x:this.centerX,
+        y:this.centerY,
+        vx:(Math.random()-0.5)*400,
+        vy:(Math.random()-0.5)*400,
+        life:1,
+        color:this.getBrightColor()
+      });
+    }
 
     this.popups.push({
       text:"Correct",
@@ -319,6 +262,22 @@ const Game3 = {
     setTimeout(()=>this.spawnNumbers(),1200);
   },
 
+  drawParticles(ctx,dt){
+    this.particles.forEach(p=>{
+      p.x+=p.vx*dt;
+      p.y+=p.vy*dt;
+      p.life-=dt;
+
+      ctx.globalAlpha=Math.max(0,p.life);
+      ctx.fillStyle=p.color;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,6*this.scale,0,Math.PI*2);
+      ctx.fill();
+    });
+    ctx.globalAlpha=1;
+    this.particles=this.particles.filter(p=>p.life>0);
+  },
+
   drawPopups(ctx,dt){
     this.popups.forEach(p=>{
       p.y+=p.vy*dt;
@@ -346,8 +305,7 @@ const Game3 = {
     ctx.shadowBlur=0;
   },
 
-  /* ============================== */
-    drawUI(ctx){
+  drawUI(ctx){
     ctx.textAlign="center";
     ctx.textBaseline="middle";
 
@@ -373,26 +331,21 @@ const Game3 = {
 
     ctx.globalAlpha=1;
 
-    /* ===== SCORE ===== */
     ctx.font=`bold ${36*this.scale}px Arial`;
     ctx.fillStyle="white";
     ctx.fillText(`Score: ${this.score}`,this.centerX,60*this.scale);
 
-    /* ===== COMBO ===== */
     if(this.combo>=2){
       ctx.fillStyle="#FFD700";
       ctx.fillText(`Combo x${this.combo}`,this.centerX,100*this.scale);
     }
 
-    /* ===== GRADE TEXT (NEW) ===== */
     ctx.textAlign="left";
     ctx.font=`bold ${32*this.scale}px Arial`;
     ctx.fillStyle="#FFFFFF";
     ctx.fillText(`Grade: ${this.currentGrade}`, 30*this.scale, 40*this.scale);
-
-    ctx.textAlign="center"; // reset alignment
+    ctx.textAlign="center";
   },
-
 
   drawFeedback(ctx,text,color){
     ctx.fillStyle=color;
