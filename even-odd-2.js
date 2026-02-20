@@ -188,8 +188,7 @@ const Game4 = {
     ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
     if (this.gameStarted) {
-      ctx.fillStyle = "black";
-      ctx.fillRect(0, 0, canvasElement.width, canvasElement.height);
+      // FIX: Removed the solid black fillRect so your AR camera feed remains visible
       this.drawBalls(ctx);
       this.drawArms(ctx);
     }
@@ -214,80 +213,80 @@ const Game4 = {
   },
 
   spawnBall() {
-  const number = Math.floor(Math.random() * 100) + 1;
-  const isOdd = number % 2 !== 0;
-  const side = Math.floor(Math.random() * 4);
-  const speed = (4 + Math.random() * 2) * this.scale;
+    const number = Math.floor(Math.random() * 100) + 1;
+    const isOdd = number % 2 !== 0;
+    const side = Math.floor(Math.random() * 4);
+    const speed = (4 + Math.random() * 2) * this.scale;
 
-  let x, y, vx, vy;
+    // FIX: Add safe offset so balls spawn just past the collision zones
+    const safeOffset = this.edgeSize + this.ballRadius + (10 * this.scale);
 
-  // TOP → straight down
-  if (side === 0) {
-    x = this.CENTER_X;
-    y = -50;
-    vx = 0;
-    vy = speed;
-  }
+    let x, y, vx, vy;
 
-  // BOTTOM → straight up
-  else if (side === 1) {
-    x = this.CENTER_X;
-    y = canvasElement.height + 50;
-    vx = 0;
-    vy = -speed;
-  }
-
-  // LEFT → straight right
-  else if (side === 2) {
-    x = -50;
-    y = this.CENTER_Y;
-    vx = speed;
-    vy = 0;
-  }
-
-  // RIGHT → straight left
-  else {
-    x = canvasElement.width + 50;
-    y = this.CENTER_Y;
-    vx = -speed;
-    vy = 0;
-  }
-
-  this.balls.push({
-    x, y, vx, vy,
-    number,
-    isOdd,
-    color: isOdd ? "#00FFFF" : "#FF0055",
-    trail: [],
-    hitCooldown: 0,
-    scored: false
-  });
-},
-updateBalls(dt) {
-  for (let b of this.balls) {
-    if (b.scored) continue;
-
-    // Move ball
-    b.x += b.vx * dt;
-    b.y += b.vy * dt;
-    b.hitCooldown -= dt;
-
-    // ❌ Remove vertical bounce (this was blocking entry behavior)
-    // if (b.y < 0 && b.vy < 0) b.vy *= -1;
-    // if (b.y > canvasElement.height && b.vy > 0) b.vy *= -1;
-
-    // OPTIONAL: remove ball if fully off screen (cleanup)
-    if (
-      b.x < -100 || b.x > canvasElement.width + 100 ||
-      b.y < -100 || b.y > canvasElement.height + 100
-    ) {
-      b.remove = true;
+    // TOP → straight down
+    if (side === 0) {
+      x = this.CENTER_X;
+      y = safeOffset; 
+      vx = 0;
+      vy = speed;
     }
-  }
 
-  // Clean removed balls
-  this.balls = this.balls.filter(b => !b.remove);
-},
+    // BOTTOM → straight up
+    else if (side === 1) {
+      x = this.CENTER_X;
+      y = canvasElement.height - safeOffset;
+      vx = 0;
+      vy = -speed;
+    }
+
+    // LEFT → straight right
+    else if (side === 2) {
+      x = safeOffset;
+      y = this.CENTER_Y;
+      vx = speed;
+      vy = 0;
+    }
+
+    // RIGHT → straight left
+    else {
+      x = canvasElement.width - safeOffset;
+      y = this.CENTER_Y;
+      vx = -speed;
+      vy = 0;
+    }
+
+    this.balls.push({
+      x, y, vx, vy,
+      number,
+      isOdd,
+      color: isOdd ? "#00FFFF" : "#FF0055",
+      trail: [],
+      hitCooldown: 0,
+      scored: false
+    });
+  },
+
+  updateBalls(dt) {
+    for (let b of this.balls) {
+      if (b.scored) continue;
+
+      // Move ball
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+      b.hitCooldown -= dt;
+
+      // OPTIONAL: remove ball if fully off screen (cleanup)
+      if (
+        b.x < -100 || b.x > canvasElement.width + 100 ||
+        b.y < -100 || b.y > canvasElement.height + 100
+      ) {
+        b.remove = true;
+      }
+    }
+
+    // Clean removed balls
+    this.balls = this.balls.filter(b => !b.remove);
+  },
 
   checkPhysics() {
     const margin = this.ballRadius + 5;
@@ -362,6 +361,9 @@ updateBalls(dt) {
     const gap = this.lineGap;
     const cx = this.CENTER_X;
 
+    // FIX: Thin the collision detection (Require ball to go 50% into the zone)
+    const triggerEdge = e * 0.5;
+
     for (let i = this.balls.length - 1; i >= 0; i--) {
       let b = this.balls[i];
       if (b.scored) continue;
@@ -370,14 +372,14 @@ updateBalls(dt) {
 
       // LEFT ZONE (Red)
       if (b.x < cx - gap) {
-          if (b.y < e || b.y > h - e || b.x < e) {
+          if (b.y < triggerEdge || b.y > h - triggerEdge || b.x < triggerEdge) {
               if (!b.isOdd) scoreType = "good"; 
               else scoreType = "bad";
           }
       }
       // RIGHT ZONE (Blue)
       else if (b.x > cx + gap) {
-          if (b.y < e || b.y > h - e || b.x > w - e) {
+          if (b.y < triggerEdge || b.y > h - triggerEdge || b.x > w - triggerEdge) {
               if (b.isOdd) scoreType = "good"; 
               else scoreType = "bad";
           }
@@ -521,7 +523,6 @@ updateBalls(dt) {
     ctx.globalAlpha = 1;
   },
   
-
   drawCross(ctx) {
     ctx.strokeStyle = "rgba(255,255,255,0.2)";
     ctx.lineWidth = 2*this.scale;
@@ -642,6 +643,7 @@ updateBalls(dt) {
       }
       ctx.globalAlpha = 1;
   },
+  
   drawUI(ctx) {
     if (!this.gameStarted) {
         ctx.fillStyle = "white";
@@ -685,12 +687,11 @@ updateBalls(dt) {
     return Math.sqrt(dx * dx + dy * dy);
   },
 
-
   get pivotOffset() { return this.PIVOT_OFFSET * this.scale },
-get armLength() { return this.ARM_LENGTH * this.scale },
-get ballRadius() { return this.BALL_RADIUS * this.scale },
-get edgeSize() { return this.EDGE_SIZE * this.scale },
-get lineGap() { return this.LINE_GAP * this.scale },
-get pivotRadius() { return this.PIVOT_RADIUS * this.scale }
+  get armLength() { return this.ARM_LENGTH * this.scale },
+  get ballRadius() { return this.BALL_RADIUS * this.scale },
+  get edgeSize() { return this.EDGE_SIZE * this.scale },
+  get lineGap() { return this.LINE_GAP * this.scale },
+  get pivotRadius() { return this.PIVOT_RADIUS * this.scale }
 
 };
