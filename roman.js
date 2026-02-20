@@ -333,126 +333,74 @@ const Game5 = {
   },
 
  evaluateShapeVector(baseUnit) {
-    let pts = [];
-    this.freehandStrokes.forEach(s => pts.push(...s));
-    if (pts.length < 6) { this.triggerFail(); return; }
+    const strokes = this.freehandStrokes.filter(s => s.length > 3);
+    if (strokes.length === 0) return this.triggerFail();
 
     const level = this.levels[this.currentLevel];
     const template = level.localStrokes;
 
-    /* ===============================
-       NORMALIZE POINTS
-    =============================== */
-    let minX = Math.min(...pts.map(p => p.x));
-    let maxX = Math.max(...pts.map(p => p.x));
-    let minY = Math.min(...pts.map(p => p.y));
-    let maxY = Math.max(...pts.map(p => p.y));
+    // Normalize strokes individually
+    const normUser = this.normalizeStrokes(strokes);
 
-    let w = Math.max(30, maxX - minX);
-    let h = Math.max(30, maxY - minY);
+    // Quick hard rejection: too many or too few strokes
+    if (Math.abs(normUser.length - template.length) > 1) {
+        return this.triggerFail();
+    }
 
-    let normPts = pts.map(p => ({
-        x: (p.x - minX) / w,
-        y: (p.y - minY) / h
-    }));
+    /* =========================
+       MATCH USER STROKES TO TEMPLATE
+       (1-to-1 greedy matching)
+    ========================= */
+    let usedTemplate = new Array(template.length).fill(false);
+    let totalScore = 0;
 
-    /* ===============================
-       1. STROKE COUNT MATCH
-       (Wrong numerals fail here)
-    =============================== */
-    const strokeCountUser = this.freehandStrokes.length;
-    const strokeCountTemplate = template.length;
-    let strokeScore = 1 - Math.abs(strokeCountUser - strokeCountTemplate) / Math.max(1, strokeCountTemplate);
+    for (let u of normUser) {
+        let bestScore = -Infinity;
+        let bestIndex = -1;
 
-    /* ===============================
-       2. ANGLE CLUSTER MATCH
-    =============================== */
-    let templateAngles = template.map(ts => {
-        return Math.atan2(ts.y2 - ts.y1, ts.x2 - ts.x1);
-    });
+        for (let i = 0; i < template.length; i++) {
+            if (usedTemplate[i]) continue;
 
-    let goodAngleSegs = 0;
-    let totalSegs = 0;
+            const t = template[i];
+            const score = this.strokeMatchScore(u, t);
 
-    for (let i = 1; i < normPts.length; i++) {
-        let dx = normPts[i].x - normPts[i-1].x;
-        let dy = normPts[i].y - normPts[i-1].y;
-        let len = Math.hypot(dx, dy);
-        if (len < 0.005) continue;
-
-        totalSegs++;
-        let ang = Math.atan2(dy, dx);
-
-        for (let t of templateAngles) {
-            let diff = Math.abs(Math.atan2(Math.sin(ang - t), Math.cos(ang - t)));
-            if (diff < 0.45) { goodAngleSegs++; break; }
+            if (score > bestScore) {
+                bestScore = score;
+                bestIndex = i;
+            }
         }
+
+        if (bestIndex === -1 || bestScore < 0.45) {
+            // No good match for this stroke → wrong numeral
+            return this.triggerFail();
+        }
+
+        usedTemplate[bestIndex] = true;
+        totalScore += bestScore;
     }
 
-    let angleScore = goodAngleSegs / Math.max(1, totalSegs);
-
-    /* ===============================
-       3. SHAPE CENTER ALIGNMENT
-       (rejects wrong placement scribbles)
-    =============================== */
-    let cx = normPts.reduce((s,p)=>s+p.x,0)/normPts.length;
-    let cy = normPts.reduce((s,p)=>s+p.y,0)/normPts.length;
-
-    let tMinX = Math.min(...template.map(t => Math.min(t.x1,t.x2)));
-    let tMaxX = Math.max(...template.map(t => Math.max(t.x1,t.x2)));
-    let tMinY = Math.min(...template.map(t => Math.min(t.y1,t.y2)));
-    let tMaxY = Math.max(...template.map(t => Math.max(t.y1,t.y2)));
-
-    let tcx = (tMinX + tMaxX) / 2;
-    let tcy = (tMinY + tMaxY) / 2;
-
-    let centerDist = Math.hypot(cx - tcx, cy - tcy);
-
-    /* ===============================
-       4. DISTANCE STRICTNESS
-    =============================== */
-    let avgDist = 0;
-    normPts.forEach(p => {
-        let best = Infinity;
-        template.forEach(ts => {
-            let d = this.pointToLineDist(p.x,p.y,ts.x1,ts.y1,ts.x2,ts.y2);
-            if (d < best) best = d;
-        });
-        avgDist += best;
-    });
-    avgDist /= normPts.length;
-
-    console.log(
-        `AI -> stroke:${strokeScore.toFixed(2)} angle:${angleScore.toFixed(2)} center:${centerDist.toFixed(2)} dist:${avgDist.toFixed(2)}`
-    );
-
-    /* ===============================
-       🎯 MODE-BASED DECISION
-    =============================== */
-    let pass = false;
-
-    if (this.mode === "TRACE") {
-        // strict tracing
-        pass =
-            strokeScore > 0.8 &&
-            angleScore > 0.75 &&
-            centerDist < 0.25 &&
-            avgDist < 0.18;
-    } else {
-        // freehand forgiving but still shape-correct
-        pass =
-            strokeScore > 0.6 &&
-            angleScore > 0.55 &&
-            centerDist < 0.45 &&
-            avgDist < 0.35;
+    // Penalize missing template strokes
+    let matchedCount = usedTemplate.filter(v => v).length;
+    if (matchedCount < template.length) {
+        return this.triggerFail();
     }
+
+    const finalScore = totalScore / template.length;
+
+    console.log("Stroke match score:", finalScore.toFixed(2));
+
+    const pass =
+        this.mode === "TRACE"
+            ? finalScore > 0.75
+            : finalScore > 0.6;
 
     if (pass) {
         this.levelCompleteTimer = 1;
         this.score += 20;
         this.cursorColor = "#00FFCC";
-        let last = pts[pts.length - 1];
-        for (let i = 0; i < 40; i++) this.spawnParticle(last.x,last.y,true,baseUnit);
+        const last = strokes[strokes.length - 1].slice(-1)[0];
+        for (let i = 0; i < 40; i++)
+            this.spawnParticle(last.x, last.y, true, baseUnit);
     } else {
         this.triggerFail();
     }
@@ -759,36 +707,91 @@ buildStrokesFromRoman(roman) {
 
   return strokes;
 },
-
 buildLocalFromRoman(roman) {
   const chars = roman.split("");
   const strokes = [];
 
-  chars.forEach((ch) => {
-    if (ch === "I") strokes.push({ x1: 0.5, y1: 0, x2: 0.5, y2: 1 });
+  const spacing = 1.2; // preserve gaps between characters
+  const totalWidth = chars.length * spacing;
+  const startX = 0.5 - totalWidth / 2 + spacing / 2;
+
+  chars.forEach((ch, index) => {
+    const offset = startX + index * spacing;
+
+    if (ch === "I") strokes.push({ x1: offset, y1: 0, x2: offset, y2: 1 });
 
     if (ch === "V") strokes.push(
-      { x1: 0, y1: 0, x2: 0.5, y2: 1 },
-      { x1: 0.5, y1: 1, x2: 1, y2: 0 }
+      { x1: offset - 0.5, y1: 0, x2: offset, y2: 1 },
+      { x1: offset, y1: 1, x2: offset + 0.5, y2: 0 }
     );
 
     if (ch === "X") strokes.push(
-      { x1: 0, y1: 0, x2: 1, y2: 1 },
-      { x1: 1, y1: 0, x2: 0, y2: 1 }
+      { x1: offset - 0.5, y1: 0, x2: offset + 0.5, y2: 1 },
+      { x1: offset + 0.5, y1: 0, x2: offset - 0.5, y2: 1 }
     );
 
     if (ch === "L") strokes.push(
-      { x1: 0, y1: 0, x2: 0, y2: 1 },
-      { x1: 0, y1: 1, x2: 1, y2: 1 }
+      { x1: offset - 0.5, y1: 0, x2: offset - 0.5, y2: 1 },
+      { x1: offset - 0.5, y1: 1, x2: offset + 0.5, y2: 1 }
     );
 
     if (ch === "C") strokes.push(
-      { x1: 1, y1: 0, x2: 0, y2: 0.5 },
-      { x1: 0, y1: 0.5, x2: 1, y2: 1 }
+      { x1: offset + 0.5, y1: 0, x2: offset - 0.5, y2: 0.5 },
+      { x1: offset - 0.5, y1: 0.5, x2: offset + 0.5, y2: 1 }
     );
   });
 
   return strokes;
-}
+},
 
+normalizeStrokes(strokes) {
+    let allPts = [];
+    strokes.forEach(s => allPts.push(...s));
+
+    let minX = Math.min(...allPts.map(p => p.x));
+    let maxX = Math.max(...allPts.map(p => p.x));
+    let minY = Math.min(...allPts.map(p => p.y));
+    let maxY = Math.max(...allPts.map(p => p.y));
+
+    let w = Math.max(20, maxX - minX);
+    let h = Math.max(20, maxY - minY);
+
+    return strokes.map(stroke =>
+        stroke.map(p => ({
+            x: (p.x - minX) / w,
+            y: (p.y - minY) / h
+        }))
+    );
+},
+
+strokeMatchScore(stroke, tmpl) {
+    // vector of user stroke
+    const p1 = stroke[0];
+    const p2 = stroke[stroke.length - 1];
+    const udx = p2.x - p1.x;
+    const udy = p2.y - p1.y;
+    const ulen = Math.hypot(udx, udy) + 0.0001;
+
+    // vector of template stroke
+    const tdx = tmpl.x2 - tmpl.x1;
+    const tdy = tmpl.y2 - tmpl.y1;
+    const tlen = Math.hypot(tdx, tdy) + 0.0001;
+
+    // Direction similarity (cosine)
+    const dir = (udx * tdx + udy * tdy) / (ulen * tlen);
+    const dirScore = Math.max(0, dir); // reject reverse strokes
+
+    // Length similarity
+    const lenScore = 1 - Math.min(1, Math.abs(ulen - tlen));
+
+    // Distance fit
+    let dist = 0;
+    stroke.forEach(p => {
+        dist += this.pointToLineDist(p.x, p.y, tmpl.x1, tmpl.y1, tmpl.x2, tmpl.y2);
+    });
+    dist /= stroke.length;
+    const distScore = 1 - Math.min(1, dist * 1.5);
+
+    return (dirScore * 0.5) + (lenScore * 0.2) + (distScore * 0.3);
+},
 };
