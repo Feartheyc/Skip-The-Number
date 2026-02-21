@@ -347,10 +347,6 @@ const Game5 = {
         return this.triggerFail();
     }
 
-    /* =========================
-       MATCH USER STROKES TO TEMPLATE
-       (1-to-1 greedy matching)
-    ========================= */
     let usedTemplate = new Array(template.length).fill(false);
     let totalScore = 0;
 
