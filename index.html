@@ -16,6 +16,19 @@
 
 <body>
 
+  <button id="pauseBtn" onclick="pauseGame()">⏸</button>
+  <div id="pauseOverlay">
+
+  <div class="pauseBox">
+
+    <h2>Game Paused</h2>
+
+    <button onclick="resumeGame()">Resume</button>
+    <button onclick="goToMainMenu()">Main Menu</button>
+
+  </div>
+
+</div>
   <div id="container">
 
     <video id="input_video" autoplay playsinline></video>
