@@ -41,6 +41,9 @@ const Game3 = {
   shakeTime: 0,
   shakeMag: 0,
 
+  // ⭐ NEW: Tracker for the rainbow spectrum color
+  symbolHue: 0,
+
   init() {
     const rect = document.getElementById("container").getBoundingClientRect();
     this.onResize(rect.width, rect.height);
@@ -157,6 +160,9 @@ const Game3 = {
 
   update(ctx, fingers, dt = 1/60) {
     ctx.save();
+
+    // ⭐ NEW: Shift the rainbow color by 200 degrees every second
+    this.symbolHue = (this.symbolHue + 200 * dt) % 360;
 
     this.drawConfetti(ctx, dt); // ⭐ FLOATING SYMBOLS
 
@@ -291,7 +297,11 @@ const Game3 = {
     ctx.lineWidth=12*this.scale;
     ctx.lineCap="round";
     ctx.shadowBlur=15*this.scale;
-    ctx.strokeStyle="#00ff37";
+    
+    // ⭐ NEW: Apply the dynamic rainbow hue to the stroke and glow
+    ctx.strokeStyle = `hsl(${this.symbolHue}, 100%, 50%)`;
+    ctx.shadowColor = ctx.strokeStyle; // Makes the glow match the line color
+
     ctx.beginPath();
     ctx.moveTo(h1.x,h1.y);
     ctx.lineTo(this.centerX,this.centerY);
