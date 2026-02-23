@@ -428,7 +428,7 @@ checkPivotLock(dt) {
     if (this.pivotLockTimer.right > this.LOCK_TIME) {
       this.gameStarted = true;
       const video = document.getElementById("input_video");
-      if (video) video.style.opacity = "0";
+      if (video) video.style.opacity = "0.2";
       this.spawnFloatingText(cx, cy, "START!", "white");
     }
   } else {
