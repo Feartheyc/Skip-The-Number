@@ -55,7 +55,10 @@ const Game1 = {
   lastOrbNote: null,
 
 
-
+  charge: 0,
+  chargeSpeed: 0.8,
+  isCharging: false,
+  chargeParticles: [],
 
   launcherSafeRadius: 0,
 
@@ -178,16 +181,22 @@ const Game1 = {
       this.drawCannon(ctx, dt);
       this.drawExplosions(ctx);
       this.drawLauncherZone(ctx);
+      this.drawCharging(ctx);
     } else if (this.mode === "orb") {
         this.updateCannonNotes(ctx, dt);   // reuse movement
         this.drawOrbLauncher(ctx, dt);
         this.drawExplosions(ctx);
         this.drawLauncherZone(ctx);
+        this.drawCharging(ctx);
       } 
     else {
       this.drawNotes(ctx, dt);
     }
 
+    if (this.mode === "cannon" || this.mode === "orb") {
+      this.drawCharging(ctx);
+     this.updateCharging(dt);
+    }
     this.drawPopEffects(ctx);
 
     fingers.forEach((finger) => {
@@ -577,6 +586,8 @@ const Game1 = {
 
   // Cannon should face this direction
   this.cannonTargetAngle = angle + Math.PI / 2;
+
+  this.startCharging();
 },
 
   /* ============================== */
@@ -856,6 +867,9 @@ fireCannon() {
   this.lastCannonNote = note;
 
   this.pendingShot = null;
+  this.isCharging = false;
+  this.charge = 0;
+  this.chargeParticles = [];
 },
 
 
@@ -914,6 +928,8 @@ spawnOrbNote() {
 
 drawOrbLauncher(ctx, dt = 1 / 60) {
 
+
+  ctx.canvas.style.zIndex = "0";
   const targetSize = this.baseOuterRadius * 0.6;
 
   let diff = this.orbTargetAngle - this.orbAngle;
@@ -925,6 +941,7 @@ drawOrbLauncher(ctx, dt = 1 / 60) {
 
   ctx.translate(this.centerX, this.centerY);
   ctx.rotate(this.orbAngle);
+  
 
   if (this.orbImage && this.orbImage.complete) {
 
@@ -990,5 +1007,107 @@ drawLauncherZone(ctx) {
   ctx.stroke();
 
   ctx.restore();
-}
+},
+
+
+startCharging() {
+
+  this.charge = 0;
+  this.isCharging = true;
+  this.chargeParticles = [];
+},
+
+updateCharging(dt) {
+
+  if (!this.isCharging) return;
+
+  // Increase charge
+  this.charge += this.chargeSpeed * dt;
+  if (this.charge > 1) this.charge = 1;
+
+  // Spawn particles
+  if (Math.random() < 0.4) {
+
+    const angle = Math.random() * Math.PI * 2;
+    const radius = this.launcherSafeRadius;
+
+    const startX = this.centerX + Math.cos(angle) * radius;
+    const startY = this.centerY + Math.sin(angle) * radius;
+
+    this.chargeParticles.push({
+      x: startX,
+      y: startY,
+      life: 1
+    });
+  }
+
+  // Move particles inward
+  for (let i = this.chargeParticles.length - 1; i >= 0; i--) {
+
+    const p = this.chargeParticles[i];
+
+    const dx = this.centerX - p.x;
+    const dy = this.centerY - p.y;
+
+    p.x += dx * 0.08;
+    p.y += dy * 0.08;
+
+    p.life -= dt * 1.2;
+
+    if (p.life <= 0) {
+      this.chargeParticles.splice(i, 1);
+    }
+  }
+},
+
+
+drawCharging(ctx) {
+
+  if (!this.isCharging) return;
+
+  // ===== PARTICLES =====
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const p of this.chargeParticles) {
+
+    ctx.globalAlpha = p.life;
+
+    ctx.fillStyle = "#00FFFF";
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 6 * this.scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+
+  // ===== CENTER GLOW =====
+  const glowRadius =
+    this.baseOuterRadius * 0.18 * (0.5 + this.charge * 0.8);
+
+  const gradient = ctx.createRadialGradient(
+    this.centerX,
+    this.centerY,
+    0,
+    this.centerX,
+    this.centerY,
+    glowRadius
+  );
+
+  gradient.addColorStop(0, "rgba(0,255,255,0.9)");
+  gradient.addColorStop(1, "rgba(0,255,255,0)");
+
+  ctx.fillStyle = gradient;
+
+  ctx.beginPath();
+  ctx.arc(
+    this.centerX,
+    this.centerY,
+    glowRadius,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+},
 };
