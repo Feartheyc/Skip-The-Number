@@ -8,7 +8,7 @@ const Game2 = {
   PIVOT_RADIUS: 15,
   ARM_LENGTH: 140,
   BALL_RADIUS: 30,
-  MAX_BALLS: 6,
+  MAX_BALLS: 3,
 
   LOCK_TIME: 2000,
   ELASTICITY: 1.3,
@@ -204,7 +204,7 @@ const Game2 = {
 
   handleSpawning(dt) {
     this.spawnTimer += dt;
-    const spawnRate = Math.max(500, 1000 - (this.score * 2));
+    const spawnRate = 2000;
 
     if (this.spawnTimer > spawnRate && this.balls.length < this.MAX_BALLS) {
       this.spawnBall();
@@ -216,23 +216,24 @@ spawnBall() {
   const number = Math.floor(Math.random() * 100) + 1;
   const isOdd = number % 2 !== 0;
   const side = Math.floor(Math.random() * 2); // 0 = top, 1 = bottom
-  const speed = (4 + Math.random() * 2) * this.scale;
-
-  const safeOffset = this.edgeSize + this.ballRadius + (10 * this.scale);
+  const speed = (1 + Math.random() * 2) * this.scale;
 
   let x, y, vx, vy;
 
-  // TOP → down
+  // spawn slightly outside screen
+  const outsideOffset = this.ballRadius * 2;
+
+  // TOP → enter from above screen
   if (side === 0) {
     x = this.CENTER_X;
-    y = safeOffset;
+    y = -outsideOffset;                 // 👈 above canvas
     vx = 0;
     vy = speed;
   }
-  // BOTTOM → up
+  // BOTTOM → enter from below screen
   else {
     x = this.CENTER_X;
-    y = canvasElement.height - safeOffset;
+    y = canvasElement.height + outsideOffset; // 👈 below canvas
     vx = 0;
     vy = -speed;
   }
@@ -241,41 +242,44 @@ spawnBall() {
     x, y, vx, vy,
     number,
     isOdd,
-    color: isOdd ? "#00FFFF" : "#FF0055",
+    color: "#ffffff",
     trail: [],
     hitCooldown: 0,
-    scored: false
+    scored: false,
+    hasCollided: false
   });
 },
 
-  updateBalls(dt) {
-    for (let b of this.balls) {
-      if (b.scored) continue;
+ updateBalls(dt) {
+  for (let b of this.balls) {
+    if (b.scored) continue;
 
-      // Move ball
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
-      b.hitCooldown -= dt;
+    // Store previous position (important for collision sweep)
+    b.prevX = b.x;
+    b.prevY = b.y;
 
-      // OPTIONAL: remove ball if fully off screen (cleanup)
-      if (
-        b.x < -100 || b.x > canvasElement.width + 100 ||
-        b.y < -100 || b.y > canvasElement.height + 100
-      ) {
-        b.remove = true;
-      }
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+
+    b.trail.push({ x: b.x, y: b.y });
+    if (b.trail.length > 8) b.trail.shift();
+
+    if (b.hitCooldown > 0) b.hitCooldown -= dt;
+
+    if (
+      b.x < -120 || b.x > canvasElement.width + 120 ||
+      b.y < -120 || b.y > canvasElement.height + 120
+    ) {
+      b.remove = true;
     }
+  }
 
-    // Clean removed balls
-    this.balls = this.balls.filter(b => !b.remove);
-  },
+  this.balls = this.balls.filter(b => !b.remove);
+},
 
 checkPhysics() {
-  const margin = this.ballRadius + 5;
-
   const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
-
-  const arm = this.armData.right; // use right arm only
+  const arm = this.armData.right;
   if (!arm?.wrist || !arm?.elbow) return;
 
   const angle = Math.atan2(
@@ -286,42 +290,71 @@ checkPhysics() {
   const tipX = pivot.x + Math.cos(angle) * this.armLength;
   const tipY = pivot.y + Math.sin(angle) * this.armLength;
 
-  const ax = tipX - pivot.x;
-  const ay = tipY - pivot.y;
-  const armLen = Math.hypot(ax, ay);
-  const nx = -ay / armLen;
-  const ny = ax / armLen;
+  // Angular velocity (for power hits)
+  if (!this.lastArmAngle) this.lastArmAngle = angle;
+  let angVel = angle - this.lastArmAngle;
+  this.lastArmAngle = angle;
+  angVel = Math.max(-0.3, Math.min(0.3, angVel));
 
-  const armVel = this.armVelocity.right;
+  const tangentialSpeed = angVel * this.armLength * 0.8;
+  const armVelX = -Math.sin(angle) * tangentialSpeed;
+  const armVelY =  Math.cos(angle) * tangentialSpeed;
+
+  const radius = this.ballRadius + 6;
 
   for (let b of this.balls) {
     if (b.hitCooldown > 0 || b.scored) continue;
 
-    if (
-      b.x < -margin || b.x > canvasElement.width + margin ||
-      b.y < -margin || b.y > canvasElement.height + margin
-    ) continue;
+    const px = b.prevX ?? b.x;
+    const py = b.prevY ?? b.y;
 
-    const dist = this.pointToLineDistance(
-      b.x, b.y,
-      pivot.x, pivot.y,
-      tipX, tipY
-    );
+    // ---- Find closest point on arm segment ----
+    const dx = tipX - pivot.x;
+    const dy = tipY - pivot.y;
+    const lenSq = dx * dx + dy * dy;
 
-    if (dist < this.ballRadius + 5) {
-      const dot = b.vx * nx + b.vy * ny;
-      b.vx = (b.vx - 2 * dot * nx) * this.ELASTICITY;
-      b.vy = (b.vy - 2 * dot * ny) * this.ELASTICITY;
+    let t = ((b.x - pivot.x) * dx + (b.y - pivot.y) * dy) / lenSq;
+    t = Math.max(0, Math.min(1, t)); // clamp to segment
 
-      b.vx += armVel.vx * this.ARM_POWER;
-      b.vy += armVel.vy * this.ARM_POWER;
+    const closestX = pivot.x + dx * t;
+    const closestY = pivot.y + dy * t;
 
-      b.hitCooldown = 10;
-      this.spawnExplosion(b.x, b.y, "white", 8);
+    const distX = b.x - closestX;
+    const distY = b.y - closestY;
+    const dist = Math.hypot(distX, distY);
+
+    if (dist > radius) continue;
+
+    // ---- Correct collision normal (arm → ball) ----
+    let nx = distX / (dist || 1);
+    let ny = distY / (dist || 1);
+
+    // Relative velocity vs rotating arm
+    const relVX = b.vx - armVelX;
+    const relVY = b.vy - armVelY;
+
+    const dot = relVX * nx + relVY * ny;
+    if (dot >= 0) continue; // moving away
+
+    // Reflect
+    let rvx = relVX - 2 * dot * nx;
+    let rvy = relVY - 2 * dot * ny;
+
+    b.vx = rvx + armVelX;
+    b.vy = rvy + armVelY;
+
+    // Clamp speed
+    const maxSpeed = 18 * this.scale;
+    const sp = Math.hypot(b.vx, b.vy);
+    if (sp > maxSpeed) {
+      b.vx = (b.vx / sp) * maxSpeed;
+      b.vy = (b.vy / sp) * maxSpeed;
     }
+
+    b.hitCooldown = 8;
+    this.spawnExplosion(b.x, b.y, "white", 10);
   }
 },
-
   checkScoring() {
     const w = canvasElement.width;
     const h = canvasElement.height;
@@ -395,7 +428,7 @@ checkPivotLock(dt) {
     if (this.pivotLockTimer.right > this.LOCK_TIME) {
       this.gameStarted = true;
       const video = document.getElementById("input_video");
-      if (video) video.style.opacity = "0";
+      if (video) video.style.opacity = "0.2";
       this.spawnFloatingText(cx, cy, "START!", "white");
     }
   } else {

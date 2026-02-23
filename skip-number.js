@@ -54,6 +54,14 @@ const Game1 = {
   orbTargetAngle: 0,
   lastOrbNote: null,
 
+
+  charge: 0,
+  chargeSpeed: 0.8,
+  isCharging: false,
+  chargeParticles: [],
+
+  launcherSafeRadius: 0,
+
   /* ============================== */
   init() {
     const rect = document
@@ -120,6 +128,7 @@ const Game1 = {
     this.currentInnerRadius = this.baseInnerRadius;
 
     this.noteSpeed = this.baseOuterRadius * 0.6;
+    this.launcherSafeRadius = this.baseOuterRadius * 0.45;
   },
 
   /* ============================== */
@@ -171,21 +180,29 @@ const Game1 = {
       this.updateCannonNotes(ctx, dt);
       this.drawCannon(ctx, dt);
       this.drawExplosions(ctx);
+      this.drawLauncherZone(ctx);
+      this.drawCharging(ctx);
     } else if (this.mode === "orb") {
         this.updateCannonNotes(ctx, dt);   // reuse movement
         this.drawOrbLauncher(ctx, dt);
         this.drawExplosions(ctx);
+        this.drawLauncherZone(ctx);
+        this.drawCharging(ctx);
       } 
     else {
       this.drawNotes(ctx, dt);
     }
 
+    if (this.mode === "cannon" || this.mode === "orb") {
+      this.drawCharging(ctx);
+     this.updateCharging(dt);
+    }
     this.drawPopEffects(ctx);
 
     fingers.forEach((finger) => {
       this.drawFinger(ctx, finger.x, finger.y);
 
-      if (this.mode === "cannon") {
+      if (this.mode === "cannon" || this.mode === "orb") {
         this.checkCannonCollision(finger.x, finger.y);
       } else {
         this.checkCollision(finger.x, finger.y);
@@ -569,52 +586,65 @@ const Game1 = {
 
   // Cannon should face this direction
   this.cannonTargetAngle = angle + Math.PI / 2;
+
+  this.startCharging();
 },
 
   /* ============================== */
-  updateCannonNotes(ctx, dt) {
-    for (let i = this.notes.length - 1; i >= 0; i--) {
-      const note = this.notes[i];
+updateCannonNotes(ctx, dt) {
 
-      note.x += note.vx * dt;
-      note.y += note.vy * dt;
+  for (let i = this.notes.length - 1; i >= 0; i--) {
 
-      this.drawSingleNote(ctx, note);
+    const note = this.notes[i];
 
-      const margin = 100;
+    // ===== MOVE NOTE =====
+    note.x += note.vx * dt;
+    note.y += note.vy * dt;
 
-      const offScreen =
-        note.x < -margin ||
-        note.x > this.centerX * 2 + margin ||
-        note.y < -margin ||
-        note.y > this.centerY * 2 + margin;
+    // ===== UPDATE SAFE ZONE PROTECTION =====
+    this.updateLauncherProtection(note);
 
-      if (offScreen) {
-        const shouldHaveCollected =
-          this.shouldCollectCannon(note.value);
+    // ===== DRAW =====
+    this.drawSingleNote(ctx, note);
 
-        if (shouldHaveCollected) {
-          this.score -= 10;
-          this.combo = 0;
-          this.multiplier = 1;
+    // ===== OFF SCREEN CHECK =====
+    const margin = 120;
 
-          this.lastHitType =
-            "YOU SKIPPED NUMBER " +
-            note.value;
+    const offScreen =
+      note.x < -margin ||
+      note.x > this.centerX * 2 + margin ||
+      note.y < -margin ||
+      note.y > this.centerY * 2 + margin;
 
-          this.createExplosion(
-            note.x,
-            note.y,
-            "#FFA500"
-          );
+    if (offScreen) {
 
-          this.hitTextTimer = 40;
-        }
+      const shouldHaveCollected =
+        this.shouldCollectCannon(note.value);
 
-        this.notes.splice(i, 1);
+      // Only punish if correct number was missed
+      if (shouldHaveCollected) {
+
+        this.score -= 10;
+
+        this.combo = 0;
+        this.multiplier = 1;
+
+        this.lastHitType =
+          "YOU SKIPPED NUMBER " + note.value;
+
+        this.hitTextTimer = 40;
+
+        this.createExplosion(
+          note.x,
+          note.y,
+          "#FFA500"
+        );
       }
+
+      this.notes.splice(i, 1);
     }
-  },
+  }
+},
 
   /* ============================== */
   drawCannon(ctx, dt = 1 / 60) {
@@ -696,7 +726,7 @@ const Game1 = {
   checkCannonCollision(fingerX, fingerY) {
     for (let i = this.notes.length - 1; i >= 0; i--) {
       const note = this.notes[i];
-
+      if(note.spawnProtected) continue;
       const dx = fingerX - note.x;
       const dy = fingerY - note.y;
 
@@ -814,7 +844,7 @@ const Game1 = {
     }
   },
 
-  fireCannon() {
+fireCannon() {
 
   if (!this.pendingShot) return;
 
@@ -827,15 +857,19 @@ const Game1 = {
     x: this.centerX,
     y: this.centerY,
     radius: this.baseOuterRadius * 0.12,
-    value: shot.value,
+    value: shot.value,          // ✅ FIXED
     vx: Math.cos(angle) * speed,
-    vy: Math.sin(angle) * speed
+    vy: Math.sin(angle) * speed,
+    spawnProtected: true
   };
 
   this.notes.push(note);
   this.lastCannonNote = note;
 
   this.pendingShot = null;
+  this.isCharging = false;
+  this.charge = 0;
+  this.chargeParticles = [];
 },
 
 
@@ -882,7 +916,8 @@ spawnOrbNote() {
       radius: this.baseOuterRadius * 0.12,
       value: numberToSpawn,
       vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed
+      vy: Math.sin(angle) * speed,
+      spawnProtected: true
     };
 
     this.notes.push(note);
@@ -904,6 +939,7 @@ drawOrbLauncher(ctx, dt = 1 / 60) {
 
   ctx.translate(this.centerX, this.centerY);
   ctx.rotate(this.orbAngle);
+  
 
   if (this.orbImage && this.orbImage.complete) {
 
@@ -936,5 +972,140 @@ drawOrbLauncher(ctx, dt = 1 / 60) {
   }
 
   ctx.restore();
-}
+},
+
+
+updateLauncherProtection(note) {
+
+  const dx = note.x - this.centerX;
+  const dy = note.y - this.centerY;
+
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist > this.launcherSafeRadius) {
+    note.spawnProtected = false;
+  }
+},
+
+drawLauncherZone(ctx) {
+
+  ctx.save();
+
+  ctx.strokeStyle = "rgba(255,0,0,0.3)";
+  ctx.lineWidth = 3;
+
+  ctx.beginPath();
+  ctx.arc(
+    this.centerX,
+    this.centerY,
+    this.launcherSafeRadius,
+    0,
+    Math.PI * 2
+  );
+  ctx.stroke();
+
+  ctx.restore();
+},
+
+
+startCharging() {
+
+  this.charge = 0;
+  this.isCharging = true;
+  this.chargeParticles = [];
+},
+
+updateCharging(dt) {
+
+  if (!this.isCharging) return;
+
+  // Increase charge
+  this.charge += this.chargeSpeed * dt;
+  if (this.charge > 1) this.charge = 1;
+
+  // Spawn particles
+  if (Math.random() < 0.4) {
+
+    const angle = Math.random() * Math.PI * 2;
+    const radius = this.launcherSafeRadius;
+
+    const startX = this.centerX + Math.cos(angle) * radius;
+    const startY = this.centerY + Math.sin(angle) * radius;
+
+    this.chargeParticles.push({
+      x: startX,
+      y: startY,
+      life: 1
+    });
+  }
+
+  // Move particles inward
+  for (let i = this.chargeParticles.length - 1; i >= 0; i--) {
+
+    const p = this.chargeParticles[i];
+
+    const dx = this.centerX - p.x;
+    const dy = this.centerY - p.y;
+
+    p.x += dx * 0.08;
+    p.y += dy * 0.08;
+
+    p.life -= dt * 1.2;
+
+    if (p.life <= 0) {
+      this.chargeParticles.splice(i, 1);
+    }
+  }
+},
+
+
+drawCharging(ctx) {
+
+  if (!this.isCharging) return;
+
+  // ===== PARTICLES =====
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const p of this.chargeParticles) {
+
+    ctx.globalAlpha = p.life;
+
+    ctx.fillStyle = "#00FFFF";
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 6 * this.scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  ctx.restore();
+
+
+  // ===== CENTER GLOW =====
+  const glowRadius =
+    this.baseOuterRadius * 0.18 * (0.5 + this.charge * 0.8);
+
+  const gradient = ctx.createRadialGradient(
+    this.centerX,
+    this.centerY,
+    0,
+    this.centerX,
+    this.centerY,
+    glowRadius
+  );
+
+  gradient.addColorStop(0, "rgba(0,255,255,0.9)");
+  gradient.addColorStop(1, "rgba(0,255,255,0)");
+
+  ctx.fillStyle = gradient;
+
+  ctx.beginPath();
+  ctx.arc(
+    this.centerX,
+    this.centerY,
+    glowRadius,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+},
 };
