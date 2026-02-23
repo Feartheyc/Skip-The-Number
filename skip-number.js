@@ -48,6 +48,12 @@ const Game1 = {
   pendingShot: null,
   lastCannonNote: null,
 
+
+  orbImage: null,
+  orbAngle: 0,
+  orbTargetAngle: 0,
+  lastOrbNote: null,
+
   /* ============================== */
   init() {
     const rect = document
@@ -71,20 +77,33 @@ const Game1 = {
 
     this.noteSpeed = this.baseOuterRadius * 0.6;
 
+    // Load orb sprite
+    this.orbImage = new Image();
+    this.orbImage.src = "orb1.png"; 
+
     if (this.spawnTimer) clearInterval(this.spawnTimer);
 
     this.spawnTimer = setInterval(() => {
-      if (this.mode === "cannon") {
-        this.spawnCannonNote();
-      } else {
-        this.spawnNote();
-      }
-    }, 1200);
+
+  if (this.mode === "cannon") {
+    this.spawnCannonNote();
+  }
+  else if (this.mode === "orb") {
+    this.spawnOrbNote();
+  }
+  else {
+    this.spawnNote();
+  }
+
+}, 1200);
 
     window.addEventListener("keydown", (e) => {
       if (e.key === "1") this.activatePatternMode();
       if (e.key === "2") this.activateCannonMode();
+      if (e.key === "3") this.activateOrbMode();
     });
+
+    
   },
 
   /* ============================== */
@@ -142,7 +161,7 @@ const Game1 = {
 
   /* ============================== */
   update(ctx, fingers, dt = 1 / 60) {
-    if (this.mode !== "cannon") {
+    if (this.mode !== "cannon" && this.mode !== "orb") {
       this.drawRings(ctx, dt);
     }
 
@@ -152,7 +171,12 @@ const Game1 = {
       this.updateCannonNotes(ctx, dt);
       this.drawCannon(ctx, dt);
       this.drawExplosions(ctx);
-    } else {
+    } else if (this.mode === "orb") {
+        this.updateCannonNotes(ctx, dt);   // reuse movement
+        this.drawOrbLauncher(ctx, dt);
+        this.drawExplosions(ctx);
+      } 
+    else {
       this.drawNotes(ctx, dt);
     }
 
@@ -812,5 +836,105 @@ const Game1 = {
   this.lastCannonNote = note;
 
   this.pendingShot = null;
+},
+
+
+
+
+
+
+activateOrbMode() {
+
+  this.mode = "orb";
+
+  this.notes = [];
+  this.explosions = [];
+
+  this.combo = 0;
+  this.multiplier = 1;
+
+  this.orbAngle = 0;
+  this.orbTargetAngle = 0;
+
+  this.gameTitle = "ORB SKIP " + this.skipAmount;
+},
+
+spawnOrbNote() {
+
+  const angle = Math.random() * Math.PI * 2;
+  const speed = this.baseOuterRadius * 0.9;
+
+  // Set orb facing direction FIRST
+  this.orbTargetAngle = angle + Math.PI / 2;
+
+  const numberToSpawn = this.currentNumber;
+  this.currentNumber++;
+
+  if (this.currentNumber > this.maxNumber)
+    this.currentNumber = 1;
+
+  // Delay spawn slightly so rotation happens first
+  setTimeout(() => {
+
+    const note = {
+      x: this.centerX,
+      y: this.centerY,
+      radius: this.baseOuterRadius * 0.12,
+      value: numberToSpawn,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed
+    };
+
+    this.notes.push(note);
+    this.lastOrbNote = note;
+
+  }, 120); // rotation delay
+},
+
+drawOrbLauncher(ctx, dt = 1 / 60) {
+
+  const targetSize = this.baseOuterRadius * 0.6;
+
+  let diff = this.orbTargetAngle - this.orbAngle;
+  diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+
+  this.orbAngle += diff * 0.18;
+
+  ctx.save();
+
+  ctx.translate(this.centerX, this.centerY);
+  ctx.rotate(this.orbAngle);
+
+  if (this.orbImage && this.orbImage.complete) {
+
+    const img = this.orbImage;
+
+    // Maintain aspect ratio
+    const scale = targetSize / Math.max(img.width, img.height);
+
+    const drawW = img.width * scale;
+    const drawH = img.height * scale;
+
+    // 🔥 FLIP IMAGE
+    ctx.scale(1, -1);
+
+    ctx.drawImage(
+      img,
+      -drawW / 2,
+      -drawH / 2,
+      drawW,
+      drawH
+    );
+
+  } else {
+
+    ctx.fillStyle = "#66ccff";
+    ctx.beginPath();
+    ctx.arc(0, 0, targetSize / 2, 0, Math.PI * 2);
+    ctx.fill();
+
+  }
+
+  ctx.restore();
 }
 };
