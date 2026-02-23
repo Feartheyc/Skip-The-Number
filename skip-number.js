@@ -202,7 +202,7 @@ const Game1 = {
     fingers.forEach((finger) => {
       this.drawFinger(ctx, finger.x, finger.y);
 
-      if (this.mode === "cannon") {
+      if (this.mode === "cannon" || this.mode === "orb") {
         this.checkCannonCollision(finger.x, finger.y);
       } else {
         this.checkCollision(finger.x, finger.y);
@@ -928,8 +928,6 @@ spawnOrbNote() {
 
 drawOrbLauncher(ctx, dt = 1 / 60) {
 
-
-  ctx.canvas.style.zIndex = "0";
   const targetSize = this.baseOuterRadius * 0.6;
 
   let diff = this.orbTargetAngle - this.orbAngle;
