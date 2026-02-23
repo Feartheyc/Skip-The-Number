@@ -93,37 +93,128 @@ html, body {
   cursor: pointer;
 }
 
+/* 1. The Overlay: Darkened slightly to put focus on the menu */
 #pauseOverlay {
   position: absolute;
   inset: 0;
-  display: none;
+  display: none; /* Change to 'flex' in JS to show */
   justify-content: center;
   align-items: center;
 
-  backdrop-filter: blur(12px);
-  background: rgba(0,0,0,0.35);
-
+  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.6);
   z-index: 20;
+
+  /* Smooth fade-in */
+  animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* 2. The Dialog Box: Added Material Elevation and M3 corner radius */
 .pauseBox {
-  padding: 40px 60px;
-  border-radius: 20px;
+  padding: 48px 64px;
+  border-radius: 28px; /* Material 3 large dialog radius */
+  min-width: 320px;
 
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.2);
-
+  /* Deep material surface with a subtle glass shine */
+  background: linear-gradient(145deg, rgba(40,40,40,0.9), rgba(20,20,20,0.95));
+  border: 1px solid rgba(255, 255, 255, 0.1);
   backdrop-filter: blur(20px);
+
+  /* Material dp24 Shadow */
+  box-shadow: 0 24px 38px 3px rgba(0,0,0,0.14), 
+              0 9px 46px 8px rgba(0,0,0,0.12), 
+              0 11px 15px -7px rgba(0,0,0,0.2);
 
   text-align: center;
   color: white;
+
+  /* Pop-in animation */
+  animation: scaleUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* Pause Title Typography */
+.pauseBox h2 {
+  margin: 0 0 32px 0;
+  font-family: 'Roboto', 'Segoe UI', sans-serif;
+  font-size: 32px;
+  font-weight: 500;
+  letter-spacing: 1px;
+}
+
+/* Container to stack buttons neatly */
+.pauseBox .btn-group {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 3. Base Button Styling */
 .pauseBox button {
-  margin: 10px;
-  padding: 12px 24px;
-  font-size: 18px;
-  border-radius: 10px;
+  position: relative;
+  padding: 16px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  font-family: 'Roboto', 'Segoe UI', sans-serif;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  
+  border-radius: 100px; /* Material Pill-shape */
   border: none;
   cursor: pointer;
+  outline: none;
+
+  /* Smooth Material interactions */
+  transition: background-color 0.2s, box-shadow 0.2s, transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Primary Button (Resume) - Grabs the user's attention */
+.btn-primary {
+  background: #00FFCC; /* Use your game's accent color here */
+  color: #003322;
+  box-shadow: 0 4px 6px rgba(0, 255, 204, 0.2);
+}
+.btn-primary:hover {
+  background: #33FFD6;
+  box-shadow: 0 6px 12px rgba(0, 255, 204, 0.3);
+  transform: translateY(-2px); /* Lifts up slightly */
+}
+.btn-primary:active {
+  transform: translateY(1px); /* Presses down */
+  box-shadow: 0 2px 4px rgba(0, 255, 204, 0.2);
+}
+
+/* Secondary Button (Restart) - Tonal filled */
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+}
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.2);
+  transform: translateY(-1px);
+}
+.btn-secondary:active {
+  transform: translateY(1px);
+}
+
+/* Text Button (Back) - Lowest priority */
+.btn-text {
+  background: transparent !important;
+  color: #aaaaaa !important;
+  box-shadow: none !important;
+}
+.btn-text:hover {
+  color: #ffffff !important;
+  background: rgba(255, 255, 255, 0.05) !important;
+}
+
+/* 4. Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.9); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
 }

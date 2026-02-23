@@ -17,6 +17,7 @@ const Game3 = {
   score: 0,
   combo: 0,
   gameState: "PLAYING",
+  running: true, // ⭐ ADDED: Required for PauseArea to control game state
 
   currentGrade: 1,
 
@@ -37,17 +38,17 @@ const Game3 = {
 
   popups: [],
   particles: [],
-  confetti: [], // ⭐ FLOATING MATH SYMBOLS
+  confetti: [], 
   shakeTime: 0,
   shakeMag: 0,
 
-  // ⭐ NEW: Tracker for the rainbow spectrum color
   symbolHue: 0,
 
   init() {
     const rect = document.getElementById("container").getBoundingClientRect();
     this.onResize(rect.width, rect.height);
     this.score = 0;
+    this.running = true;
 
     this.createConfetti();
 
@@ -59,6 +60,17 @@ const Game3 = {
     });
 
     this.spawnNumbers();
+
+    // ⭐ ADDED: Initialize the Pause Menu connection
+    if (typeof PauseArea !== 'undefined') {
+      const canvas = document.getElementById("game_canvas") || document.querySelector("canvas");
+      if (canvas) PauseArea.init(canvas, canvas.getContext('2d'), this);
+    }
+  },
+
+  // ⭐ ADDED: Allows the Restart button on the pause menu to work
+  reset() {
+      this.init();
   },
 
   onResize(width, height) {
@@ -159,12 +171,17 @@ const Game3 = {
   },
 
   update(ctx, fingers, dt = 1/60) {
+    // ⭐ ADDED: The Event Shield. If paused, we set time (dt) to 0. This freezes all animations instantly!
+    const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
+    if (isPaused) {
+        dt = 0; 
+    }
+
     ctx.save();
 
-    // ⭐ NEW: Shift the rainbow color by 200 degrees every second
     this.symbolHue = (this.symbolHue + 200 * dt) % 360;
 
-    this.drawConfetti(ctx, dt); // ⭐ FLOATING SYMBOLS
+    this.drawConfetti(ctx, dt); 
 
     if (this.shakeTime > 0) {
       this.shakeTime -= dt;
@@ -178,22 +195,27 @@ const Game3 = {
     this.drawPopups(ctx, dt);
     this.drawParticles(ctx, dt);
 
-    if (this.gameState !== "PLAYING") { ctx.restore(); return; }
+    if (this.gameState !== "PLAYING") { 
+        ctx.restore(); 
+    } else {
+        if (fingers.length < 2) {
+          this.drawFeedback(ctx, "Need 2 Hands!", "orange");
+        } else {
+          fingers.sort((a,b)=>a.y-b.y);
+          const h1=fingers[0];
+          const h2=fingers[1];
 
-    if (fingers.length < 2) {
-      this.drawFeedback(ctx, "Need 2 Hands!", "orange");
-      ctx.restore();
-      return;
+          this.checkPose(ctx,h1,h2,dt);
+          this.drawArmSymbol(ctx,h1,h2);
+        }
+        ctx.restore();
     }
 
-    fingers.sort((a,b)=>a.y-b.y);
-    const h1=fingers[0];
-    const h2=fingers[1];
-
-    this.checkPose(ctx,h1,h2,dt);
-    this.drawArmSymbol(ctx,h1,h2);
-
-    ctx.restore();
+    // ⭐ ADDED: Draw the Pause UI over the frozen game
+    if (typeof PauseArea !== 'undefined') {
+        PauseArea.drawPauseIcon(ctx);
+        if (isPaused) PauseArea.draw();
+    }
   },
 
   drawConfetti(ctx,dt){
@@ -298,9 +320,8 @@ const Game3 = {
     ctx.lineCap="round";
     ctx.shadowBlur=15*this.scale;
     
-    // ⭐ NEW: Apply the dynamic rainbow hue to the stroke and glow
     ctx.strokeStyle = `hsl(${this.symbolHue}, 100%, 50%)`;
-    ctx.shadowColor = ctx.strokeStyle; // Makes the glow match the line color
+    ctx.shadowColor = ctx.strokeStyle; 
 
     ctx.beginPath();
     ctx.moveTo(h1.x,h1.y);
