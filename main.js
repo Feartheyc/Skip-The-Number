@@ -102,6 +102,11 @@ window.startGame = function (gameName) {
     Game6.init();
   }
 
+  if (gameName === "Game7") {
+    window.currentGame = Game7;
+    Game7.init();
+  }
+
   resizeCanvas();
 };
 
