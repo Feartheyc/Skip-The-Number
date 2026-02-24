@@ -653,7 +653,7 @@ drawPivots(ctx) {
         ctx.font = "bold 30px Arial";
         ctx.textAlign = "center";
         ctx.shadowBlur = 10; ctx.shadowColor = "black";
-        ctx.fillText("HOLD ELBOWS ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50);
+        ctx.fillText("HOLD SHOULDER ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50);
         ctx.shadowBlur = 0;
     }
 
