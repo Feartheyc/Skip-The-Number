@@ -46,12 +46,18 @@ const Game2 = {
   CENTER_X: 0,
   CENTER_Y: 0,
 
+  // helpers to work in CSS pixels (canvas buffer is scaled by devicePixelRatio)
+  get cssWidth() { return canvasElement.width / (window.devicePixelRatio || 1); },
+  get cssHeight() { return canvasElement.height / (window.devicePixelRatio || 1); },
+
   SMOOTH: 0.6,
   MIN_ARM_LENGTH: 25,
 
   init() {
-    this.CENTER_X = canvasElement.width / 2;
-    this.CENTER_Y = canvasElement.height / 2;
+    // initial center in CSS coordinates; resize() will recompute
+    const dpr = window.devicePixelRatio || 1;
+    this.CENTER_X = (canvasElement.width / dpr) / 2;
+    this.CENTER_Y = (canvasElement.height / dpr) / 2;
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -110,8 +116,8 @@ const Game2 = {
     const lm = results.poseLandmarks;
 
     const mapPoint = (p) => ({
-      x: (1 - p.x) * canvasElement.width,
-      y: p.y * canvasElement.height
+      x: (1 - p.x) * this.cssWidth,
+      y: p.y * this.cssHeight
     });
 
     const smooth = (oldP, newP) => {
@@ -154,21 +160,24 @@ const Game2 = {
   },
 
   resize() {
-    const rect = canvasElement.getBoundingClientRect();
+    // adopt the full viewport CSS dimensions for consistent scaling
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
     const dpr = window.devicePixelRatio || 1;
-    canvasElement.width = rect.width * dpr;
-    canvasElement.height = rect.height * dpr;
 
-    const w = canvasElement.width;
-    const h = canvasElement.height;
+    // update canvas buffer size (main.js already does this but repeating is safe)
+    canvasElement.width = cssW * dpr;
+    canvasElement.height = cssH * dpr;
 
-    this.scale = Math.min(w / this.BASE_WIDTH, h / this.BASE_HEIGHT);
+    // compute game scale using CSS coordinates (avoids DPI issues)
+    this.scale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
     if (!this.scale || this.scale <= 0) this.scale = 1;
 
-    this.CENTER_X = w / 2;
-    this.CENTER_Y = h / 2;
+    // keep center coordinates in CSS space; transform scales them to device pixels
+    this.CENTER_X = cssW / 2;
+    this.CENTER_Y = cssH / 2;
 
-    // ⭐ IMPORTANT: normalize drawing scale
+    // normalize drawing matrix
     const ctx = canvasElement.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   },
@@ -191,7 +200,7 @@ const Game2 = {
     this.updateParticles();
     this.updateFloaters();
 
-    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    // canvas cleared globally in main loop; no need to double-clear here
 
     if (this.gameStarted) {
       // FIX: Removed the solid black fillRect so your AR camera feed remains visible
@@ -239,7 +248,7 @@ const Game2 = {
     // BOTTOM → enter from below screen
     else {
       x = this.CENTER_X;
-      y = canvasElement.height + outsideOffset; // 👈 below canvas
+      y = this.cssHeight + outsideOffset; // 👈 below canvas (CSS units)
       vx = 0;
       vy = -speed;
     }
@@ -273,9 +282,11 @@ const Game2 = {
       if (b.hitCooldown > 0) b.hitCooldown -= dt;
 
       const limit = 120 * this.scale;
+      const cw = this.cssWidth;
+      const ch = this.cssHeight;
       if (
-        b.x < -limit || b.x > canvasElement.width + limit ||
-        b.y < -limit || b.y > canvasElement.height + limit
+        b.x < -limit || b.x > cw + limit ||
+        b.y < -limit || b.y > ch + limit
       ) {
         b.remove = true;
       }
@@ -354,8 +365,8 @@ const Game2 = {
     }
   },
   checkScoring() {
-    const w = canvasElement.width;
-    const h = canvasElement.height;
+    const w = this.cssWidth;
+    const h = this.cssHeight;
     const e = this.edgeSize;
     const gap = this.lineGap;
     const cx = this.CENTER_X;
@@ -480,17 +491,17 @@ const Game2 = {
     ctx.strokeStyle = "rgba(0, 255, 255, 0.05)";
     ctx.lineWidth = 1;
     const step = 40 * this.scale;
-    for (let x = 0; x < canvasElement.width; x += step) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, canvasElement.height); ctx.stroke();
+    for (let x = 0; x < this.cssWidth; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.cssHeight); ctx.stroke();
     }
-    for (let y = 0; y < canvasElement.height; y += step) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(canvasElement.width, y); ctx.stroke();
+    for (let y = 0; y < this.cssHeight; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.cssWidth, y); ctx.stroke();
     }
   },
 
   drawEdgeZones(ctx) {
-    const w = canvasElement.width;
-    const h = canvasElement.height;
+    const w = this.cssWidth;
+    const h = this.cssHeight;
     const e = this.edgeSize;
     const gap = this.lineGap;
     const cx = this.CENTER_X;
@@ -527,10 +538,11 @@ const Game2 = {
     ctx.lineWidth = 2 * this.scale;
     const gap = this.lineGap;
 
-    ctx.beginPath(); ctx.moveTo(this.CENTER_X - gap, 0); ctx.lineTo(this.CENTER_X - gap, canvasElement.height); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(this.CENTER_X + gap, 0); ctx.lineTo(this.CENTER_X + gap, canvasElement.height); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y - gap); ctx.lineTo(canvasElement.width, this.CENTER_Y - gap); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y + gap); ctx.lineTo(canvasElement.width, this.CENTER_Y + gap); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(this.CENTER_X - gap, 0); ctx.lineTo(this.CENTER_X - gap, this.cssHeight); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(this.CENTER_X + gap, 0); ctx.lineTo(this.CENTER_X + gap, this.cssHeight); ctx.stroke();
+    const ch = this.cssHeight;
+    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y - gap); ctx.lineTo(this.cssWidth, this.CENTER_Y - gap); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y + gap); ctx.lineTo(this.cssWidth, this.CENTER_Y + gap); ctx.stroke();
   },
 
   drawBalls(ctx) {
