@@ -315,22 +315,43 @@ const Game3 = {
     this.popups=this.popups.filter(p=>p.life>0);
   },
 
-  drawArmSymbol(ctx,h1,h2){
-    ctx.lineWidth=12*this.scale;
-    ctx.lineCap="round";
-    ctx.shadowBlur=15*this.scale;
-    
-    ctx.strokeStyle = `hsl(${this.symbolHue}, 100%, 50%)`;
-    ctx.shadowColor = ctx.strokeStyle; 
+  drawArmSymbol(ctx, h1, h2) {
 
+    ctx.lineWidth = 12 * this.scale;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.shadowBlur = 15 * this.scale;
+
+    // 🎨 ONLY pose-based color (like old version)
+    let color = "#00FFCC"; // Neutral Cyan
+
+    if (this.detectedSymbol === ">") {
+        color = "#FFFF00"; // Yellow
+    } 
+    else if (this.detectedSymbol === "<") {
+        color = "#00AAFF"; // Blue
+    }
+
+    ctx.strokeStyle = color;
+    ctx.shadowColor = color;
+
+    // 🖐 Natural hand-created symbol
     ctx.beginPath();
-    ctx.moveTo(h1.x,h1.y);
-    ctx.lineTo(this.centerX,this.centerY);
-    ctx.lineTo(h2.x,h2.y);
+    ctx.moveTo(h1.x, h1.y);
+    ctx.lineTo(this.centerX, this.centerY);
+    ctx.lineTo(h2.x, h2.y);
     ctx.stroke();
-    ctx.shadowBlur=0;
-  },
 
+    ctx.shadowBlur = 0;
+
+    // Optional white hand dots (clean look)
+    ctx.fillStyle = "white";
+    [h1, h2].forEach(h => {
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, 8 * this.scale, 0, Math.PI * 2);
+        ctx.fill();
+    });
+},
   drawUI(ctx){
     ctx.textAlign="center";
     ctx.textBaseline="middle";

@@ -105,51 +105,53 @@ const Game2 = {
     };
   },
 
-  onPoseResults(results) {
-    if (!results.poseLandmarks) return;
-    const lm = results.poseLandmarks;
+onPoseResults(results) {
+  if (!results.poseLandmarks) return;
+  const lm = results.poseLandmarks;
 
-    const mapPoint = (p) => ({
-      x: (1 - p.x) * canvasElement.width,
-      y: p.y * canvasElement.height
-    });
+  const mapPoint = (p) => ({
+    x: (1 - p.x) * canvasElement.width,
+    y: p.y * canvasElement.height
+  });
 
-    const smooth = (oldP, newP) => {
-      if (!oldP) return newP;
-      return {
-        x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
-        y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
-      };
+  const smooth = (oldP, newP) => {
+    if (!oldP) return newP;
+    return {
+      x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
+      y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
     };
+  };
 
-    const updateArm = (side, elbowLm, wristLm) => {
-      if (!elbowLm || !wristLm) return;
-      if (elbowLm.visibility < 0.4 || wristLm.visibility < 0.4) return;
+  const updateArm = (side, shoulderLm, wristLm) => {
+    if (!shoulderLm || !wristLm) return;
+    if (shoulderLm.visibility < 0.4 || wristLm.visibility < 0.4) return;
 
-      let elbow = mapPoint(elbowLm);
-      let wrist = mapPoint(wristLm);
+    let shoulder = mapPoint(shoulderLm);
+    let wrist = mapPoint(wristLm);
 
-      const prev = this.armData[side];
-      elbow = smooth(prev?.elbow, elbow);
-      wrist = smooth(prev?.wrist, wrist);
+    const prev = this.armData[side];
+    shoulder = smooth(prev?.shoulder, shoulder);
+    wrist = smooth(prev?.wrist, wrist);
 
-      const dx = wrist.x - elbow.x;
-      const dy = wrist.y - elbow.y;
-      if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
+    const dx = wrist.x - shoulder.x;
+    const dy = wrist.y - shoulder.y;
+    if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
 
-      const vel = this.armVelocity[side];
-      if (vel.last) {
-        vel.vx = vel.vx * 0.5 + (wrist.x - vel.last.x) * 0.5;
-        vel.vy = vel.vy * 0.5 + (wrist.y - vel.last.y) * 0.5;
-      }
-      vel.last = { x: wrist.x, y: wrist.y };
+    const vel = this.armVelocity[side];
+    if (vel.last) {
+      vel.vx = vel.vx * 0.5 + (wrist.x - vel.last.x) * 0.5;
+      vel.vy = vel.vy * 0.5 + (wrist.y - vel.last.y) * 0.5;
+    }
+    vel.last = { x: wrist.x, y: wrist.y };
 
-      this.armData[side] = { elbow, wrist };
-    };
+    this.armData[side] = { shoulder, wrist };
+  };
 
-    updateArm("right", lm[14], lm[16]);
-    updateArm("left", lm[13], lm[15]);
-  },
+  // Right arm: shoulder(12) → wrist(16)
+  updateArm("right", lm[12], lm[16]);
+  // Left arm: shoulder(11) → wrist(15)
+  updateArm("left", lm[11], lm[15]);
+},
 
   resize() {
     const rect = canvasElement.getBoundingClientRect();
@@ -216,7 +218,7 @@ spawnBall() {
   const number = Math.floor(Math.random() * 100) + 1;
   const isOdd = number % 2 !== 0;
   const side = Math.floor(Math.random() * 2); // 0 = top, 1 = bottom
-  const speed = (1 + Math.random() * 2) * this.scale;
+  const speed = 1.5 * this.scale;
 
   let x, y, vx, vy;
 
@@ -280,21 +282,20 @@ spawnBall() {
 checkPhysics() {
   const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
   const arm = this.armData.right;
-  if (!arm?.wrist || !arm?.elbow) return;
+  if (!arm?.wrist || !arm?.shoulder) return;
 
   const angle = Math.atan2(
-    arm.wrist.y - arm.elbow.y,
-    arm.wrist.x - arm.elbow.x
+    arm.wrist.y - arm.shoulder.y,
+    arm.wrist.x - arm.shoulder.x
   );
 
   const tipX = pivot.x + Math.cos(angle) * this.armLength;
   const tipY = pivot.y + Math.sin(angle) * this.armLength;
 
-  // Angular velocity (for power hits)
   if (!this.lastArmAngle) this.lastArmAngle = angle;
   let angVel = angle - this.lastArmAngle;
   this.lastArmAngle = angle;
-  angVel = Math.max(-0.3, Math.min(0.3, angVel));
+  angVel = Math.max(-0.3, Math.min(0.1, angVel));
 
   const tangentialSpeed = angVel * this.armLength * 0.8;
   const armVelX = -Math.sin(angle) * tangentialSpeed;
@@ -305,16 +306,12 @@ checkPhysics() {
   for (let b of this.balls) {
     if (b.hitCooldown > 0 || b.scored) continue;
 
-    const px = b.prevX ?? b.x;
-    const py = b.prevY ?? b.y;
-
-    // ---- Find closest point on arm segment ----
     const dx = tipX - pivot.x;
     const dy = tipY - pivot.y;
     const lenSq = dx * dx + dy * dy;
 
     let t = ((b.x - pivot.x) * dx + (b.y - pivot.y) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t)); // clamp to segment
+    t = Math.max(0, Math.min(1, t));
 
     const closestX = pivot.x + dx * t;
     const closestY = pivot.y + dy * t;
@@ -325,25 +322,21 @@ checkPhysics() {
 
     if (dist > radius) continue;
 
-    // ---- Correct collision normal (arm → ball) ----
     let nx = distX / (dist || 1);
     let ny = distY / (dist || 1);
 
-    // Relative velocity vs rotating arm
     const relVX = b.vx - armVelX;
     const relVY = b.vy - armVelY;
 
     const dot = relVX * nx + relVY * ny;
-    if (dot >= 0) continue; // moving away
+    if (dot >= 0) continue;
 
-    // Reflect
     let rvx = relVX - 2 * dot * nx;
     let rvy = relVY - 2 * dot * ny;
 
     b.vx = rvx + armVelX;
     b.vy = rvy + armVelY;
 
-    // Clamp speed
     const maxSpeed = 18 * this.scale;
     const sp = Math.hypot(b.vx, b.vy);
     if (sp > maxSpeed) {
@@ -414,9 +407,9 @@ checkPivotLock(dt) {
   const cy = this.CENTER_Y;
 
   const arm = this.armData.right;
-  if (!arm?.elbow) return;
+  if (!arm?.shoulder) return;
 
-  const dist = Math.hypot(arm.elbow.x - cx, arm.elbow.y - cy);
+  const dist = Math.hypot(arm.shoulder.x - cx, arm.shoulder.y - cy);
 
   if (dist < 120 * this.scale) {
     this.pivotLockTimer.right += dt;
@@ -569,13 +562,13 @@ ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);   // bottom strip with gap
 
 drawArms(ctx) {
   const arm = this.armData.right;
-  if (!arm?.elbow) return;
+  if (!arm?.shoulder) return;
 
   const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
 
   const angle = Math.atan2(
-    arm.wrist.y - arm.elbow.y,
-    arm.wrist.x - arm.elbow.x
+    arm.wrist.y - arm.shoulder.y,
+    arm.wrist.x - arm.shoulder.x
   );
 
   const tipX = pivot.x + Math.cos(angle) * this.armLength;
@@ -598,9 +591,9 @@ drawArms(ctx) {
   ctx.fillStyle = "#FFCC00";
   ctx.fill();
 
-  // 🔵 Purple elbow highlight (always visible)
+  // 🔵 Shoulder highlight (instead of elbow)
   ctx.beginPath();
-  ctx.arc(arm.elbow.x, arm.elbow.y, 18 * this.scale, 0, Math.PI * 2);
+  ctx.arc(arm.shoulder.x, arm.shoulder.y, 18 * this.scale, 0, Math.PI * 2);
   ctx.strokeStyle = "#BB66FF";
   ctx.lineWidth = 4 * this.scale;
   ctx.shadowBlur = 15;
@@ -660,7 +653,7 @@ drawPivots(ctx) {
         ctx.font = "bold 30px Arial";
         ctx.textAlign = "center";
         ctx.shadowBlur = 10; ctx.shadowColor = "black";
-        ctx.fillText("HOLD ELBOWS ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50);
+        ctx.fillText("HOLD SHOULDER ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50);
         ctx.shadowBlur = 0;
     }
 
@@ -705,3 +698,4 @@ drawPivots(ctx) {
   get pivotRadius() { return this.PIVOT_RADIUS * this.scale }
 
 };
+
