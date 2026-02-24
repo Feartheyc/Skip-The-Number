@@ -295,7 +295,7 @@ checkPhysics() {
   if (!this.lastArmAngle) this.lastArmAngle = angle;
   let angVel = angle - this.lastArmAngle;
   this.lastArmAngle = angle;
-  angVel = Math.max(-0.3, Math.min(0.3, angVel));
+  angVel = Math.max(-0.3, Math.min(0.1, angVel));
 
   const tangentialSpeed = angVel * this.armLength * 0.8;
   const armVelX = -Math.sin(angle) * tangentialSpeed;
