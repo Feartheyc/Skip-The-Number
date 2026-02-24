@@ -39,22 +39,22 @@ window.goToMainMenu = function () {
 ============================== */
 
 function resizeCanvas() {
-
-  const container = document.getElementById("container");
-  const rect = container.getBoundingClientRect();
-
+  // use the actual viewport dimensions instead of relying on element bounds
+  // (100vh can misreport on mobile when the address bar hides/shows)
+  const w = window.innerWidth;
+  const h = window.innerHeight;
   const dpr = window.devicePixelRatio || 1;
 
-  canvasElement.width = rect.width * dpr;
-  canvasElement.height = rect.height * dpr;
+  canvasElement.width = w * dpr;
+  canvasElement.height = h * dpr;
 
-  canvasElement.style.width = rect.width + "px";
-  canvasElement.style.height = rect.height + "px";
+  canvasElement.style.width = w + "px";
+  canvasElement.style.height = h + "px";
 
   canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
   if (window.currentGame?.onResize) {
-    window.currentGame.onResize(rect.width, rect.height);
+    window.currentGame.onResize(w, h);
   }
 }
 

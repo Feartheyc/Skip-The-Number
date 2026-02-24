@@ -46,12 +46,17 @@ const Game4 = {
   CENTER_X: 0,
   CENTER_Y: 0,
 
+  // provide CSS pixel dimensions (canvas buffer is DPR-scaled)
+  get cssWidth() { return canvasElement.width / (window.devicePixelRatio || 1); },
+  get cssHeight() { return canvasElement.height / (window.devicePixelRatio || 1); },
+
   SMOOTH: 0.6,
   MIN_ARM_LENGTH: 25,
 
   init() {
-    this.CENTER_X = canvasElement.width / 2;
-    this.CENTER_Y = canvasElement.height / 2;
+    const dpr = window.devicePixelRatio || 1;
+    this.CENTER_X = (canvasElement.width / dpr) / 2;
+    this.CENTER_Y = (canvasElement.height / dpr) / 2;
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -110,8 +115,8 @@ const Game4 = {
     const lm = results.poseLandmarks;
 
     const mapPoint = (p) => ({
-      x: (1 - p.x) * canvasElement.width,
-      y: p.y * canvasElement.height
+      x: (1 - p.x) * this.cssWidth,
+      y: p.y * this.cssHeight
     });
 
     const smooth = (oldP, newP) => {
@@ -152,19 +157,18 @@ const Game4 = {
   },
 
   resize() {
-    const rect = canvasElement.getBoundingClientRect();
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
     const dpr = window.devicePixelRatio || 1;
-    canvasElement.width = rect.width * dpr;
-    canvasElement.height = rect.height * dpr;
 
-    const w = canvasElement.width;
-    const h = canvasElement.height;
+    canvasElement.width = cssW * dpr;
+    canvasElement.height = cssH * dpr;
 
-    this.scale = Math.min(w / this.BASE_WIDTH, h / this.BASE_HEIGHT);
+    this.scale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
     if (!this.scale || this.scale <= 0) this.scale = 1;
 
-    this.CENTER_X = w / 2;
-    this.CENTER_Y = h / 2;
+    this.CENTER_X = cssW / 2;
+    this.CENTER_Y = cssH / 2;
   },
 
   update(ctx) {
@@ -185,7 +189,7 @@ const Game4 = {
     this.updateParticles();
     this.updateFloaters();
 
-    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    // cleared by main loop; no need here
 
     if (this.gameStarted) {
       // FIX: Removed the solid black fillRect so your AR camera feed remains visible
@@ -226,7 +230,7 @@ const Game4 = {
     // TOP → straight down
     if (side === 0) {
       x = this.CENTER_X;
-      y = safeOffset; 
+      y = safeOffset;
       vx = 0;
       vy = speed;
     }
@@ -234,7 +238,7 @@ const Game4 = {
     // BOTTOM → straight up
     else if (side === 1) {
       x = this.CENTER_X;
-      y = canvasElement.height - safeOffset;
+      y = this.cssHeight - safeOffset;
       vx = 0;
       vy = -speed;
     }
@@ -249,7 +253,7 @@ const Game4 = {
 
     // RIGHT → straight left
     else {
-      x = canvasElement.width - safeOffset;
+      x = this.cssWidth - safeOffset;
       y = this.CENTER_Y;
       vx = -speed;
       vy = 0;
@@ -277,8 +281,10 @@ const Game4 = {
 
       // OPTIONAL: remove ball if fully off screen (cleanup)
       if (
-        b.x < -100 || b.x > canvasElement.width + 100 ||
-        b.y < -100 || b.y > canvasElement.height + 100
+        const cw = this.cssWidth;
+        const ch = this.cssHeight;
+      b.x < -100 || b.x > cw + 100 ||
+        b.y < -100 || b.y > ch + 100
       ) {
         b.remove = true;
       }
@@ -313,9 +319,11 @@ const Game4 = {
       for (let b of this.balls) {
         if (b.hitCooldown > 0 || b.scored) continue;
 
+        const cw = this.cssWidth;
+        const ch = this.cssHeight;
         if (
-          b.x < -margin || b.x > canvasElement.width + margin ||
-          b.y < -margin || b.y > canvasElement.height + margin
+          b.x < -margin || b.x > cw + margin ||
+          b.y < -margin || b.y > ch + margin
         ) continue;
 
         const dist = this.pointToLineDistance(b.x, b.y, pivot.x, pivot.y, tipX, tipY);
@@ -355,9 +363,9 @@ const Game4 = {
   },
 
   checkScoring() {
-    const w = canvasElement.width;
-    const h = canvasElement.height;
-    const e = this.edgeSize; 
+    const w = this.cssWidth;
+    const h = this.cssHeight;
+    const e = this.edgeSize;
     const gap = this.lineGap;
     const cx = this.CENTER_X;
 
@@ -368,33 +376,33 @@ const Game4 = {
       let b = this.balls[i];
       if (b.scored) continue;
 
-      let scoreType = null; 
+      let scoreType = null;
 
       // LEFT ZONE (Red)
       if (b.x < cx - gap) {
-          if (b.y < triggerEdge || b.y > h - triggerEdge || b.x < triggerEdge) {
-              if (!b.isOdd) scoreType = "good"; 
-              else scoreType = "bad";
-          }
+        if (b.y < triggerEdge || b.y > h - triggerEdge || b.x < triggerEdge) {
+          if (!b.isOdd) scoreType = "good";
+          else scoreType = "bad";
+        }
       }
       // RIGHT ZONE (Blue)
       else if (b.x > cx + gap) {
-          if (b.y < triggerEdge || b.y > h - triggerEdge || b.x > w - triggerEdge) {
-              if (b.isOdd) scoreType = "good"; 
-              else scoreType = "bad";
-          }
+        if (b.y < triggerEdge || b.y > h - triggerEdge || b.x > w - triggerEdge) {
+          if (b.isOdd) scoreType = "good";
+          else scoreType = "bad";
+        }
       }
 
       if (scoreType) {
         if (scoreType === "good") {
-            this.updateScore(10, true); // +10, Good
-            this.spawnFloatingText(b.x, b.y, "+10", "#00FF00");
-            this.spawnExplosion(b.x, b.y, "#00FF00", 15);
+          this.updateScore(10, true); // +10, Good
+          this.spawnFloatingText(b.x, b.y, "+10", "#00FF00");
+          this.spawnExplosion(b.x, b.y, "#00FF00", 15);
         } else {
-            this.updateScore(-5, false); // -5, Bad
-            this.spawnFloatingText(b.x, b.y, "-5", "#FF0000");
-            this.spawnExplosion(b.x, b.y, "#FF0000", 10);
-            this.shakeTimer = 15; 
+          this.updateScore(-5, false); // -5, Bad
+          this.spawnFloatingText(b.x, b.y, "-5", "#FF0000");
+          this.spawnExplosion(b.x, b.y, "#FF0000", 10);
+          this.shakeTimer = 15;
         }
         this.balls.splice(i, 1);
       }
@@ -403,9 +411,9 @@ const Game4 = {
 
   // --- SCORE ANIMATION TRIGGER ---
   updateScore(amount, isGood) {
-      this.score += amount;
-      this.scoreScale = 2.0; // Jump scale to 2x
-      this.scoreColor = isGood ? "#00FF00" : "#FF0000"; // Set color
+    this.score += amount;
+    this.scoreScale = 2.0; // Jump scale to 2x
+    this.scoreColor = isGood ? "#00FF00" : "#FF0000"; // Set color
   },
 
   checkPivotLock(dt) {
@@ -415,26 +423,26 @@ const Game4 = {
     const rightPivotX = cx + this.pivotOffset;
 
     const check = (arm, side, px) => {
-        if (!arm?.elbow) return;
-        const dist = Math.hypot(arm.elbow.x - px, arm.elbow.y - cy);
-        
-        if (dist < 120 *this.scale) {
-            this.pivotLockTimer[side] += dt;
-            if (this.pivotLockTimer[side] > this.LOCK_TIME) this.pivotLocked[side] = true;
-        } else {
-            this.pivotLockTimer[side] = 0;
-        }
+      if (!arm?.elbow) return;
+      const dist = Math.hypot(arm.elbow.x - px, arm.elbow.y - cy);
+
+      if (dist < 120 * this.scale) {
+        this.pivotLockTimer[side] += dt;
+        if (this.pivotLockTimer[side] > this.LOCK_TIME) this.pivotLocked[side] = true;
+      } else {
+        this.pivotLockTimer[side] = 0;
+      }
     };
 
     check(this.armData.left, "left", leftPivotX);
     check(this.armData.right, "right", rightPivotX);
 
     if (this.pivotLocked.left && this.pivotLocked.right) {
-        this.gameStarted = true;
-        
-    const video = document.getElementById("input_video");
-    if (video) video.style.opacity = "0";
-        this.spawnFloatingText(cx, cy, "START!", "white");
+      this.gameStarted = true;
+
+      const video = document.getElementById("input_video");
+      if (video) video.style.opacity = "0";
+      this.spawnFloatingText(cx, cy, "START!", "white");
     }
   },
 
@@ -442,59 +450,59 @@ const Game4 = {
      VISUAL EFFECTS
   ============================= */
   spawnExplosion(x, y, color, count) {
-      for(let i=0; i<count; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = Math.random() * 5 + 2;
-          this.particles.push({
-              x, y,
-              vx: Math.cos(angle) * speed,
-              vy: Math.sin(angle) * speed,
-              life: 1.0,
-              color: color
-          });
-      }
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 5 + 2;
+      this.particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1.0,
+        color: color
+      });
+    }
   },
 
   spawnFloatingText(x, y, text, color) {
-      this.floaters.push({ x, y, text, color, life: 1.0, dy: -2 });
+    this.floaters.push({ x, y, text, color, life: 1.0, dy: -2 });
   },
 
   updateParticles() {
-      for(let i=this.particles.length-1; i>=0; i--) {
-          let p = this.particles[i];
-          p.x += p.vx; p.y += p.vy;
-          p.life -= 0.05;
-          if(p.life <= 0) this.particles.splice(i, 1);
-      }
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      let p = this.particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.life -= 0.05;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
   },
 
   updateFloaters() {
-      for(let i=this.floaters.length-1; i>=0; i--) {
-          let f = this.floaters[i];
-          f.y += f.dy;
-          f.life -= 0.02;
-          if(f.life <= 0) this.floaters.splice(i, 1);
-      }
+    for (let i = this.floaters.length - 1; i >= 0; i--) {
+      let f = this.floaters[i];
+      f.y += f.dy;
+      f.life -= 0.02;
+      if (f.life <= 0) this.floaters.splice(i, 1);
+    }
   },
 
   /* ==============================
      DRAWING
   ============================== */
   drawBackground(ctx) {
-      ctx.strokeStyle = "rgba(0, 255, 255, 0.05)";
-      ctx.lineWidth = 1;
-      const step = 40;
-      for(let x=0; x<canvasElement.width; x+=step) {
-          ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x, canvasElement.height); ctx.stroke();
-      }
-      for(let y=0; y<canvasElement.height; y+=step) {
-          ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvasElement.width, y); ctx.stroke();
-      }
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.05)";
+    ctx.lineWidth = 1;
+    const step = 40;
+    for (let x = 0; x < this.cssWidth; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.cssHeight); ctx.stroke();
+    }
+    for (let y = 0; y < this.cssHeight; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.cssWidth, y); ctx.stroke();
+    }
   },
 
   drawEdgeZones(ctx) {
-    const w = canvasElement.width;
-    const h = canvasElement.height;
+    const w = this.cssWidth;
+    const h = this.cssHeight;
     const e = this.edgeSize;
     const gap = this.lineGap;
     const cx = this.CENTER_X;
@@ -504,7 +512,7 @@ const Game4 = {
     ctx.shadowBlur = 20;
 
     // LEFT (RED)
-    ctx.fillStyle = "rgba(255, 40, 40, 0.6)"; 
+    ctx.fillStyle = "rgba(255, 40, 40, 0.6)";
     ctx.shadowColor = "red";
     ctx.fillRect(0, 0, cx - gap, e);
     ctx.fillRect(0, h - e, cx - gap, e);
@@ -512,7 +520,7 @@ const Game4 = {
     ctx.fillRect(0, cy + gap, e, h - (cy + gap));
 
     // RIGHT (BLUE)
-    ctx.fillStyle = "rgba(40, 120, 255, 0.6)"; 
+    ctx.fillStyle = "rgba(40, 120, 255, 0.6)";
     ctx.shadowColor = "blue";
     ctx.fillRect(cx + gap, 0, w - (cx + gap), e);
     ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);
@@ -522,35 +530,35 @@ const Game4 = {
     ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
   },
-  
+
   drawCross(ctx) {
     ctx.strokeStyle = "rgba(255,255,255,0.2)";
-    ctx.lineWidth = 2*this.scale;
+    ctx.lineWidth = 2 * this.scale;
     const gap = this.lineGap;
-    
-    ctx.beginPath(); ctx.moveTo(this.CENTER_X - gap, 0); ctx.lineTo(this.CENTER_X - gap, canvasElement.height); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(this.CENTER_X + gap, 0); ctx.lineTo(this.CENTER_X + gap, canvasElement.height); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y - gap); ctx.lineTo(canvasElement.width, this.CENTER_Y - gap); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y + gap); ctx.lineTo(canvasElement.width, this.CENTER_Y + gap); ctx.stroke();
+
+    ctx.beginPath(); ctx.moveTo(this.CENTER_X - gap, 0); ctx.lineTo(this.CENTER_X - gap, this.cssHeight); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(this.CENTER_X + gap, 0); ctx.lineTo(this.CENTER_X + gap, this.cssHeight); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y - gap); ctx.lineTo(this.cssWidth, this.CENTER_Y - gap); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y + gap); ctx.lineTo(this.cssWidth, this.CENTER_Y + gap); ctx.stroke();
   },
 
   drawBalls(ctx) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `bold ${16*this.scale}px Arial`;
+    ctx.font = `bold ${16 * this.scale}px Arial`;
 
     for (let b of this.balls) {
       // Trail
       if (b.trail.length > 1) {
-          ctx.beginPath();
-          ctx.strokeStyle = b.color;
-          ctx.lineWidth = b.scale * this.ballRadius * 1.2;
-          ctx.lineCap = "round";
-          ctx.globalAlpha = 0.3;
-          ctx.moveTo(b.trail[0].x, b.trail[0].y);
-          for(let t of b.trail) ctx.lineTo(t.x, t.y);
-          ctx.stroke();
-          ctx.globalAlpha = 1.0;
+        ctx.beginPath();
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = b.scale * this.ballRadius * 1.2;
+        ctx.lineCap = "round";
+        ctx.globalAlpha = 0.3;
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let t of b.trail) ctx.lineTo(t.x, t.y);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
       }
 
       ctx.beginPath();
@@ -568,32 +576,32 @@ const Game4 = {
 
   drawArms(ctx) {
     const drawOne = (arm, pivot, side) => {
-        if (!arm?.elbow) return;
-        const angle = Math.atan2(arm.wrist.y - arm.elbow.y, arm.wrist.x - arm.elbow.x);
-        const tipX = pivot.x + Math.cos(angle) * this.armLength;
-        const tipY = pivot.y + Math.sin(angle) * this.armLength;
+      if (!arm?.elbow) return;
+      const angle = Math.atan2(arm.wrist.y - arm.elbow.y, arm.wrist.x - arm.elbow.x);
+      const tipX = pivot.x + Math.cos(angle) * this.armLength;
+      const tipY = pivot.y + Math.sin(angle) * this.armLength;
 
-        ctx.beginPath();
-        ctx.moveTo(pivot.x, pivot.y);
-        ctx.lineTo(tipX, tipY);
-        
-        // Flash White on Hit
-        ctx.strokeStyle = this.armFlash[side] > 0 ? "white" : (side === "left" ? "#FF8888" : "#8888FF");
-        ctx.lineWidth = this.armFlash[side] > 0 ? 12 *this.scale: 8 * this.scale;
-        
-        ctx.shadowBlur = 20;
-        ctx.shadowColor = ctx.strokeStyle;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.moveTo(pivot.x, pivot.y);
+      ctx.lineTo(tipX, tipY);
 
-        ctx.fillStyle = "yellow";
+      // Flash White on Hit
+      ctx.strokeStyle = this.armFlash[side] > 0 ? "white" : (side === "left" ? "#FF8888" : "#8888FF");
+      ctx.lineWidth = this.armFlash[side] > 0 ? 12 * this.scale : 8 * this.scale;
+
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = ctx.strokeStyle;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = "yellow";
       ctx.beginPath();
       ctx.arc(arm.elbow.x, arm.elbow.y, 10 * this.scale, 0, Math.PI * 2);
       ctx.fill();
-        ctx.beginPath();
-        ctx.arc(tipX, tipY, 8*this.scale, 0, Math.PI*2);
-        ctx.fillStyle = "#FFCC00";
-        ctx.fill();
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, 8 * this.scale, 0, Math.PI * 2);
+      ctx.fillStyle = "#FFCC00";
+      ctx.fill();
     };
 
     drawOne(this.armData.left, { x: this.CENTER_X - this.pivotOffset, y: this.CENTER_Y }, "left");
@@ -601,72 +609,72 @@ const Game4 = {
   },
 
   drawPivots(ctx) {
-     const drawRing = (x, y, locked, progress) => {
-         ctx.beginPath();
-         ctx.arc(x, y, this.pivotRadius, 0, Math.PI*2);
-         ctx.fillStyle = locked ? "#00FF00" : "#444";
-         ctx.fill();
-         
-         if (!locked && progress > 0) {
-             ctx.beginPath();
-             ctx.arc(x, y, this.pivotRadius, -Math.PI/2, (-Math.PI/2) + (Math.PI*2 * progress));
-             ctx.strokeStyle = "yellow";
-             ctx.lineWidth = 4;
-             ctx.stroke();
-         }
-     };
+    const drawRing = (x, y, locked, progress) => {
+      ctx.beginPath();
+      ctx.arc(x, y, this.pivotRadius, 0, Math.PI * 2);
+      ctx.fillStyle = locked ? "#00FF00" : "#444";
+      ctx.fill();
 
-     const leftProg = Math.min(1, this.pivotLockTimer.left / this.LOCK_TIME);
-     const rightProg = Math.min(1, this.pivotLockTimer.right / this.LOCK_TIME);
+      if (!locked && progress > 0) {
+        ctx.beginPath();
+        ctx.arc(x, y, this.pivotRadius, -Math.PI / 2, (-Math.PI / 2) + (Math.PI * 2 * progress));
+        ctx.strokeStyle = "yellow";
+        ctx.lineWidth = 4;
+        ctx.stroke();
+      }
+    };
 
-     drawRing(this.CENTER_X - this.pivotOffset, this.CENTER_Y, this.pivotLocked.left, leftProg);
-     drawRing(this.CENTER_X + this.pivotOffset, this.CENTER_Y, this.pivotLocked.right, rightProg);
-     
+    const leftProg = Math.min(1, this.pivotLockTimer.left / this.LOCK_TIME);
+    const rightProg = Math.min(1, this.pivotLockTimer.right / this.LOCK_TIME);
+
+    drawRing(this.CENTER_X - this.pivotOffset, this.CENTER_Y, this.pivotLocked.left, leftProg);
+    drawRing(this.CENTER_X + this.pivotOffset, this.CENTER_Y, this.pivotLocked.right, rightProg);
+
   },
 
   drawParticles(ctx) {
-      for(let p of this.particles) {
-          ctx.globalAlpha = p.life;
-          ctx.fillStyle = p.color;
-          ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
-      }
-      ctx.globalAlpha = 1;
+    for (let p of this.particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   },
 
   drawFloaters(ctx) {
-      ctx.font = "bold 24px Arial";
-      ctx.textAlign = "center";
-      for(let f of this.floaters) {
-          ctx.globalAlpha = f.life;
-          ctx.fillStyle = f.color;
-          ctx.fillText(f.text, f.x, f.y);
-      }
-      ctx.globalAlpha = 1;
+    ctx.font = "bold 24px Arial";
+    ctx.textAlign = "center";
+    for (let f of this.floaters) {
+      ctx.globalAlpha = f.life;
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, f.x, f.y);
+    }
+    ctx.globalAlpha = 1;
   },
-  
+
   drawUI(ctx) {
     if (!this.gameStarted) {
-        ctx.fillStyle = "white";
-        ctx.font = "bold 30px Arial";
-        ctx.textAlign = "center";
-        ctx.shadowBlur = 10; ctx.shadowColor = "black";
-        ctx.fillText("HOLD ELBOWS ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50);
-        ctx.shadowBlur = 0;
+      ctx.fillStyle = "white";
+      ctx.font = "bold 30px Arial";
+      ctx.textAlign = "center";
+      ctx.shadowBlur = 10; ctx.shadowColor = "black";
+      ctx.fillText("HOLD ELBOWS ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50);
+      ctx.shadowBlur = 0;
     }
 
     // ANIMATED SCORE
     ctx.textAlign = "center";
     // Scale the font size
-    const fontSize = 24 * this.scoreScale; 
+    const fontSize = 24 * this.scoreScale;
     ctx.font = `bold ${fontSize}px Arial`;
-    
+
     ctx.fillStyle = this.scoreColor;
     ctx.fillText(this.score, this.CENTER_X, 40);
 
     // Legend
     ctx.font = "16px Arial";
     ctx.textAlign = "left";
-    ctx.fillStyle = "#FF4444"; 
+    ctx.fillStyle = "#FF4444";
     ctx.fillText("Even (Red)", 10, 20);
     ctx.fillStyle = "#00FFFF";
     ctx.fillText("Odd (Blue)", 10, 40);
