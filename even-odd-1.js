@@ -46,12 +46,18 @@ const Game2 = {
   CENTER_X: 0,
   CENTER_Y: 0,
 
+  // helpers to work in CSS pixels (canvas buffer is scaled by devicePixelRatio)
+  get cssWidth() { return canvasElement.width / (window.devicePixelRatio || 1); },
+  get cssHeight() { return canvasElement.height / (window.devicePixelRatio || 1); },
+
   SMOOTH: 0.6,
   MIN_ARM_LENGTH: 25,
 
   init() {
-    this.CENTER_X = canvasElement.width / 2;
-    this.CENTER_Y = canvasElement.height / 2;
+    // initial center in CSS coordinates; resize() will recompute
+    const dpr = window.devicePixelRatio || 1;
+    this.CENTER_X = (canvasElement.width / dpr) / 2;
+    this.CENTER_Y = (canvasElement.height / dpr) / 2;
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -105,68 +111,75 @@ const Game2 = {
     };
   },
 
-onPoseResults(results) {
-  if (!results.poseLandmarks) return;
-  const lm = results.poseLandmarks;
+  onPoseResults(results) {
+    if (!results.poseLandmarks) return;
+    const lm = results.poseLandmarks;
 
-  const mapPoint = (p) => ({
-    x: (1 - p.x) * canvasElement.width,
-    y: p.y * canvasElement.height
-  });
+    const mapPoint = (p) => ({
+      x: (1 - p.x) * this.cssWidth,
+      y: p.y * this.cssHeight
+    });
 
-  const smooth = (oldP, newP) => {
-    if (!oldP) return newP;
-    return {
-      x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
-      y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
+    const smooth = (oldP, newP) => {
+      if (!oldP) return newP;
+      return {
+        x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
+        y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
+      };
     };
-  };
 
-  const updateArm = (side, shoulderLm, wristLm) => {
-    if (!shoulderLm || !wristLm) return;
-    if (shoulderLm.visibility < 0.4 || wristLm.visibility < 0.4) return;
+    const updateArm = (side, shoulderLm, wristLm) => {
+      if (!shoulderLm || !wristLm) return;
+      if (shoulderLm.visibility < 0.4 || wristLm.visibility < 0.4) return;
 
-    let shoulder = mapPoint(shoulderLm);
-    let wrist = mapPoint(wristLm);
+      let shoulder = mapPoint(shoulderLm);
+      let wrist = mapPoint(wristLm);
 
-    const prev = this.armData[side];
-    shoulder = smooth(prev?.shoulder, shoulder);
-    wrist = smooth(prev?.wrist, wrist);
+      const prev = this.armData[side];
+      shoulder = smooth(prev?.shoulder, shoulder);
+      wrist = smooth(prev?.wrist, wrist);
 
-    const dx = wrist.x - shoulder.x;
-    const dy = wrist.y - shoulder.y;
-    if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
+      const dx = wrist.x - shoulder.x;
+      const dy = wrist.y - shoulder.y;
+      if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
 
-    const vel = this.armVelocity[side];
-    if (vel.last) {
-      vel.vx = vel.vx * 0.5 + (wrist.x - vel.last.x) * 0.5;
-      vel.vy = vel.vy * 0.5 + (wrist.y - vel.last.y) * 0.5;
-    }
-    vel.last = { x: wrist.x, y: wrist.y };
+      const vel = this.armVelocity[side];
+      if (vel.last) {
+        vel.vx = vel.vx * 0.5 + (wrist.x - vel.last.x) * 0.5;
+        vel.vy = vel.vy * 0.5 + (wrist.y - vel.last.y) * 0.5;
+      }
+      vel.last = { x: wrist.x, y: wrist.y };
 
-    this.armData[side] = { shoulder, wrist };
-  };
+      this.armData[side] = { shoulder, wrist };
+    };
 
-  // Right arm: shoulder(12) → wrist(16)
-  updateArm("right", lm[12], lm[16]);
-  // Left arm: shoulder(11) → wrist(15)
-  updateArm("left", lm[11], lm[15]);
-},
+    // Right arm: shoulder(12) → wrist(16)
+    updateArm("right", lm[12], lm[16]);
+    // Left arm: shoulder(11) → wrist(15)
+    updateArm("left", lm[11], lm[15]);
+  },
 
   resize() {
-    const rect = canvasElement.getBoundingClientRect();
+    // adopt the full viewport CSS dimensions for consistent scaling
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
     const dpr = window.devicePixelRatio || 1;
-    canvasElement.width = rect.width * dpr;
-    canvasElement.height = rect.height * dpr;
 
-    const w = canvasElement.width;
-    const h = canvasElement.height;
+    // update canvas buffer size (main.js already does this but repeating is safe)
+    canvasElement.width = cssW * dpr;
+    canvasElement.height = cssH * dpr;
 
-    this.scale = Math.min(w / this.BASE_WIDTH, h / this.BASE_HEIGHT);
+    // compute game scale using CSS coordinates (avoids DPI issues)
+    this.scale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
     if (!this.scale || this.scale <= 0) this.scale = 1;
 
-    this.CENTER_X = w / 2;
-    this.CENTER_Y = h / 2;
+    // keep center coordinates in CSS space; transform scales them to device pixels
+    this.CENTER_X = cssW / 2;
+    this.CENTER_Y = cssH / 2;
+
+    // normalize drawing matrix
+    const ctx = canvasElement.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   },
 
   update(ctx) {
@@ -187,7 +200,7 @@ onPoseResults(results) {
     this.updateParticles();
     this.updateFloaters();
 
-    ctx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+    // canvas cleared globally in main loop; no need to double-clear here
 
     if (this.gameStarted) {
       // FIX: Removed the solid black fillRect so your AR camera feed remains visible
@@ -214,144 +227,147 @@ onPoseResults(results) {
     }
   },
 
-spawnBall() {
-  const number = Math.floor(Math.random() * 100) + 1;
-  const isOdd = number % 2 !== 0;
-  const side = Math.floor(Math.random() * 2); // 0 = top, 1 = bottom
-  const speed = 1.5 * this.scale;
+  spawnBall() {
+    const number = Math.floor(Math.random() * 100) + 1;
+    const isOdd = number % 2 !== 0;
+    const side = Math.floor(Math.random() * 2); // 0 = top, 1 = bottom
+    const speed = 1.5 * this.scale;
 
-  let x, y, vx, vy;
+    let x, y, vx, vy;
 
-  // spawn slightly outside screen
-  const outsideOffset = this.ballRadius * 2;
+    // spawn slightly outside screen
+    const outsideOffset = this.ballRadius * 2;
 
-  // TOP → enter from above screen
-  if (side === 0) {
-    x = this.CENTER_X;
-    y = -outsideOffset;                 // 👈 above canvas
-    vx = 0;
-    vy = speed;
-  }
-  // BOTTOM → enter from below screen
-  else {
-    x = this.CENTER_X;
-    y = canvasElement.height + outsideOffset; // 👈 below canvas
-    vx = 0;
-    vy = -speed;
-  }
-
-  this.balls.push({
-    x, y, vx, vy,
-    number,
-    isOdd,
-    color: "#ffffff",
-    trail: [],
-    hitCooldown: 0,
-    scored: false,
-    hasCollided: false
-  });
-},
-
- updateBalls(dt) {
-  for (let b of this.balls) {
-    if (b.scored) continue;
-
-    // Store previous position (important for collision sweep)
-    b.prevX = b.x;
-    b.prevY = b.y;
-
-    b.x += b.vx * dt;
-    b.y += b.vy * dt;
-
-    b.trail.push({ x: b.x, y: b.y });
-    if (b.trail.length > 8) b.trail.shift();
-
-    if (b.hitCooldown > 0) b.hitCooldown -= dt;
-
-    if (
-      b.x < -120 || b.x > canvasElement.width + 120 ||
-      b.y < -120 || b.y > canvasElement.height + 120
-    ) {
-      b.remove = true;
+    // TOP → enter from above screen
+    if (side === 0) {
+      x = this.CENTER_X;
+      y = -outsideOffset;                 // 👈 above canvas
+      vx = 0;
+      vy = speed;
     }
-  }
-
-  this.balls = this.balls.filter(b => !b.remove);
-},
-
-checkPhysics() {
-  const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
-  const arm = this.armData.right;
-  if (!arm?.wrist || !arm?.shoulder) return;
-
-  const angle = Math.atan2(
-    arm.wrist.y - arm.shoulder.y,
-    arm.wrist.x - arm.shoulder.x
-  );
-
-  const tipX = pivot.x + Math.cos(angle) * this.armLength;
-  const tipY = pivot.y + Math.sin(angle) * this.armLength;
-
-  if (!this.lastArmAngle) this.lastArmAngle = angle;
-  let angVel = angle - this.lastArmAngle;
-  this.lastArmAngle = angle;
-  angVel = Math.max(-0.3, Math.min(0.1, angVel));
-
-  const tangentialSpeed = angVel * this.armLength * 0.8;
-  const armVelX = -Math.sin(angle) * tangentialSpeed;
-  const armVelY =  Math.cos(angle) * tangentialSpeed;
-
-  const radius = this.ballRadius + 6;
-
-  for (let b of this.balls) {
-    if (b.hitCooldown > 0 || b.scored) continue;
-
-    const dx = tipX - pivot.x;
-    const dy = tipY - pivot.y;
-    const lenSq = dx * dx + dy * dy;
-
-    let t = ((b.x - pivot.x) * dx + (b.y - pivot.y) * dy) / lenSq;
-    t = Math.max(0, Math.min(1, t));
-
-    const closestX = pivot.x + dx * t;
-    const closestY = pivot.y + dy * t;
-
-    const distX = b.x - closestX;
-    const distY = b.y - closestY;
-    const dist = Math.hypot(distX, distY);
-
-    if (dist > radius) continue;
-
-    let nx = distX / (dist || 1);
-    let ny = distY / (dist || 1);
-
-    const relVX = b.vx - armVelX;
-    const relVY = b.vy - armVelY;
-
-    const dot = relVX * nx + relVY * ny;
-    if (dot >= 0) continue;
-
-    let rvx = relVX - 2 * dot * nx;
-    let rvy = relVY - 2 * dot * ny;
-
-    b.vx = rvx + armVelX;
-    b.vy = rvy + armVelY;
-
-    const maxSpeed = 18 * this.scale;
-    const sp = Math.hypot(b.vx, b.vy);
-    if (sp > maxSpeed) {
-      b.vx = (b.vx / sp) * maxSpeed;
-      b.vy = (b.vy / sp) * maxSpeed;
+    // BOTTOM → enter from below screen
+    else {
+      x = this.CENTER_X;
+      y = this.cssHeight + outsideOffset; // 👈 below canvas (CSS units)
+      vx = 0;
+      vy = -speed;
     }
 
-    b.hitCooldown = 8;
-    this.spawnExplosion(b.x, b.y, "white", 10);
-  }
-},
+    this.balls.push({
+      x, y, vx, vy,
+      number,
+      isOdd,
+      color: "#ffffff",
+      trail: [],
+      hitCooldown: 0,
+      scored: false,
+      hasCollided: false
+    });
+  },
+
+  updateBalls(dt) {
+    for (let b of this.balls) {
+      if (b.scored) continue;
+
+      // Store previous position (important for collision sweep)
+      b.prevX = b.x;
+      b.prevY = b.y;
+
+      b.x += b.vx * dt;
+      b.y += b.vy * dt;
+
+      b.trail.push({ x: b.x, y: b.y });
+      if (b.trail.length > 8) b.trail.shift();
+
+      if (b.hitCooldown > 0) b.hitCooldown -= dt;
+
+      const limit = 120 * this.scale;
+      const cw = this.cssWidth;
+      const ch = this.cssHeight;
+      if (
+        b.x < -limit || b.x > cw + limit ||
+        b.y < -limit || b.y > ch + limit
+      ) {
+        b.remove = true;
+      }
+    }
+
+    this.balls = this.balls.filter(b => !b.remove);
+  },
+
+  checkPhysics() {
+    const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
+    const arm = this.armData.right;
+    if (!arm?.wrist || !arm?.shoulder) return;
+
+    const angle = Math.atan2(
+      arm.wrist.y - arm.shoulder.y,
+      arm.wrist.x - arm.shoulder.x
+    );
+
+    const tipX = pivot.x + Math.cos(angle) * this.armLength;
+    const tipY = pivot.y + Math.sin(angle) * this.armLength;
+
+    if (!this.lastArmAngle) this.lastArmAngle = angle;
+    let angVel = angle - this.lastArmAngle;
+    this.lastArmAngle = angle;
+    angVel = Math.max(-0.3, Math.min(0.1, angVel));
+
+    const tangentialSpeed = angVel * this.armLength * 0.8;
+    const armVelX = -Math.sin(angle) * tangentialSpeed;
+    const armVelY = Math.cos(angle) * tangentialSpeed;
+
+    const radius = this.ballRadius + 6;
+
+    for (let b of this.balls) {
+      if (b.hitCooldown > 0 || b.scored) continue;
+
+      const dx = tipX - pivot.x;
+      const dy = tipY - pivot.y;
+      const lenSq = dx * dx + dy * dy;
+
+      let t = ((b.x - pivot.x) * dx + (b.y - pivot.y) * dy) / lenSq;
+      t = Math.max(0, Math.min(1, t));
+
+      const closestX = pivot.x + dx * t;
+      const closestY = pivot.y + dy * t;
+
+      const distX = b.x - closestX;
+      const distY = b.y - closestY;
+      const dist = Math.hypot(distX, distY);
+
+      if (dist > radius) continue;
+
+      let nx = distX / (dist || 1);
+      let ny = distY / (dist || 1);
+
+      const relVX = b.vx - armVelX;
+      const relVY = b.vy - armVelY;
+
+      const dot = relVX * nx + relVY * ny;
+      if (dot >= 0) continue;
+
+      let rvx = relVX - 2 * dot * nx;
+      let rvy = relVY - 2 * dot * ny;
+
+      b.vx = rvx + armVelX;
+      b.vy = rvy + armVelY;
+
+      const maxSpeed = 18 * this.scale;
+      const sp = Math.hypot(b.vx, b.vy);
+      if (sp > maxSpeed) {
+        b.vx = (b.vx / sp) * maxSpeed;
+        b.vy = (b.vy / sp) * maxSpeed;
+      }
+
+      b.hitCooldown = 8 * this.scale;
+      this.spawnExplosion(b.x, b.y, "white", 10);
+    }
+  },
   checkScoring() {
-    const w = canvasElement.width;
-    const h = canvasElement.height;
-    const e = this.edgeSize; 
+    const w = this.cssWidth;
+    const h = this.cssHeight;
+    const e = this.edgeSize;
     const gap = this.lineGap;
     const cx = this.CENTER_X;
 
@@ -362,33 +378,33 @@ checkPhysics() {
       let b = this.balls[i];
       if (b.scored) continue;
 
-      let scoreType = null; 
+      let scoreType = null;
 
       // LEFT ZONE (Red)
       if (b.x < cx - gap) {
-          if (b.y < triggerEdge || b.y > h - triggerEdge || b.x < triggerEdge) {
-              if (!b.isOdd) scoreType = "good"; 
-              else scoreType = "bad";
-          }
+        if (b.y < triggerEdge || b.y > h - triggerEdge || b.x < triggerEdge) {
+          if (!b.isOdd) scoreType = "good";
+          else scoreType = "bad";
+        }
       }
       // RIGHT ZONE (Blue)
       else if (b.x > cx + gap) {
-          if (b.y < triggerEdge || b.y > h - triggerEdge || b.x > w - triggerEdge) {
-              if (b.isOdd) scoreType = "good"; 
-              else scoreType = "bad";
-          }
+        if (b.y < triggerEdge || b.y > h - triggerEdge || b.x > w - triggerEdge) {
+          if (b.isOdd) scoreType = "good";
+          else scoreType = "bad";
+        }
       }
 
       if (scoreType) {
         if (scoreType === "good") {
-            this.updateScore(10, true); // +10, Good
-            this.spawnFloatingText(b.x, b.y, "+10", "#00FF00");
-            this.spawnExplosion(b.x, b.y, "#00FF00", 15);
+          this.updateScore(10, true); // +10, Good
+          this.spawnFloatingText(b.x, b.y, "+10", "#00FF00");
+          this.spawnExplosion(b.x, b.y, "#00FF00", 15);
         } else {
-            this.updateScore(-5, false); // -5, Bad
-            this.spawnFloatingText(b.x, b.y, "-5", "#FF0000");
-            this.spawnExplosion(b.x, b.y, "#FF0000", 10);
-            this.shakeTimer = 15; 
+          this.updateScore(-5, false); // -5, Bad
+          this.spawnFloatingText(b.x, b.y, "-5", "#FF0000");
+          this.spawnExplosion(b.x, b.y, "#FF0000", 10);
+          this.shakeTimer = 15;
         }
         this.balls.splice(i, 1);
       }
@@ -397,154 +413,155 @@ checkPhysics() {
 
   // --- SCORE ANIMATION TRIGGER ---
   updateScore(amount, isGood) {
-      this.score += amount;
-      this.scoreScale = 2.0; // Jump scale to 2x
-      this.scoreColor = isGood ? "#00FF00" : "#FF0000"; // Set color
+    this.score += amount;
+    this.scoreScale = 2.0; // Jump scale to 2x
+    this.scoreColor = isGood ? "#00FF00" : "#FF0000"; // Set color
   },
 
-checkPivotLock(dt) {
-  const cx = this.CENTER_X;
-  const cy = this.CENTER_Y;
+  checkPivotLock(dt) {
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
 
-  const arm = this.armData.right;
-  if (!arm?.shoulder) return;
+    const arm = this.armData.right;
+    if (!arm?.shoulder) return;
 
-  const dist = Math.hypot(arm.shoulder.x - cx, arm.shoulder.y - cy);
+    const dist = Math.hypot(arm.shoulder.x - cx, arm.shoulder.y - cy);
 
-  if (dist < 120 * this.scale) {
-    this.pivotLockTimer.right += dt;
-    this.lockProgress = Math.min(
-      this.pivotLockTimer.right / this.LOCK_TIME,
-      1
-    );
+    if (dist < 120 * this.scale) {
+      this.pivotLockTimer.right += dt;
+      this.lockProgress = Math.min(
+        this.pivotLockTimer.right / this.LOCK_TIME,
+        1
+      );
 
-    if (this.pivotLockTimer.right > this.LOCK_TIME) {
-      this.gameStarted = true;
-      const video = document.getElementById("input_video");
-      if (video) video.style.opacity = "0.2";
-      this.spawnFloatingText(cx, cy, "START!", "white");
+      if (this.pivotLockTimer.right > this.LOCK_TIME) {
+        this.gameStarted = true;
+        const video = document.getElementById("input_video");
+        if (video) video.style.opacity = "0.2";
+        this.spawnFloatingText(cx, cy, "START!", "white");
+      }
+    } else {
+      this.pivotLockTimer.right = 0;
+      this.lockProgress = 0;
     }
-  } else {
-    this.pivotLockTimer.right = 0;
-    this.lockProgress = 0;
-  }
-},
+  },
   /* ==============================
      VISUAL EFFECTS
   ============================= */
   spawnExplosion(x, y, color, count) {
-      for(let i=0; i<count; i++) {
-          const angle = Math.random() * Math.PI * 2;
-          const speed = Math.random() * 5 + 2;
-          this.particles.push({
-              x, y,
-              vx: Math.cos(angle) * speed,
-              vy: Math.sin(angle) * speed,
-              life: 1.0,
-              color: color
-          });
-      }
+    for (let i = 0; i < count; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 5 + 2;
+      this.particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        life: 1.0,
+        color: color
+      });
+    }
   },
 
   spawnFloatingText(x, y, text, color) {
-      this.floaters.push({ x, y, text, color, life: 1.0, dy: -2 });
+    this.floaters.push({ x, y, text, color, life: 1.0, dy: -2 });
   },
 
   updateParticles() {
-      for(let i=this.particles.length-1; i>=0; i--) {
-          let p = this.particles[i];
-          p.x += p.vx; p.y += p.vy;
-          p.life -= 0.05;
-          if(p.life <= 0) this.particles.splice(i, 1);
-      }
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      let p = this.particles[i];
+      p.x += p.vx; p.y += p.vy;
+      p.life -= 0.05;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
   },
 
   updateFloaters() {
-      for(let i=this.floaters.length-1; i>=0; i--) {
-          let f = this.floaters[i];
-          f.y += f.dy;
-          f.life -= 0.02;
-          if(f.life <= 0) this.floaters.splice(i, 1);
-      }
+    for (let i = this.floaters.length - 1; i >= 0; i--) {
+      let f = this.floaters[i];
+      f.y += f.dy;
+      f.life -= 0.02;
+      if (f.life <= 0) this.floaters.splice(i, 1);
+    }
   },
 
   /* ==============================
      DRAWING
   ============================== */
   drawBackground(ctx) {
-      ctx.strokeStyle = "rgba(0, 255, 255, 0.05)";
-      ctx.lineWidth = 1;
-      const step = 40;
-      for(let x=0; x<canvasElement.width; x+=step) {
-          ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x, canvasElement.height); ctx.stroke();
-      }
-      for(let y=0; y<canvasElement.height; y+=step) {
-          ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(canvasElement.width, y); ctx.stroke();
-      }
+    ctx.strokeStyle = "rgba(0, 255, 255, 0.05)";
+    ctx.lineWidth = 1;
+    const step = 40 * this.scale;
+    for (let x = 0; x < this.cssWidth; x += step) {
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.cssHeight); ctx.stroke();
+    }
+    for (let y = 0; y < this.cssHeight; y += step) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.cssWidth, y); ctx.stroke();
+    }
   },
 
- drawEdgeZones(ctx) {
-  const w = canvasElement.width;
-  const h = canvasElement.height;
-  const e = this.edgeSize;
-  const gap = this.lineGap;
-  const cx = this.CENTER_X;
-  const cy = this.CENTER_Y;
+  drawEdgeZones(ctx) {
+    const w = this.cssWidth;
+    const h = this.cssHeight;
+    const e = this.edgeSize;
+    const gap = this.lineGap;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
 
-  ctx.globalAlpha = 0.85;
-  ctx.shadowBlur = 20;
+    ctx.globalAlpha = 0.85;
+    ctx.shadowBlur = 20;
 
-  // LEFT FULL (Red)
-  ctx.fillStyle = "rgba(255, 40, 40, 0.6)";
-  ctx.shadowColor = "red";
-  ctx.fillRect(0, 0, e, cy);           // left upper vertical
-  ctx.fillRect(0, cy, e, h ); // left lower vertical
-  ctx.fillRect(0, 0, cx - gap , e);                 // top strip
-  ctx.fillRect(0, h - e, cx - gap , e); 
+    // LEFT FULL (Red)
+    ctx.fillStyle = "rgba(255, 40, 40, 0.6)";
+    ctx.shadowColor = "red";
+    ctx.fillRect(0, 0, e, cy);           // left upper vertical
+    ctx.fillRect(0, cy, e, h); // left lower vertical
+    ctx.fillRect(0, 0, cx - gap, e);                 // top strip
+    ctx.fillRect(0, h - e, cx - gap, e);
 
- // RIGHT FULL (Blue)
-ctx.fillStyle = "rgba(40, 120, 255, 0.6)";
-ctx.shadowColor = "blue";
+    // RIGHT FULL (Blue)
+    ctx.fillStyle = "rgba(40, 120, 255, 0.6)";
+    ctx.shadowColor = "blue";
 
-ctx.fillRect(w - e, 0, e, cy);           // right upper vertical
-ctx.fillRect(w - e, cy, e, h);           // right lower vertical
+    ctx.fillRect(w - e, 0, e, cy);           // right upper vertical
+    ctx.fillRect(w - e, cy, e, h);           // right lower vertical
 
-ctx.fillRect(cx + gap, 0, w - (cx + gap), e);       // top strip with gap
-ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);   // bottom strip with gap
-  
+    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);       // top strip with gap
+    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);   // bottom strip with gap
 
-  ctx.shadowBlur = 0;
-  ctx.globalAlpha = 1;
-},
-  
+
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 1;
+  },
+
   drawCross(ctx) {
     ctx.strokeStyle = "rgba(255,255,255,0.2)";
-    ctx.lineWidth = 2*this.scale;
+    ctx.lineWidth = 2 * this.scale;
     const gap = this.lineGap;
-    
-    ctx.beginPath(); ctx.moveTo(this.CENTER_X - gap, 0); ctx.lineTo(this.CENTER_X - gap, canvasElement.height); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(this.CENTER_X + gap, 0); ctx.lineTo(this.CENTER_X + gap, canvasElement.height); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y - gap); ctx.lineTo(canvasElement.width, this.CENTER_Y - gap); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y + gap); ctx.lineTo(canvasElement.width, this.CENTER_Y + gap); ctx.stroke();
+
+    ctx.beginPath(); ctx.moveTo(this.CENTER_X - gap, 0); ctx.lineTo(this.CENTER_X - gap, this.cssHeight); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(this.CENTER_X + gap, 0); ctx.lineTo(this.CENTER_X + gap, this.cssHeight); ctx.stroke();
+    const ch = this.cssHeight;
+    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y - gap); ctx.lineTo(this.cssWidth, this.CENTER_Y - gap); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y + gap); ctx.lineTo(this.cssWidth, this.CENTER_Y + gap); ctx.stroke();
   },
 
   drawBalls(ctx) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `bold ${30*this.scale}px Arial`;
+    ctx.font = `bold ${30 * this.scale}px Arial`;
 
     for (let b of this.balls) {
       // Trail
       if (b.trail.length > 1) {
-          ctx.beginPath();
-          ctx.strokeStyle = b.color;
-          ctx.lineWidth = b.scale * this.ballRadius * 1.2;
-          ctx.lineCap = "round";
-          ctx.globalAlpha = 0.3;
-          ctx.moveTo(b.trail[0].x, b.trail[0].y);
-          for(let t of b.trail) ctx.lineTo(t.x, t.y);
-          ctx.stroke();
-          ctx.globalAlpha = 1.0;
+        ctx.beginPath();
+        ctx.strokeStyle = b.color;
+        ctx.lineWidth = this.ballRadius * 1.2;
+        ctx.lineCap = "round";
+        ctx.globalAlpha = 0.3;
+        ctx.moveTo(b.trail[0].x, b.trail[0].y);
+        for (let t of b.trail) ctx.lineTo(t.x, t.y);
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
       }
 
       ctx.beginPath();
@@ -560,119 +577,119 @@ ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);   // bottom strip with gap
     }
   },
 
-drawArms(ctx) {
-  const arm = this.armData.right;
-  if (!arm?.shoulder) return;
+  drawArms(ctx) {
+    const arm = this.armData.right;
+    if (!arm?.shoulder) return;
 
-  const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
+    const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
 
-  const angle = Math.atan2(
-    arm.wrist.y - arm.shoulder.y,
-    arm.wrist.x - arm.shoulder.x
-  );
-
-  const tipX = pivot.x + Math.cos(angle) * this.armLength;
-  const tipY = pivot.y + Math.sin(angle) * this.armLength;
-
-  // Stick
-  ctx.beginPath();
-  ctx.moveTo(pivot.x, pivot.y);
-  ctx.lineTo(tipX, tipY);
-  ctx.strokeStyle = "#88FFAA";
-  ctx.lineWidth = 10 * this.scale;
-  ctx.shadowBlur = 20;
-  ctx.shadowColor = "#88FFAA";
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  // Tip
-  ctx.beginPath();
-  ctx.arc(tipX, tipY, 8 * this.scale, 0, Math.PI * 2);
-  ctx.fillStyle = "#FFCC00";
-  ctx.fill();
-
-  // 🔵 Shoulder highlight (instead of elbow)
-  ctx.beginPath();
-  ctx.arc(arm.shoulder.x, arm.shoulder.y, 18 * this.scale, 0, Math.PI * 2);
-  ctx.strokeStyle = "#BB66FF";
-  ctx.lineWidth = 4 * this.scale;
-  ctx.shadowBlur = 15;
-  ctx.shadowColor = "#BB66FF";
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-},
-
-drawPivots(ctx) {
-  const x = this.CENTER_X;
-  const y = this.CENTER_Y;
-  const r = this.pivotRadius;
-
-  // Base pivot
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.fillStyle = this.gameStarted ? "#00FF00" : "#444";
-  ctx.fill();
-
-  // Loading progress ring (before start)
-  if (!this.gameStarted && this.lockProgress > 0) {
-    ctx.beginPath();
-    ctx.arc(
-      x, y, r + 8 * this.scale,
-      -Math.PI / 2,
-      -Math.PI / 2 + Math.PI * 2 * this.lockProgress
+    const angle = Math.atan2(
+      arm.wrist.y - arm.shoulder.y,
+      arm.wrist.x - arm.shoulder.x
     );
-    ctx.strokeStyle = "#BB66FF";
-    ctx.lineWidth = 6 * this.scale;
+
+    const tipX = pivot.x + Math.cos(angle) * this.armLength;
+    const tipY = pivot.y + Math.sin(angle) * this.armLength;
+
+    // Stick
+    ctx.beginPath();
+    ctx.moveTo(pivot.x, pivot.y);
+    ctx.lineTo(tipX, tipY);
+    ctx.strokeStyle = "#88FFAA";
+    ctx.lineWidth = 10 * this.scale;
+    ctx.shadowBlur = 20;
+    ctx.shadowColor = "#88FFAA";
     ctx.stroke();
-  }
-},
+    ctx.shadowBlur = 0;
+
+    // Tip
+    ctx.beginPath();
+    ctx.arc(tipX, tipY, 8 * this.scale, 0, Math.PI * 2);
+    ctx.fillStyle = "#FFCC00";
+    ctx.fill();
+
+    // 🔵 Shoulder highlight (instead of elbow)
+    ctx.beginPath();
+    ctx.arc(arm.shoulder.x, arm.shoulder.y, 18 * this.scale, 0, Math.PI * 2);
+    ctx.strokeStyle = "#BB66FF";
+    ctx.lineWidth = 4 * this.scale;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "#BB66FF";
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  },
+
+  drawPivots(ctx) {
+    const x = this.CENTER_X;
+    const y = this.CENTER_Y;
+    const r = this.pivotRadius;
+
+    // Base pivot
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fillStyle = this.gameStarted ? "#00FF00" : "#444";
+    ctx.fill();
+
+    // Loading progress ring (before start)
+    if (!this.gameStarted && this.lockProgress > 0) {
+      ctx.beginPath();
+      ctx.arc(
+        x, y, r + 8 * this.scale,
+        -Math.PI / 2,
+        -Math.PI / 2 + Math.PI * 2 * this.lockProgress
+      );
+      ctx.strokeStyle = "#BB66FF";
+      ctx.lineWidth = 6 * this.scale;
+      ctx.stroke();
+    }
+  },
 
   drawParticles(ctx) {
-      for(let p of this.particles) {
-          ctx.globalAlpha = p.life;
-          ctx.fillStyle = p.color;
-          ctx.beginPath(); ctx.arc(p.x, p.y, 4, 0, Math.PI*2); ctx.fill();
-      }
-      ctx.globalAlpha = 1;
+    for (let p of this.particles) {
+      ctx.globalAlpha = p.life;
+      ctx.fillStyle = p.color;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 4 * this.scale, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   },
 
   drawFloaters(ctx) {
-      ctx.font = "bold 24px Arial";
-      ctx.textAlign = "center";
-      for(let f of this.floaters) {
-          ctx.globalAlpha = f.life;
-          ctx.fillStyle = f.color;
-          ctx.fillText(f.text, f.x, f.y);
-      }
-      ctx.globalAlpha = 1;
+    ctx.font = `bold ${24 * this.scale}px Arial`;
+    ctx.textAlign = "center";
+    for (let f of this.floaters) {
+      ctx.globalAlpha = f.life;
+      ctx.fillStyle = f.color;
+      ctx.fillText(f.text, f.x, f.y);
+    }
+    ctx.globalAlpha = 1;
   },
-  
+
   drawUI(ctx) {
     if (!this.gameStarted) {
-        ctx.fillStyle = "white";
-        ctx.font = "bold 30px Arial";
-        ctx.textAlign = "center";
-        ctx.shadowBlur = 10; ctx.shadowColor = "black";
-        ctx.fillText("HOLD SHOULDER ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50);
-        ctx.shadowBlur = 0;
+      ctx.fillStyle = "white";
+      ctx.font = `bold ${30 * this.scale}px Arial`;
+      ctx.textAlign = "center";
+      ctx.shadowBlur = 10 * this.scale; ctx.shadowColor = "black";
+      ctx.fillText("HOLD SHOULDER ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50 * this.scale);
+      ctx.shadowBlur = 0;
     }
 
     // ANIMATED SCORE
     ctx.textAlign = "center";
     // Scale the font size
-    const fontSize = 24 * this.scoreScale; 
+    const fontSize = 24 * this.scoreScale * this.scale;
     ctx.font = `bold ${fontSize}px Arial`;
-    
+
     ctx.fillStyle = this.scoreColor;
-    ctx.fillText(this.score, this.CENTER_X, 40);
+    ctx.fillText(this.score, this.CENTER_X, 40 * this.scale);
 
     // Legend
-    ctx.font = "16px Arial";
+    ctx.font = `${16 * this.scale}px Arial`;
     ctx.textAlign = "left";
-    ctx.fillStyle = "#FF4444"; 
-    ctx.fillText("Even (Red)", 10, 20);
+    ctx.fillStyle = "#FF4444";
+    ctx.fillText("Even (Red)", 10 * this.scale, 20 * this.scale);
     ctx.fillStyle = "#00FFFF";
-    ctx.fillText("Odd (Blue)", 10, 40);
+    ctx.fillText("Odd (Blue)", 10 * this.scale, 40 * this.scale);
   },
 
   pointToLineDistance(px, py, x1, y1, x2, y2) {

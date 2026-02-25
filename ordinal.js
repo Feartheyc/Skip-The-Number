@@ -87,26 +87,26 @@ const Game6 = {
      FULLSCREEN CANVAS
   ========================= */
   resizeCanvas() {
+    const canvas = document.getElementById("game_canvas");
 
-  const canvas = document.getElementById("game_canvas");
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
 
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+    // make the canvas fill the container; inline styles beat the stylesheet
+    canvas.style.position = "fixed";
+    canvas.style.left = "0";
+    canvas.style.top = "0";
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
 
-  canvas.style.position = "fixed";
-  canvas.style.left = "0";
-  canvas.style.top = "0";
-  canvas.style.width = "100vw";
-  canvas.style.height = "100vh";
+    this.canvasWidth = canvas.width;
+    this.canvasHeight = canvas.height;
 
-  this.canvasWidth = canvas.width;
-  this.canvasHeight = canvas.height;
-
-  if (this.player.x === 320 && this.player.y === 240) {
-    this.player.x = this.canvasWidth / 2;
-    this.player.y = this.canvasHeight / 2;
-  }
-},
+    if (this.player.x === 320 && this.player.y === 240) {
+      this.player.x = this.canvasWidth / 2;
+      this.player.y = this.canvasHeight / 2;
+    }
+  },
 
 
 

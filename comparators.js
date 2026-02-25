@@ -45,8 +45,10 @@ const Game3 = {
   symbolHue: 0,
 
   init() {
-    const rect = document.getElementById("container").getBoundingClientRect();
-    this.onResize(rect.width, rect.height);
+    // use the viewport size directly – container bounds can be unreliable on mobile
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.onResize(w, h);
     this.score = 0;
     this.running = true;
 
