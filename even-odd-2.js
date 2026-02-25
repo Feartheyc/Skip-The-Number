@@ -280,19 +280,19 @@ const Game4 = {
       b.hitCooldown -= dt;
 
       // OPTIONAL: remove ball if fully off screen (cleanup)
-      if (
-        const cw = this.cssWidth;
-        const ch = this.cssHeight;
-      b.x < -100 || b.x > cw + 100 ||
-        b.y < -100 || b.y > ch + 100
-      ) {
-        b.remove = true;
-      }
-    }
+      const cw = this.cssWidth;
+const ch = this.cssHeight;
+
+if (
+  b.x < -100 || b.x > cw + 100 ||
+  b.y < -100 || b.y > ch + 100
+) {
+  b.remove = true;
+}
 
     // Clean removed balls
     this.balls = this.balls.filter(b => !b.remove);
-  },
+  }},
 
   checkPhysics() {
     const margin = this.ballRadius + 5;
