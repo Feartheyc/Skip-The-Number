@@ -35,7 +35,7 @@ const Game7 = {
   levelFailedTimer: 0, 
   listenersAdded: false,
 
-
+//CNN
   model: null,
 modelReady: false,
 labels: ["I","V","X","L","C"],   // change if your training order differs
