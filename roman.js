@@ -35,11 +35,17 @@ const Game5 = {
   levelFailedTimer: 0, 
   listenersAdded: false,
 
+
+  model: null,
+modelReady: false,
+labels: ["I","V","X","L","C"],   // change if your training order differs
+
   init() {
     this.running = true;
     this.score = 0;
     this.currentLevel = 0;
     this.mode = "TRACE"; 
+    this.loadMLModel();
     
     if (window.stopCamera) window.stopCamera();
     
@@ -332,72 +338,59 @@ const Game5 = {
       }
   },
 
- evaluateShapeVector(baseUnit) {
-    const strokes = this.freehandStrokes.filter(s => s.length > 3);
-    if (strokes.length === 0) return this.triggerFail();
+ async evaluateShapeVector(baseUnit) {
 
-    const level = this.levels[this.currentLevel];
-    const template = level.localStrokes;
+  console.log("Evaluating shape vector...");
+    if (!this.modelReady) {
+        console.log("Model not ready");
+        return;
+    }
 
-    // Normalize strokes individually
-    const normUser = this.normalizeStrokes(strokes);
+    const strokes = this.freehandStrokes.filter(s => s.length > 2);
 
-    // Quick hard rejection: too many or too few strokes
-    if (Math.abs(normUser.length - template.length) > 1) {
+    if (strokes.length === 0) {
         return this.triggerFail();
     }
 
-    let usedTemplate = new Array(template.length).fill(false);
-    let totalScore = 0;
+    try {
 
-    for (let u of normUser) {
-        let bestScore = -Infinity;
-        let bestIndex = -1;
+        const tensor = this.strokesToTensor(strokes);
 
-        for (let i = 0; i < template.length; i++) {
-            if (usedTemplate[i]) continue;
+        const pred = this.model.predict(tensor);
+        const data = await pred.data();
 
-            const t = template[i];
-            const score = this.strokeMatchScore(u, t);
+        const index = data.indexOf(Math.max(...data));
+        const predicted = this.labels[index];
 
-            if (score > bestScore) {
-                bestScore = score;
-                bestIndex = i;
-            }
+        tensor.dispose();
+        pred.dispose();
+
+        const level = this.levels[this.currentLevel];
+        const target = level.symbol;
+
+        console.log("Predicted:", predicted, "Target:", target);
+
+        if (predicted === target) {
+
+            this.levelCompleteTimer = 1;
+            this.score += 20;
+            this.cursorColor = "#00FFCC";
+
+            const last = strokes[strokes.length - 1].slice(-1)[0];
+
+            for (let i = 0; i < 40; i++)
+                this.spawnParticle(last.x, last.y, true, baseUnit);
+
+        } else {
+
+            this.triggerFail();
+            this.freehandStrokes = [];
+
         }
 
-        if (bestIndex === -1 || bestScore < 0.45) {
-            // No good match for this stroke → wrong numeral
-            return this.triggerFail();
-        }
+    } catch (e) {
 
-        usedTemplate[bestIndex] = true;
-        totalScore += bestScore;
-    }
-
-    // Penalize missing template strokes
-    let matchedCount = usedTemplate.filter(v => v).length;
-    if (matchedCount < template.length) {
-        return this.triggerFail();
-    }
-
-    const finalScore = totalScore / template.length;
-
-    console.log("Stroke match score:", finalScore.toFixed(2));
-
-    const pass =
-        this.mode === "TRACE"
-            ? finalScore > 0.75
-            : finalScore > 0.6;
-
-    if (pass) {
-        this.levelCompleteTimer = 1;
-        this.score += 20;
-        this.cursorColor = "#00FFCC";
-        const last = strokes[strokes.length - 1].slice(-1)[0];
-        for (let i = 0; i < 40; i++)
-            this.spawnParticle(last.x, last.y, true, baseUnit);
-    } else {
+        console.error("ML ERROR:", e);
         this.triggerFail();
     }
 },
@@ -789,5 +782,72 @@ strokeMatchScore(stroke, tmpl) {
     const distScore = 1 - Math.min(1, dist * 1.5);
 
     return (dirScore * 0.5) + (lenScore * 0.2) + (distScore * 0.3);
+},
+
+
+
+async loadMLModel() {
+  try {
+    this.model = await tf.loadLayersModel("./tfjs_model/model.json");
+    this.modelReady = true;
+    console.log("✅ ML Model Loaded");
+  } catch (e) {
+    console.error("❌ Model load failed", e);
+  }
+},
+
+
+strokesToTensor(strokes) {
+console.log("Converting strokes to tensor...");
+    const size = 28;
+
+    const off = document.createElement("canvas");
+    off.width = size;
+    off.height = size;
+
+    const ctx = off.getContext("2d");
+
+    ctx.fillStyle = "black";
+    ctx.fillRect(0, 0, size, size);
+
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+
+    let allPoints = strokes.flat();
+
+    let minX = Math.min(...allPoints.map(p => p.x));
+    let minY = Math.min(...allPoints.map(p => p.y));
+    let maxX = Math.max(...allPoints.map(p => p.x));
+    let maxY = Math.max(...allPoints.map(p => p.y));
+
+    let scale = Math.max(maxX - minX, maxY - minY) || 1;
+
+    ctx.beginPath();
+
+    strokes.forEach(stroke => {
+
+        stroke.forEach((p, i) => {
+
+            let x = ((p.x - minX) / scale) * 20 + 4;
+            let y = ((p.y - minY) / scale) * 20 + 4;
+
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+
+        });
+
+    });
+
+    ctx.stroke();
+
+    const img = ctx.getImageData(0, 0, size, size).data;
+
+    let arr = [];
+
+    for (let i = 0; i < img.length; i += 4)
+        arr.push(img[i] / 255);
+
+    return tf.tensor(arr, [1, 28, 28, 1]);
 },
 };
