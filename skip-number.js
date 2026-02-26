@@ -62,6 +62,11 @@ const Game1 = {
 
   launcherSafeRadius: 0,
 
+  // Triple Cannon Mode
+  tripleCannons: [],
+  tripleBaseAngle: 0,
+  tripleTargetAngle: 0,
+  tripleCount: 3,
   /* ============================== */
   init() {
     const rect = document
@@ -99,6 +104,9 @@ const Game1 = {
   else if (this.mode === "orb") {
     this.spawnOrbNote();
   }
+  else if (this.mode === "triple") {
+  this.spawnTripleNote();
+}
   else {
     this.spawnNote();
   }
@@ -109,6 +117,7 @@ const Game1 = {
       if (e.key === "1") this.activatePatternMode();
       if (e.key === "2") this.activateCannonMode();
       if (e.key === "3") this.activateOrbMode();
+      if (e.key === "4") this.activateTripleCannonMode();
     });
 
     
@@ -170,7 +179,7 @@ const Game1 = {
 
   /* ============================== */
   update(ctx, fingers, dt = 1 / 60) {
-    if (this.mode !== "cannon" && this.mode !== "orb") {
+    if (this.mode !== "cannon" && this.mode !== "orb" && this.mode !== "triple") {
       this.drawRings(ctx, dt);
     }
 
@@ -187,13 +196,21 @@ const Game1 = {
         this.drawOrbLauncher(ctx, dt);
         this.drawExplosions(ctx);
         this.drawLauncherZone(ctx);
-        this.drawCharging(ctx);
+        
       } 
+      else if (this.mode === "triple") {
+
+        this.updateCannonNotes(ctx, dt);
+        this.drawTripleCannons(ctx, dt);
+        this.drawExplosions(ctx);
+        this.drawLauncherZone(ctx);
+        this.drawCharging(ctx);
+}
     else {
       this.drawNotes(ctx, dt);
     }
 
-    if (this.mode === "cannon" || this.mode === "orb") {
+    if (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple") {
       this.drawCharging(ctx);
      this.updateCharging(dt);
     }
@@ -202,7 +219,7 @@ const Game1 = {
     fingers.forEach((finger) => {
       this.drawFinger(ctx, finger.x, finger.y);
 
-      if (this.mode === "cannon" || this.mode === "orb") {
+      if (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple") {
         this.checkCannonCollision(finger.x, finger.y);
       } else {
         this.checkCollision(finger.x, finger.y);
@@ -1108,4 +1125,165 @@ drawCharging(ctx) {
   );
   ctx.fill();
 },
+
+
+
+
+
+
+
+activateTripleCannonMode() {
+
+  this.mode = "triple";
+
+  this.notes = [];
+  this.explosions = [];
+
+  this.combo = 0;
+  this.multiplier = 1;
+
+  this.pendingShot = null;
+
+  this.tripleBaseAngle = 0;
+  this.tripleTargetAngle = 0;
+
+  this.tripleCannons = [];
+
+  const spacing = (Math.PI * 2) / this.tripleCount;
+
+  for (let i = 0; i < this.tripleCount; i++) {
+    this.tripleCannons.push({
+      offset: i * spacing
+    });
+  }
+
+  this.gameTitle = "TRIPLE CANNON SKIP " + this.skipAmount;
+},
+
+
+
+spawnTripleNote() {
+
+  if (this.pendingShot) return;
+
+  const angle = Math.random() * Math.PI * 2;
+  const speed = this.baseOuterRadius * 0.9;
+
+  const values = [];
+
+  for (let i = 0; i < this.tripleCount; i++) {
+
+    values.push(this.currentNumber);
+
+    this.currentNumber++;
+
+    if (this.currentNumber > this.maxNumber)
+      this.currentNumber = 1;
+  }
+
+  this.pendingShot = {
+    angle,
+    speed,
+    values   // array of numbers
+  };
+
+  this.tripleTargetAngle = angle + Math.PI / 2;
+
+  this.startCharging();
+},
+
+drawTripleCannons(ctx, dt = 1/60) {
+
+  const targetSize = this.baseOuterRadius * 0.6;
+
+  // Smooth rotate base
+  let diff = this.tripleTargetAngle - this.tripleBaseAngle;
+  diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+
+  this.tripleBaseAngle += diff * 0.18;
+
+  // Fire when aligned
+  if (this.pendingShot && Math.abs(diff) < 0.05) {
+    this.fireTriple();
+  }
+
+  for (const cannon of this.tripleCannons) {
+
+    const angle = this.tripleBaseAngle + cannon.offset;
+
+    ctx.save();
+
+    ctx.translate(this.centerX, this.centerY);
+    ctx.rotate(angle);
+
+    if (this.orbImage && this.orbImage.complete) {
+
+      const img = this.orbImage;
+
+      const scale =
+        targetSize / Math.max(img.width, img.height);
+
+      const drawW = img.width * scale;
+      const drawH = img.height * scale;
+
+      // Same flip you used in orb mode
+      ctx.scale(1, -1);
+
+      ctx.drawImage(
+        img,
+        -drawW / 2,
+        -drawH / 2,
+        drawW,
+        drawH
+      );
+
+    } else {
+
+      // fallback circle
+      ctx.fillStyle = "#66ccff";
+      ctx.beginPath();
+      ctx.arc(0, 0, targetSize / 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+},
+
+fireTriple() {
+
+  if (!this.pendingShot) return;
+
+  const shot = this.pendingShot;
+  const speed = shot.speed;
+
+  for (let i = 0; i < this.tripleCannons.length; i++) {
+
+    const cannon = this.tripleCannons[i];
+
+    const angle =
+      this.tripleBaseAngle +
+      cannon.offset -
+      Math.PI / 2;
+
+    const value = shot.values[i]; // ⭐ each cannon gets its own number
+
+    const note = {
+      x: this.centerX,
+      y: this.centerY,
+      radius: this.baseOuterRadius * 0.12,
+      value: value,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      spawnProtected: true
+    };
+
+    this.notes.push(note);
+  }
+
+  this.pendingShot = null;
+  this.isCharging = false;
+  this.charge = 0;
+  this.chargeParticles = [];
+}
 };
