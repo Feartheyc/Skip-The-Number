@@ -8,26 +8,26 @@ const Game7 = {
   offsetY: 0,
   playWidth: 0,
   playHeight: 0,
-  
-  mode: "TRACE", 
-  currentLevel: 0,
-  
-  tracePoints: [], 
-  activeStrokeIndex: 0, 
-  currentStrokeProgress: 0, 
 
-  freehandStrokes: [], 
+  mode: "TRACE",
+  currentLevel: 0,
+
+  tracePoints: [],
+  activeStrokeIndex: 0,
+  currentStrokeProgress: 0,
+
+  freehandStrokes: [],
   currentStroke: null,
-  submitTimer: 0,      
-  shakeTimer: 0,       
-  
+  submitTimer: 0,
+  shakeTimer: 0,
+
   particles: [],
   isDrawing: false,
   cursor: { x: 0, y: 0 },
-  cursorColor: "white", 
+  cursorColor: "white",
 
   levelCompleteTimer: 0,
-  levelFailedTimer: 0, 
+  levelFailedTimer: 0,
   listenersAdded: false,
 
   // --- NEW PRODUCTION & DEBUG PROPERTIES ---
@@ -40,28 +40,28 @@ const Game7 = {
     this.running = true;
     this.score = 0;
     this.currentLevel = 0;
-    this.mode = "TRACE"; 
-    
+    this.mode = "TRACE";
+
     if (window.stopCamera) window.stopCamera();
-    
+
     const menu = document.getElementById("menu");
     if (menu) menu.style.display = "none";
     const video = document.getElementById("input_video");
     if (video) video.style.display = "none";
-    
+
     this.generateLevels();
     this.resizeCanvas();
     this.resetLevel();
 
     // Initialize AI Worker
     if (!this.worker) {
-        this.worker = await Tesseract.createWorker('eng');
-        await this.worker.setParameters({
-            tessedit_char_whitelist: 'IVXLC',
-            tessedit_pageseg_mode: '13', // Treat as single line/character
-        });
+      this.worker = await Tesseract.createWorker('eng');
+      await this.worker.setParameters({
+        tessedit_char_whitelist: 'IVXLC',
+        tessedit_pageseg_mode: '13', // Treat as single line/character
+      });
     }
-    
+
     if (!this.listenersAdded) {
       this.addInputListeners();
       window.addEventListener('resize', () => { if (this.running) this.resizeCanvas(); });
@@ -96,63 +96,63 @@ const Game7 = {
     this.freehandStrokes = [];
     this.submitTimer = 0;
     this.levelCompleteTimer = 0;
-    this.levelFailedTimer = 0; 
+    this.levelFailedTimer = 0;
     this.isDrawing = false;
     this.isProcessing = false;
     this.particles = [];
-    this.cursorColor = "white"; 
+    this.cursorColor = "white";
   },
 
   getPoint(sx, sy, w, h) {
-      const size = Math.min(w, h) * 0.50; 
-      const cx = w / 2;
-      const cy = h / 2 - (h * 0.05); 
-      return { x: cx + (sx - 0.5) * size, y: cy + (sy - 0.5) * size };
+    const size = Math.min(w, h) * 0.50;
+    const cx = w / 2;
+    const cy = h / 2 - (h * 0.05);
+    return { x: cx + (sx - 0.5) * size, y: cy + (sy - 0.5) * size };
   },
 
   addInputListeners() {
     const canvas = document.getElementById('game_canvas');
 
     const startDraw = (e) => {
-        this.updateCursor(e);
-        if (this.checkButtonClicks()) return;
-        this.isDrawing = true;
+      this.updateCursor(e);
+      if (this.checkButtonClicks()) return;
+      this.isDrawing = true;
 
-        if (this.mode === "FREEHAND") {
-            if (this.levelFailedTimer > 0) {
-                this.levelFailedTimer = 0;
-                this.freehandStrokes = [];
-            }
-            this.currentStroke = [{x: this.cursor.x, y: this.cursor.y}];
-            this.freehandStrokes.push(this.currentStroke);
-            this.submitTimer = 0; 
-            this.cursorColor = "white";
+      if (this.mode === "FREEHAND") {
+        if (this.levelFailedTimer > 0) {
+          this.levelFailedTimer = 0;
+          this.freehandStrokes = [];
         }
+        this.currentStroke = [{ x: this.cursor.x, y: this.cursor.y }];
+        this.freehandStrokes.push(this.currentStroke);
+        this.submitTimer = 0;
+        this.cursorColor = "white";
+      }
     };
 
     const moveDraw = (e) => {
-        if (this.isDrawing) {
-            this.updateCursor(e);
-            if (this.mode === "FREEHAND" && this.currentStroke) {
-                let lastP = this.currentStroke[this.currentStroke.length - 1];
-                if(Math.hypot(lastP.x - this.cursor.x, lastP.y - this.cursor.y) > 5) {
-                    this.currentStroke.push({x: this.cursor.x, y: this.cursor.y});
-                    this.submitTimer = 0; 
-                }
-            }
+      if (this.isDrawing) {
+        this.updateCursor(e);
+        if (this.mode === "FREEHAND" && this.currentStroke) {
+          let lastP = this.currentStroke[this.currentStroke.length - 1];
+          if (Math.hypot(lastP.x - this.cursor.x, lastP.y - this.cursor.y) > 5) {
+            this.currentStroke.push({ x: this.cursor.x, y: this.cursor.y });
+            this.submitTimer = 0;
+          }
         }
+      }
     };
 
     const endDraw = () => {
-        if (!this.isDrawing) return; 
-        this.isDrawing = false;
-        
-        if (this.mode === "TRACE") {
-            this.tracePoints = []; 
-            this.cursorColor = "white"; 
-        } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
-            this.submitTimer = 60; 
-        }
+      if (!this.isDrawing) return;
+      this.isDrawing = false;
+
+      if (this.mode === "TRACE") {
+        this.tracePoints = [];
+        this.cursorColor = "white";
+      } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
+        this.submitTimer = 60;
+      }
     };
 
     const extractEvent = (e) => (e.touches && e.touches.length > 0) ? e.touches[0] : e;
@@ -161,9 +161,9 @@ const Game7 = {
     window.addEventListener('mousemove', (e) => moveDraw(extractEvent(e)));
     window.addEventListener('mouseup', endDraw);
     window.addEventListener('mouseleave', endDraw);
-    
-    canvas.addEventListener('touchstart', (e) => { startDraw(extractEvent(e)); e.preventDefault(); }, {passive: false});
-    canvas.addEventListener('touchmove', (e) => { moveDraw(extractEvent(e)); e.preventDefault(); }, {passive: false});
+
+    canvas.addEventListener('touchstart', (e) => { startDraw(extractEvent(e)); e.preventDefault(); }, { passive: false });
+    canvas.addEventListener('touchmove', (e) => { moveDraw(extractEvent(e)); e.preventDefault(); }, { passive: false });
     window.addEventListener('touchend', endDraw);
     window.addEventListener('touchcancel', endDraw);
   },
@@ -217,38 +217,38 @@ const Game7 = {
     const baseUnit = Math.min(w, h);
 
     if (this.levelCompleteTimer === 0 && this.levelFailedTimer === 0) {
-        if (this.mode === "TRACE" && this.isDrawing) this.handleTracing(w, h, baseUnit);
-        else if (this.mode === "FREEHAND") this.handleFreehand(baseUnit);
+      if (this.mode === "TRACE" && this.isDrawing) this.handleTracing(w, h, baseUnit);
+      else if (this.mode === "FREEHAND") this.handleFreehand(baseUnit);
     }
-    
+
     this.updateParticles();
     this.drawTemplate(ctx, w, h, baseUnit);
     this.drawUserInk(ctx, baseUnit);
-    this.drawParticles(ctx, baseUnit); 
-    this.drawCursor(ctx, baseUnit); 
+    this.drawParticles(ctx, baseUnit);
+    this.drawCursor(ctx, baseUnit);
     this.drawUI(ctx, w, h, baseUnit);
-    
+
     // DEBUG MODE DRAWING
     if (this.debugMode && this.lastProcessedCanvas) {
-        ctx.strokeStyle = "#00FFCC";
-        ctx.lineWidth = 2;
-        ctx.strokeRect(w - 170, 20, 150, 150);
-        ctx.drawImage(this.lastProcessedCanvas, w - 170, 20, 150, 150);
-        ctx.fillStyle = "white";
-        ctx.font = "12px Arial";
-        ctx.fillText("AI VISION PREVIEW", w - 170, 15);
+      ctx.strokeStyle = "#00FFCC";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(w - 170, 20, 150, 150);
+      ctx.drawImage(this.lastProcessedCanvas, w - 170, 20, 150, 150);
+      ctx.fillStyle = "white";
+      ctx.font = "12px Arial";
+      ctx.fillText("AI VISION PREVIEW", w - 170, 15);
     }
 
-    ctx.restore(); 
+    ctx.restore();
 
     ctx.save();
     ctx.translate(this.offsetX, this.offsetY);
     ctx.scale(this.scale, this.scale);
-    
+
     if (this.levelCompleteTimer > 0) {
       this.levelCompleteTimer++;
       this.drawSuccessEffect(ctx, w, h, baseUnit);
-      if (this.levelCompleteTimer > 80) { 
+      if (this.levelCompleteTimer > 80) {
         this.currentLevel++;
         if (this.currentLevel >= this.levels.length) this.currentLevel = 0;
         this.resetLevel();
@@ -256,12 +256,12 @@ const Game7 = {
     }
 
     if (this.levelFailedTimer > 0) {
-        this.levelFailedTimer++;
-        this.drawFailEffect(ctx, w, h, baseUnit);
-        if (this.levelFailedTimer > 120) {
-            this.levelFailedTimer = 0;
-            this.freehandStrokes = []; 
-        }
+      this.levelFailedTimer++;
+      this.drawFailEffect(ctx, w, h, baseUnit);
+      if (this.levelFailedTimer > 120) {
+        this.levelFailedTimer = 0;
+        this.freehandStrokes = [];
+      }
     }
     ctx.restore();
   },
@@ -282,12 +282,12 @@ const Game7 = {
 
     const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
     if (this.currentStrokeProgress === 0 && newProgress > 0.15) { this.cursorColor = "#FF4444"; return; }
-    if (newProgress > this.currentStrokeProgress + 0.15) return; 
+    if (newProgress > this.currentStrokeProgress + 0.15) return;
 
     if (newProgress > this.currentStrokeProgress) {
       this.currentStrokeProgress = newProgress;
       this.tracePoints.push({ x: this.cursor.x, y: this.cursor.y });
-      this.cursorColor = "#00FFCC"; 
+      this.cursorColor = "#00FFCC";
       if (Math.random() > 0.5) this.spawnParticle(this.cursor.x, this.cursor.y, false, baseUnit);
     }
 
@@ -297,42 +297,42 @@ const Game7 = {
   completeStroke(baseUnit) {
     this.activeStrokeIndex++;
     this.currentStrokeProgress = 0;
-    this.tracePoints = []; 
+    this.tracePoints = [];
     this.score += 10;
-    for(let i=0; i<20; i++) this.spawnParticle(this.cursor.x, this.cursor.y, true, baseUnit);
-    if (this.activeStrokeIndex >= this.levels[this.currentLevel].strokes.length) this.levelCompleteTimer = 1; 
+    for (let i = 0; i < 20; i++) this.spawnParticle(this.cursor.x, this.cursor.y, true, baseUnit);
+    if (this.activeStrokeIndex >= this.levels[this.currentLevel].strokes.length) this.levelCompleteTimer = 1;
   },
 
   handleFreehand(baseUnit) {
-      if (!this.isDrawing && this.freehandStrokes.length > 0 && !this.isProcessing) {
-          if (this.submitTimer > 0) {
-              this.submitTimer--;
-              if (this.submitTimer <= 0) this.evaluateWithAI(baseUnit);
-          }
+    if (!this.isDrawing && this.freehandStrokes.length > 0 && !this.isProcessing) {
+      if (this.submitTimer > 0) {
+        this.submitTimer--;
+        if (this.submitTimer <= 0) this.evaluateWithAI(baseUnit);
       }
+    }
   },
 
   calculateIoU(userStrokes, tempStrokes) {
-      const size = 100;
-      const c1 = document.createElement('canvas');
-      const c2 = document.createElement('canvas');
-      c1.width = c2.width = size; c1.height = c2.height = size;
-      const ctx1 = c1.getContext('2d');
-      const ctx2 = c2.getContext('2d');
+    const size = 100;
+    const c1 = document.createElement('canvas');
+    const c2 = document.createElement('canvas');
+    c1.width = c2.width = size; c1.height = c2.height = size;
+    const ctx1 = c1.getContext('2d');
+    const ctx2 = c2.getContext('2d');
 
-      this.drawStrokesNormalized(ctx1, userStrokes, size, "black");
-      this.drawStrokesNormalized(ctx2, tempStrokes, size, "black");
+    this.drawStrokesNormalized(ctx1, userStrokes, size, "black");
+    this.drawStrokesNormalized(ctx2, tempStrokes, size, "black");
 
-      const d1 = ctx1.getImageData(0,0,size,size).data;
-      const d2 = ctx2.getImageData(0,0,size,size).data;
+    const d1 = ctx1.getImageData(0, 0, size, size).data;
+    const d2 = ctx2.getImageData(0, 0, size, size).data;
 
-      let inter = 0, union = 0;
-      for (let i = 3; i < d1.length; i += 4) {
-          let p1 = d1[i] > 10; let p2 = d2[i] > 10;
-          if (p1 && p2) inter++;
-          if (p1 || p2) union++;
-      }
-      return union === 0 ? 0 : inter / union;
+    let inter = 0, union = 0;
+    for (let i = 3; i < d1.length; i += 4) {
+      let p1 = d1[i] > 10; let p2 = d2[i] > 10;
+      if (p1 && p2) inter++;
+      if (p1 || p2) union++;
+    }
+    return union === 0 ? 0 : inter / union;
   },
 
   /* ==============================
@@ -342,107 +342,107 @@ const Game7 = {
      AI EVALUATION + VALIDATION LAYER
   ============================== */
   async evaluateWithAI(baseUnit) {
-      if (!this.worker) return;
-      this.isProcessing = true;
-      const level = this.levels[this.currentLevel];
-      
-      const size = 250; 
-      const canvas = document.createElement('canvas');
-      canvas.width = size; canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = "white"; 
-      ctx.fillRect(0, 0, size, size);
-      this.drawStrokesNormalized(ctx, this.freehandStrokes, size, "black", size * 0.12);
-      
-      this.lastProcessedCanvas = canvas; 
+    if (!this.worker) return;
+    this.isProcessing = true;
+    const level = this.levels[this.currentLevel];
 
+    const size = 250;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = "white";
+    ctx.fillRect(0, 0, size, size);
+    this.drawStrokesNormalized(ctx, this.freehandStrokes, size, "black", size * 0.12);
+
+    this.lastProcessedCanvas = canvas;
+
+    try {
+      const { data: { text } } = await this.worker.recognize(canvas);
+      let cleanText = text.replace(/\s/g, "").replace(/[^IVXLC]/g, "");
+
+      // --- ROMANJS VALIDATION LAYER ---
+      // RomanJS.parse() returns NaN or throws if the string is not a valid numeral.
+      let isValidRoman = false;
       try {
-          const { data: { text } } = await this.worker.recognize(canvas);
-          let cleanText = text.replace(/\s/g, "").replace(/[^IVXLC]/g, ""); 
+        const decimalValue = Roman.parse(cleanText);
+        if (!isNaN(decimalValue) && decimalValue > 0) {
+          isValidRoman = true;
+        }
+      } catch (e) { isValidRoman = false; }
 
-          // --- ROMANJS VALIDATION LAYER ---
-          // RomanJS.parse() returns NaN or throws if the string is not a valid numeral.
-          let isValidRoman = false;
-          try {
-              const decimalValue = Roman.parse(cleanText); 
-              if (!isNaN(decimalValue) && decimalValue > 0) {
-                  isValidRoman = true;
-              }
-          } catch(e) { isValidRoman = false; }
+      const tempStrokes = level.localStrokes.map(s => [{ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }]);
+      const overlapScore = this.calculateIoU(this.freehandStrokes, tempStrokes);
 
-          const tempStrokes = level.localStrokes.map(s => [{x: s.x1, y: s.y1}, {x: s.x2, y: s.y2}]);
-          const overlapScore = this.calculateIoU(this.freehandStrokes, tempStrokes);
+      console.log(`Target: ${level.symbol} | OCR: ${cleanText} | Valid: ${isValidRoman} | Match: ${(overlapScore * 100).toFixed(1)}%`);
 
-          console.log(`Target: ${level.symbol} | OCR: ${cleanText} | Valid: ${isValidRoman} | Match: ${(overlapScore*100).toFixed(1)}%`);
+      // --- REFINED PRODUCTION LOGIC ---
+      const isExactMatch = cleanText === level.symbol;
+      const isPartialWithShape = cleanText.includes(level.symbol) && overlapScore > 0.30;
+      const isShapeOnlyMatch = overlapScore > 0.60;
 
-          // --- REFINED PRODUCTION LOGIC ---
-          const isExactMatch = cleanText === level.symbol;
-          const isPartialWithShape = cleanText.includes(level.symbol) && overlapScore > 0.30;
-          const isShapeOnlyMatch = overlapScore > 0.60;
-
-          // If the OCR finds a valid Roman numeral but it's WRONG, and the shape is also poor:
-          if (isValidRoman && cleanText !== level.symbol && overlapScore < 0.25) {
-              return this.triggerFail(); // Confidently wrong
-          }
-
-          if (isExactMatch || isPartialWithShape || isShapeOnlyMatch) { 
-              this.levelCompleteTimer = 1;
-              this.score += 20;
-              this.cursorColor = "#00FFCC";
-          } else {
-              this.triggerFail();
-          }
-      } catch (err) {
-          console.error(err);
-          this.triggerFail();
-      } finally {
-          this.isProcessing = false;
+      // If the OCR finds a valid Roman numeral but it's WRONG, and the shape is also poor:
+      if (isValidRoman && cleanText !== level.symbol && overlapScore < 0.25) {
+        return this.triggerFail(); // Confidently wrong
       }
+
+      if (isExactMatch || isPartialWithShape || isShapeOnlyMatch) {
+        this.levelCompleteTimer = 1;
+        this.score += 20;
+        this.cursorColor = "#00FFCC";
+      } else {
+        this.triggerFail();
+      }
+    } catch (err) {
+      console.error(err);
+      this.triggerFail();
+    } finally {
+      this.isProcessing = false;
+    }
   },
 
   // Added 'weight' parameter to customize thickness for different checks
   drawStrokesNormalized(ctx, strokes, size, color = "#00FFFF", weight) {
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-      strokes.forEach(s => s.forEach(p => {
-          minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
-          minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
-      }));
-      if (minX === Infinity) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    strokes.forEach(s => s.forEach(p => {
+      minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+      minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+    }));
+    if (minX === Infinity) return;
 
-      // REDUCED PADDING: 15% -> 10% 
-      // This gives the OCR more "character" to look at and reduces stretching distortion.
-      const pad = size * 0.10; 
-      const w = maxX - minX, h = maxY - minY;
-      const scale = (size - pad * 2) / Math.max(w, h, 0.001);
-      const ox = (size - w * scale) / 2, oy = (size - h * scale) / 2;
+    // REDUCED PADDING: 15% -> 10% 
+    // This gives the OCR more "character" to look at and reduces stretching distortion.
+    const pad = size * 0.10;
+    const w = maxX - minX, h = maxY - minY;
+    const scale = (size - pad * 2) / Math.max(w, h, 0.001);
+    const ox = (size - w * scale) / 2, oy = (size - h * scale) / 2;
 
-      ctx.strokeStyle = color;
-      ctx.lineWidth = weight || (size * 0.08); 
-      ctx.lineCap = "round"; ctx.lineJoin = "round";
-      ctx.beginPath();
-      strokes.forEach(s => {
-          if (s.length < 2) return;
-          ctx.moveTo((s[0].x - minX) * scale + ox, (s[0].y - minY) * scale + oy);
-          for (let i = 1; i < s.length; i++) ctx.lineTo((s[i].x - minX) * scale + ox, (s[i].y - minY) * scale + oy);
-      });
-      ctx.stroke();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = weight || (size * 0.08);
+    ctx.lineCap = "round"; ctx.lineJoin = "round";
+    ctx.beginPath();
+    strokes.forEach(s => {
+      if (s.length < 2) return;
+      ctx.moveTo((s[0].x - minX) * scale + ox, (s[0].y - minY) * scale + oy);
+      for (let i = 1; i < s.length; i++) ctx.lineTo((s[i].x - minX) * scale + ox, (s[i].y - minY) * scale + oy);
+    });
+    ctx.stroke();
   },
 
   triggerFail() {
-      this.levelFailedTimer = 1;
-      this.shakeTimer = 25; 
-      this.cursorColor = "#FF4444";
+    this.levelFailedTimer = 1;
+    this.shakeTimer = 25;
+    this.cursorColor = "#FF4444";
   },
 
   drawTemplate(ctx, w, h, baseUnit) {
-    if (this.mode === "FREEHAND") return; 
+    if (this.mode === "FREEHAND") return;
     const level = this.levels[this.currentLevel];
     ctx.lineCap = "round"; ctx.lineJoin = "round";
     level.strokes.forEach((s, index) => {
       ctx.beginPath();
-      ctx.lineWidth = baseUnit * 0.04; 
-      let color = index < this.activeStrokeIndex ? "#00FF66" : 
-                  index === this.activeStrokeIndex ? "#555" : "#2a2a2a";
+      ctx.lineWidth = baseUnit * 0.04;
+      let color = index < this.activeStrokeIndex ? "#00FF66" :
+        index === this.activeStrokeIndex ? "#555" : "#2a2a2a";
       ctx.strokeStyle = color;
       let p1 = this.getPoint(s.x1, s.y1, w, h);
       let p2 = this.getPoint(s.x2, s.y2, w, h);
@@ -454,108 +454,108 @@ const Game7 = {
     const active = level.strokes[this.activeStrokeIndex];
     if (active) {
       const pulse = Math.sin(Date.now() / 150) * (baseUnit * 0.01);
-      ctx.fillStyle = "#FFCC00"; ctx.beginPath(); 
+      ctx.fillStyle = "#FFCC00"; ctx.beginPath();
       let startP = this.getPoint(active.x1, active.y1, w, h);
-      ctx.arc(startP.x, startP.y, (baseUnit * 0.02) + pulse, 0, Math.PI*2); ctx.fill();
+      ctx.arc(startP.x, startP.y, (baseUnit * 0.02) + pulse, 0, Math.PI * 2); ctx.fill();
     }
   },
 
   drawArrow(ctx, x1, y1, x2, y2, baseUnit) {
     const angle = Math.atan2(y2 - y1, x2 - x1);
-    const size = baseUnit * 0.015; 
-    ctx.save(); ctx.translate((x1 + x2)/2, (y1 + y2)/2); ctx.rotate(angle);
+    const size = baseUnit * 0.015;
+    ctx.save(); ctx.translate((x1 + x2) / 2, (y1 + y2) / 2); ctx.rotate(angle);
     ctx.fillStyle = "rgba(255,255,255,0.3)";
     ctx.beginPath(); ctx.moveTo(-size, -size); ctx.lineTo(size, 0); ctx.lineTo(-size, size); ctx.fill();
     ctx.restore();
   },
 
   drawUserInk(ctx, baseUnit) {
-    ctx.lineWidth = baseUnit * 0.03; 
-    if (this.levelFailedTimer > 0) { ctx.strokeStyle = "#FF4444"; ctx.shadowColor = "red"; } 
+    ctx.lineWidth = baseUnit * 0.03;
+    if (this.levelFailedTimer > 0) { ctx.strokeStyle = "#FF4444"; ctx.shadowColor = "red"; }
     else { ctx.strokeStyle = "#00FFFF"; ctx.shadowColor = "cyan"; }
     ctx.shadowBlur = baseUnit * 0.02;
     ctx.lineCap = "round"; ctx.lineJoin = "round";
     if (this.mode === "TRACE" && this.tracePoints.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(this.tracePoints[0].x, this.tracePoints[0].y);
-        for (let i = 1; i < this.tracePoints.length; i++) ctx.lineTo(this.tracePoints[i].x, this.tracePoints[i].y);
-        ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(this.tracePoints[0].x, this.tracePoints[0].y);
+      for (let i = 1; i < this.tracePoints.length; i++) ctx.lineTo(this.tracePoints[i].x, this.tracePoints[i].y);
+      ctx.stroke();
     } else if (this.mode === "FREEHAND") {
-        this.freehandStrokes.forEach(stroke => {
-            if(stroke.length < 2) return;
-            ctx.beginPath();
-            ctx.moveTo(stroke[0].x, stroke[0].y);
-            for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i].x, stroke[i].y);
-            ctx.stroke();
-        });
+      this.freehandStrokes.forEach(stroke => {
+        if (stroke.length < 2) return;
+        ctx.beginPath();
+        ctx.moveTo(stroke[0].x, stroke[0].y);
+        for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i].x, stroke[i].y);
+        ctx.stroke();
+      });
     }
     ctx.shadowBlur = 0;
   },
 
   drawCursor(ctx, baseUnit) {
-      if (this.levelFailedTimer > 0 || this.levelCompleteTimer > 0) return; 
-      ctx.beginPath(); ctx.fillStyle = this.isProcessing ? "orange" : this.cursorColor;
-      ctx.arc(this.cursor.x, this.cursor.y, baseUnit * 0.015, 0, Math.PI*2); ctx.fill(); 
-      ctx.strokeStyle = "black"; ctx.lineWidth = baseUnit * 0.005; ctx.stroke();
+    if (this.levelFailedTimer > 0 || this.levelCompleteTimer > 0) return;
+    ctx.beginPath(); ctx.fillStyle = this.isProcessing ? "orange" : this.cursorColor;
+    ctx.arc(this.cursor.x, this.cursor.y, baseUnit * 0.015, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "black"; ctx.lineWidth = baseUnit * 0.005; ctx.stroke();
   },
 
   drawUI(ctx, w, h, baseUnit) {
-    ctx.fillStyle = "white"; 
-    ctx.font = `bold ${Math.max(16, baseUnit * 0.04)}px Arial`; 
+    ctx.fillStyle = "white";
+    ctx.font = `bold ${Math.max(16, baseUnit * 0.04)}px Arial`;
     ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.fillText("Score: " + this.score, baseUnit * 0.03, baseUnit * 0.03);
 
     const level = this.levels[this.currentLevel];
-    ctx.textAlign = "center"; 
-    ctx.font = `bold ${Math.max(24, baseUnit * 0.06)}px Arial`; 
+    ctx.textAlign = "center";
+    ctx.font = `bold ${Math.max(24, baseUnit * 0.06)}px Arial`;
     ctx.fillStyle = "#FFCC00"; ctx.shadowBlur = 10; ctx.shadowColor = "rgba(255, 204, 0, 0.5)";
     ctx.fillText("Number: " + level.number, w / 2, baseUnit * 0.05);
     ctx.shadowBlur = 0;
 
     if (this.isProcessing) {
-        ctx.fillStyle = "#00FFCC"; ctx.font = "16px Arial";
-        ctx.fillText("AI ANALYZING...", w / 2, baseUnit * 0.15);
+      ctx.fillStyle = "#00FFCC"; ctx.font = "16px Arial";
+      ctx.fillText("AI ANALYZING...", w / 2, baseUnit * 0.15);
     } else if (this.mode === "FREEHAND" && this.submitTimer > 0 && this.freehandStrokes.length > 0) {
-        let progress = this.submitTimer / 60; 
-        let barW = baseUnit * 0.3; 
-        ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-        ctx.fillRect(w/2 - barW/2, baseUnit * 0.12, barW, baseUnit*0.015);
-        ctx.fillStyle = "#00FFCC";
-        ctx.fillRect(w/2 - barW/2, baseUnit * 0.12, barW * progress, baseUnit*0.015);
+      let progress = this.submitTimer / 60;
+      let barW = baseUnit * 0.3;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+      ctx.fillRect(w / 2 - barW / 2, baseUnit * 0.12, barW, baseUnit * 0.015);
+      ctx.fillStyle = "#00FFCC";
+      ctx.fillRect(w / 2 - barW / 2, baseUnit * 0.12, barW * progress, baseUnit * 0.015);
     }
 
-    const btnW = Math.max(140, baseUnit * 0.25), btnH = Math.max(50, baseUnit * 0.08); 
-    const btnY = h - btnH - (baseUnit * 0.05); 
+    const btnW = Math.max(140, baseUnit * 0.25), btnH = Math.max(50, baseUnit * 0.08);
+    const btnY = h - btnH - (baseUnit * 0.05);
     const traceX = w / 2 - btnW - (baseUnit * 0.02), freeX = w / 2 + (baseUnit * 0.02);
 
     ctx.font = `bold ${Math.max(12, baseUnit * 0.025)}px Arial`; ctx.textBaseline = "middle";
     ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#444";
     ctx.fillRect(traceX, btnY, btnW, btnH);
     ctx.fillStyle = this.mode === "TRACE" ? "black" : "white";
-    ctx.fillText("TRACE", traceX + btnW/2, btnY + btnH/2);
+    ctx.fillText("TRACE", traceX + btnW / 2, btnY + btnH / 2);
 
     ctx.fillStyle = this.mode === "FREEHAND" ? "#FF4444" : "#444";
     ctx.fillRect(freeX, btnY, btnW, btnH);
     ctx.fillStyle = "white";
-    ctx.fillText("FREEHAND", freeX + btnW/2, btnY + btnH/2);
+    ctx.fillText("FREEHAND", freeX + btnW / 2, btnY + btnH / 2);
   },
 
   drawSuccessEffect(ctx, w, h, baseUnit) {
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
-    ctx.fillStyle = "rgba(0, 255, 100, 0.2)"; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore(); 
-    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "rgba(0, 255, 100, 0.2)"; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore();
+    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.1}px Arial`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.shadowBlur = 20; ctx.shadowColor = "#00FF66"; ctx.fillText("NICE!", w/2, h/2);
+    ctx.shadowBlur = 20; ctx.shadowColor = "#00FF66"; ctx.fillText("NICE!", w / 2, h / 2);
   },
 
   drawFailEffect(ctx, w, h, baseUnit) {
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
-    ctx.fillStyle = "rgba(255, 50, 50, 0.15)"; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore(); 
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = "rgba(255, 50, 50, 0.15)"; ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height); ctx.restore();
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "#FF4444"; ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
-    ctx.fillText("WRONG!", w/2, h/2 - (baseUnit * 0.05));
-    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.04}px Arial`; 
-    ctx.fillText("Try again or use TRACE!", w/2, h/2 + (baseUnit * 0.08));
+    ctx.fillStyle = "#FF4444"; ctx.font = `bold ${baseUnit * 0.1}px Arial`;
+    ctx.fillText("WRONG!", w / 2, h / 2 - (baseUnit * 0.05));
+    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.04}px Arial`;
+    ctx.fillText("Try again or use TRACE!", w / 2, h / 2 + (baseUnit * 0.08));
   },
 
   pointToLineDist(px, py, x1, y1, x2, y2) {
@@ -569,27 +569,27 @@ const Game7 = {
 
   spawnParticle(x, y, burst = false, baseUnit) {
     const angle = Math.random() * Math.PI * 2;
-    const mult = baseUnit * 0.005; 
+    const mult = baseUnit * 0.005;
     const speed = burst ? (Math.random() * 5 + 2) * mult : (Math.random() * 2 + 1) * mult;
-    this.particles.push({ 
-        x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, 
-        life: 1.0, color: `hsl(${Math.random()*60 + 160}, 100%, 70%)`, size: baseUnit * 0.008
+    this.particles.push({
+      x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      life: 1.0, color: `hsl(${Math.random() * 60 + 160}, 100%, 70%)`, size: baseUnit * 0.008
     });
   },
-  
-  updateParticles() { 
-      for (let i = this.particles.length - 1; i >= 0; i--) { 
-          let p = this.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.05; 
-          if (p.life <= 0) this.particles.splice(i, 1); 
-      } 
+
+  updateParticles() {
+    for (let i = this.particles.length - 1; i >= 0; i--) {
+      let p = this.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.05;
+      if (p.life <= 0) this.particles.splice(i, 1);
+    }
   },
-  
-  drawParticles(ctx, baseUnit) { 
-      for (let p of this.particles) { 
-          ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.beginPath(); 
-          ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); 
-      } 
-      ctx.globalAlpha = 1.0; 
+
+  drawParticles(ctx, baseUnit) {
+    for (let p of this.particles) {
+      ctx.globalAlpha = p.life; ctx.fillStyle = p.color; ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1.0;
   },
 
   setMode(newMode) {
@@ -617,9 +617,9 @@ const Game7 = {
     this.levels = [];
     for (let i = 1; i <= 100; i++) {
       // Use RomanJS for guaranteed correct symbols
-      const roman = Roman.stringify(i); 
+      const roman = Roman.stringify(i);
       this.levels.push({
-        symbol: roman, 
+        symbol: roman,
         number: i.toString(),
         strokes: this.buildStrokesFromRoman(roman),
         localStrokes: this.buildLocalFromRoman(roman)
