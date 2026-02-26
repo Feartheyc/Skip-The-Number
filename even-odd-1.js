@@ -5,7 +5,7 @@ const Game2 = {
   scale: 1,
 
   PIVOT_OFFSET: 120,
-  PIVOT_RADIUS: 15,
+  PIVOT_RADIUS: 5,
   ARM_LENGTH: 140,
   BALL_RADIUS: 30,
   MAX_BALLS: 3,
@@ -111,53 +111,60 @@ const Game2 = {
     };
   },
 
-  onPoseResults(results) {
-    if (!results.poseLandmarks) return;
-    const lm = results.poseLandmarks;
+ onPoseResults(results) {
+  if (!results.poseLandmarks) return;
+  const lm = results.poseLandmarks;
 
-    const mapPoint = (p) => ({
-      x: (1 - p.x) * this.cssWidth,
-      y: p.y * this.cssHeight
-    });
+  const mapPoint = (p) => ({
+    x: (1 - p.x) * this.cssWidth,
+    y: p.y * this.cssHeight
+  });
 
-    const smooth = (oldP, newP) => {
-      if (!oldP) return newP;
-      return {
-        x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
-        y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
-      };
+  const smooth = (oldP, newP) => {
+    if (!oldP) return newP;
+    return {
+      x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
+      y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
     };
+  };
 
-    const updateArm = (side, shoulderLm, wristLm) => {
-      if (!shoulderLm || !wristLm) return;
-      if (shoulderLm.visibility < 0.4 || wristLm.visibility < 0.4) return;
+  // NEW: wrist -> index finger instead of shoulder -> wrist
+  const updateArm = (side, wristLm, indexLm) => {
+    if (!wristLm || !indexLm) return;
+    if (wristLm.visibility < 0.4 || indexLm.visibility < 0.4) return;
 
-      let shoulder = mapPoint(shoulderLm);
-      let wrist = mapPoint(wristLm);
+    let wrist = mapPoint(wristLm);   // base
+    let index = mapPoint(indexLm);   // tip
 
-      const prev = this.armData[side];
-      shoulder = smooth(prev?.shoulder, shoulder);
-      wrist = smooth(prev?.wrist, wrist);
+    const prev = this.armData[side];
+    wrist = smooth(prev?.shoulder, wrist); // reuse shoulder slot as base
+    index = smooth(prev?.wrist, index);    // reuse wrist slot as tip
 
-      const dx = wrist.x - shoulder.x;
-      const dy = wrist.y - shoulder.y;
-      if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
+    const dx = index.x - wrist.x;
+    const dy = index.y - wrist.y;
+    if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
 
-      const vel = this.armVelocity[side];
-      if (vel.last) {
-        vel.vx = vel.vx * 0.5 + (wrist.x - vel.last.x) * 0.5;
-        vel.vy = vel.vy * 0.5 + (wrist.y - vel.last.y) * 0.5;
-      }
-      vel.last = { x: wrist.x, y: wrist.y };
+    const vel = this.armVelocity[side];
+    if (vel.last) {
+      vel.vx = vel.vx * 0.5 + (index.x - vel.last.x) * 0.5;
+      vel.vy = vel.vy * 0.5 + (index.y - vel.last.y) * 0.5;
+    }
+    vel.last = { x: index.x, y: index.y };
 
-      this.armData[side] = { shoulder, wrist };
+    // IMPORTANT:
+    // keep same property names so rest of code works
+    this.armData[side] = {
+      shoulder: wrist, // now base = wrist
+      wrist: index     // now tip = index finger
     };
+  };
 
-    // Right arm: shoulder(12) → wrist(16)
-    updateArm("right", lm[12], lm[16]);
-    // Left arm: shoulder(11) → wrist(15)
-    updateArm("left", lm[11], lm[15]);
-  },
+  // Mediapipe Pose indices:
+  // Right wrist = 16, Right index = 20
+  // Left wrist  = 15, Left index  = 19
+  updateArm("right", lm[16], lm[20]);
+  updateArm("left", lm[15], lm[19]);
+},
 
   resize() {
     // adopt the full viewport CSS dimensions for consistent scaling
@@ -295,27 +302,32 @@ const Game2 = {
     this.balls = this.balls.filter(b => !b.remove);
   },
 
-  checkPhysics() {
-    const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
-    const arm = this.armData.right;
-    if (!arm?.wrist || !arm?.shoulder) return;
+ checkPhysics() {
+  const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
+  const arm = this.armData.right;
+  if (!arm?.wrist || !arm?.shoulder) return;
 
-    const angle = Math.atan2(
-      arm.wrist.y - arm.shoulder.y,
-      arm.wrist.x - arm.shoulder.x
-    );
+  const angle = Math.atan2(
+    arm.wrist.y - arm.shoulder.y,
+    arm.wrist.x - arm.shoulder.x
+  );
 
-    const tipX = pivot.x + Math.cos(angle) * this.armLength;
-    const tipY = pivot.y + Math.sin(angle) * this.armLength;
+  // Two sticks: original + opposite
+  const angles = [angle, angle + Math.PI];
 
-    if (!this.lastArmAngle) this.lastArmAngle = angle;
-    let angVel = angle - this.lastArmAngle;
-    this.lastArmAngle = angle;
-    angVel = Math.max(-0.3, Math.min(0.1, angVel));
+  if (!this.lastArmAngle) this.lastArmAngle = angle;
+  let angVel = angle - this.lastArmAngle;
+  this.lastArmAngle = angle;
+  angVel = Math.max(-0.3, Math.min(0.1, angVel));
 
-    const tangentialSpeed = angVel * this.armLength * 0.8;
-    const armVelX = -Math.sin(angle) * tangentialSpeed;
-    const armVelY = Math.cos(angle) * tangentialSpeed;
+  const tangentialSpeed = angVel * this.armLength * 0.8;
+
+  for (let stickAngle of angles) {
+    const tipX = pivot.x + Math.cos(stickAngle) * this.armLength;
+    const tipY = pivot.y + Math.sin(stickAngle) * this.armLength;
+
+    const armVelX = -Math.sin(stickAngle) * tangentialSpeed;
+    const armVelY = Math.cos(stickAngle) * tangentialSpeed;
 
     const radius = this.ballRadius + 6;
 
@@ -363,7 +375,9 @@ const Game2 = {
       b.hitCooldown = 8 * this.scale;
       this.spawnExplosion(b.x, b.y, "white", 10);
     }
-  },
+  }
+},
+
   checkScoring() {
     const w = this.cssWidth;
     const h = this.cssHeight;
@@ -419,32 +433,32 @@ const Game2 = {
   },
 
   checkPivotLock(dt) {
-    const cx = this.CENTER_X;
-    const cy = this.CENTER_Y;
+  const cx = this.CENTER_X;
+  const cy = this.CENTER_Y;
 
-    const arm = this.armData.right;
-    if (!arm?.shoulder) return;
+  const arm = this.armData.right;
+  if (!arm?.shoulder) return; // shoulder now stores wrist position
 
-    const dist = Math.hypot(arm.shoulder.x - cx, arm.shoulder.y - cy);
+  const dist = Math.hypot(arm.shoulder.x - cx, arm.shoulder.y - cy);
 
-    if (dist < 120 * this.scale) {
-      this.pivotLockTimer.right += dt;
-      this.lockProgress = Math.min(
-        this.pivotLockTimer.right / this.LOCK_TIME,
-        1
-      );
+  if (dist < 120 * this.scale) {
+    this.pivotLockTimer.right += dt;
+    this.lockProgress = Math.min(
+      this.pivotLockTimer.right / this.LOCK_TIME,
+      1
+    );
 
-      if (this.pivotLockTimer.right > this.LOCK_TIME) {
-        this.gameStarted = true;
-        const video = document.getElementById("input_video");
-        if (video) video.style.opacity = "0.2";
-        this.spawnFloatingText(cx, cy, "START!", "white");
-      }
-    } else {
-      this.pivotLockTimer.right = 0;
-      this.lockProgress = 0;
+    if (this.pivotLockTimer.right > this.LOCK_TIME) {
+      this.gameStarted = true;
+      const video = document.getElementById("input_video");
+      if (video) video.style.opacity = "0.2";
+      this.spawnFloatingText(cx, cy, "START!", "white");
     }
-  },
+  } else {
+    this.pivotLockTimer.right = 0;
+    this.lockProgress = 0;
+  }
+},
   /* ==============================
      VISUAL EFFECTS
   ============================= */
@@ -577,17 +591,20 @@ const Game2 = {
     }
   },
 
-  drawArms(ctx) {
-    const arm = this.armData.right;
-    if (!arm?.shoulder) return;
+drawArms(ctx) {
+  const arm = this.armData.right;
+  if (!arm?.shoulder) return;
 
-    const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
+  const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
 
-    const angle = Math.atan2(
-      arm.wrist.y - arm.shoulder.y,
-      arm.wrist.x - arm.shoulder.x
-    );
+  const baseAngle = Math.atan2(
+    arm.wrist.y - arm.shoulder.y,
+    arm.wrist.x - arm.shoulder.x
+  );
 
+  const angles = [baseAngle, baseAngle + Math.PI];
+
+  for (let angle of angles) {
     const tipX = pivot.x + Math.cos(angle) * this.armLength;
     const tipY = pivot.y + Math.sin(angle) * this.armLength;
 
@@ -607,22 +624,23 @@ const Game2 = {
     ctx.arc(tipX, tipY, 8 * this.scale, 0, Math.PI * 2);
     ctx.fillStyle = "#FFCC00";
     ctx.fill();
+  }
 
-    // 🔵 Shoulder highlight (instead of elbow)
-    ctx.beginPath();
-    ctx.arc(arm.shoulder.x, arm.shoulder.y, 18 * this.scale, 0, Math.PI * 2);
-    ctx.strokeStyle = "#BB66FF";
-    ctx.lineWidth = 4 * this.scale;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#BB66FF";
-    ctx.stroke();
-    ctx.shadowBlur = 0;
-  },
+  // Wrist highlight
+  ctx.beginPath();
+  ctx.arc(arm.shoulder.x, arm.shoulder.y, 18 * this.scale, 0, Math.PI * 2);
+  ctx.strokeStyle = "#BB66FF";
+  ctx.lineWidth = 4 * this.scale;
+  ctx.shadowBlur = 15;
+  ctx.shadowColor = "#BB66FF";
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+},
 
   drawPivots(ctx) {
     const x = this.CENTER_X;
     const y = this.CENTER_Y;
-    const r = this.pivotRadius;
+    const r = this.gameStarted ? this.PIVOT_RADIUS : 15;
 
     // Base pivot
     ctx.beginPath();
@@ -670,7 +688,7 @@ const Game2 = {
       ctx.font = `bold ${30 * this.scale}px Arial`;
       ctx.textAlign = "center";
       ctx.shadowBlur = 10 * this.scale; ctx.shadowColor = "black";
-      ctx.fillText("HOLD SHOULDER ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50 * this.scale);
+      ctx.fillText("HOLD WRIST ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50 * this.scale);
       ctx.shadowBlur = 0;
     }
 
