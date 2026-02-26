@@ -688,7 +688,7 @@ drawArms(ctx) {
       ctx.font = `bold ${30 * this.scale}px Arial`;
       ctx.textAlign = "center";
       ctx.shadowBlur = 10 * this.scale; ctx.shadowColor = "black";
-      ctx.fillText("HOLD SHOULDER ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50 * this.scale);
+      ctx.fillText("HOLD WRIST ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50 * this.scale);
       ctx.shadowBlur = 0;
     }
 
