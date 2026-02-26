@@ -1194,9 +1194,10 @@ spawnTripleNote() {
 
 drawTripleCannons(ctx, dt = 1/60) {
 
-  const targetSize = this.baseOuterRadius * 0.6;
+  const size = this.baseOuterRadius * 0.35;
+  this.cannonLength = size * 1.4;
 
-  // Smooth rotate base
+  // Smooth rotate base angle
   let diff = this.tripleTargetAngle - this.tripleBaseAngle;
   diff = Math.atan2(Math.sin(diff), Math.cos(diff));
 
@@ -1212,39 +1213,23 @@ drawTripleCannons(ctx, dt = 1/60) {
     const angle = this.tripleBaseAngle + cannon.offset;
 
     ctx.save();
-
     ctx.translate(this.centerX, this.centerY);
     ctx.rotate(angle);
 
-    if (this.orbImage && this.orbImage.complete) {
+    // Base
+    ctx.fillStyle = "#444";
+    ctx.beginPath();
+    ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+    ctx.fill();
 
-      const img = this.orbImage;
-
-      const scale =
-        targetSize / Math.max(img.width, img.height);
-
-      const drawW = img.width * scale;
-      const drawH = img.height * scale;
-
-      // Same flip you used in orb mode
-      ctx.scale(1, -1);
-
-      ctx.drawImage(
-        img,
-        -drawW / 2,
-        -drawH / 2,
-        drawW,
-        drawH
-      );
-
-    } else {
-
-      // fallback circle
-      ctx.fillStyle = "#66ccff";
-      ctx.beginPath();
-      ctx.arc(0, 0, targetSize / 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    // Barrel
+    ctx.fillStyle = "#999";
+    ctx.fillRect(
+      -size * 0.15,
+      -this.cannonLength,
+      size * 0.3,
+      this.cannonLength
+    );
 
     ctx.restore();
   }
