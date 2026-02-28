@@ -98,8 +98,8 @@ window.startGame = function (gameName) {
   }
 
   if (gameName === "Game6") {
-    window.currentGame = Game6;
-    Game6.init();
+    window.currentGame = Game9;
+    Game9.init();
   }
 
   if (gameName === "Game7") {
