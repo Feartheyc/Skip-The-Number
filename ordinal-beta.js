@@ -121,6 +121,26 @@ starCountFar: 80,
 starCountMid: 50,
 starCountNear: 30,
 
+/* ===== COSMIC DUST SYSTEM ===== */
+
+cosmicDust: [],
+dustCount: 120,
+dustDriftAngle: 0.0003,
+dustGlobalTime: 0,
+
+
+/* ===== NEBULA SYSTEM ===== */
+
+nebulaTime: 0,
+nebulaSpeed: 0.0002,
+
+
+/* ===== SHOOTING STAR SYSTEM ===== */
+
+shootingStars: [],
+shootingStarSpawnTimer: 0,
+shootingStarSpawnInterval: 2000, // average spawn time (ms)
+
 init() {
 
   this.resize();
@@ -216,10 +236,25 @@ init() {
 
   ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
 
-  // 🌌 STARFIELD UPDATE
+  // 🌌 NEBULA BACKGROUND
+  // this.drawNebula(ctx);
+
+  // 🌌 STARFIELD
   this.updateStarLayer(this.starsFar, delta);
   this.updateStarLayer(this.starsMid, delta);
   this.updateStarLayer(this.starsNear, delta);
+
+  this.drawStarLayer(ctx, this.starsFar);
+  this.drawStarLayer(ctx, this.starsMid);
+  this.drawStarLayer(ctx, this.starsNear);
+
+  // // 🌫 COSMIC DUST
+  // this.updateCosmicDust(delta);
+  // this.drawCosmicDust(ctx);
+
+  // 🌠 SHOOTING STARS
+  this.updateShootingStars(delta);
+  this.drawShootingStars(ctx);
 
   // 🎮 GAME LOGIC
   this.updateFingerPosition();
@@ -233,12 +268,7 @@ init() {
   this.updateConfetti(delta);
   this.updateSparkBursts(delta);
 
-  // 🌌 DRAW BACKGROUND FIRST
-  this.drawStarLayer(ctx, this.starsFar);
-  this.drawStarLayer(ctx, this.starsMid);
-  this.drawStarLayer(ctx, this.starsNear);
-
-  // 🎮 DRAW GAME
+  // 🎮 FOREGROUND
   this.drawDoors(ctx);
   this.drawNumber(ctx);
   this.drawMascot(ctx);
@@ -797,6 +827,162 @@ drawStarLayer(ctx, layer) {
     ctx.arc(star.x, star.y, star.size * this.scale, 0, Math.PI * 2);
     ctx.fillStyle = "white";
     ctx.fill();
+  }
+},
+
+
+initCosmicDust() {
+
+  this.cosmicDust = [];
+
+  for (let i = 0; i < this.dustCount; i++) {
+
+    this.cosmicDust.push({
+      x: Math.random() * this.cssWidth,
+      y: Math.random() * this.cssHeight,
+      size: Math.random() * 2 + 0.5,
+      alpha: Math.random(),
+      driftSpeed: Math.random() * 0.3 + 0.1,
+      offset: Math.random() * Math.PI * 2
+    });
+  }
+},
+
+
+updateCosmicDust(delta) {
+
+  this.dustGlobalTime += delta;
+
+  for (let dust of this.cosmicDust) {
+
+    dust.x += Math.cos(this.dustDriftAngle * this.dustGlobalTime + dust.offset) * dust.driftSpeed;
+    dust.y += 0.1 * dust.driftSpeed;
+
+    dust.alpha = 0.5 + Math.sin(this.dustGlobalTime * 0.001 + dust.offset) * 0.5;
+
+    if (dust.y > this.cssHeight) {
+      dust.y = 0;
+      dust.x = Math.random() * this.cssWidth;
+    }
+
+    if (dust.x > this.cssWidth) dust.x = 0;
+    if (dust.x < 0) dust.x = this.cssWidth;
+  }
+},
+
+
+drawCosmicDust(ctx) {
+
+  for (let dust of this.cosmicDust) {
+
+    ctx.beginPath();
+    ctx.arc(dust.x, dust.y, dust.size * this.scale, 0, Math.PI * 2);
+
+    ctx.fillStyle = `rgba(180, 220, 255, ${dust.alpha})`;
+    ctx.fill();
+  }
+},
+
+drawNebula(ctx) {
+
+  this.nebulaTime += this.nebulaSpeed * this.lastTime;
+
+  const centerX = this.cssWidth / 2;
+  const centerY = this.cssHeight / 2;
+
+  const radius = Math.max(this.cssWidth, this.cssHeight);
+
+  const gradient = ctx.createRadialGradient(
+    centerX,
+    centerY,
+    radius * 0.1,
+    centerX,
+    centerY,
+    radius
+  );
+
+  const hueShift = Math.sin(performance.now() * 0.0001) * 20;
+
+  gradient.addColorStop(0, `hsla(${260 + hueShift}, 80%, 30%, 0.8)`);
+  gradient.addColorStop(0.5, `hsla(${280 + hueShift}, 70%, 20%, 0.5)`);
+  gradient.addColorStop(1, `hsla(${240 + hueShift}, 60%, 10%, 1)`);
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+},
+
+
+createShootingStar() {
+
+  const startFromLeft = Math.random() < 0.5;
+
+  const star = {
+    x: startFromLeft ? -50 : this.cssWidth + 50,
+    y: Math.random() * this.cssHeight * 0.5,
+    length: Math.random() * 120 + 80,
+    speedX: startFromLeft ? Math.random() * 6 + 4 : -(Math.random() * 6 + 4),
+    speedY: Math.random() * 2 + 1,
+    life: 0,
+    maxLife: 1000,
+    opacity: 1
+  };
+
+  this.shootingStars.push(star);
+},
+
+updateShootingStars(delta) {
+
+  this.shootingStarSpawnTimer += delta;
+
+  if (this.shootingStarSpawnTimer > this.shootingStarSpawnInterval) {
+
+    this.createShootingStar();
+    this.shootingStarSpawnTimer = 0;
+
+    // Randomize next spawn slightly
+    this.shootingStarSpawnInterval = 1500 + Math.random() * 3000;
+  }
+
+  for (let i = this.shootingStars.length - 1; i >= 0; i--) {
+
+    const star = this.shootingStars[i];
+
+    star.x += star.speedX;
+    star.y += star.speedY;
+
+    star.life += delta;
+    star.opacity = 1 - (star.life / star.maxLife);
+
+    if (star.life > star.maxLife) {
+      this.shootingStars.splice(i, 1);
+    }
+  }
+},
+
+drawShootingStars(ctx) {
+
+  for (let star of this.shootingStars) {
+
+    const gradient = ctx.createLinearGradient(
+      star.x,
+      star.y,
+      star.x - star.speedX * 10,
+      star.y - star.speedY * 10
+    );
+
+    gradient.addColorStop(0, `rgba(255,255,255,${star.opacity})`);
+    gradient.addColorStop(1, `rgba(255,255,255,0)`);
+
+    ctx.strokeStyle = gradient;
+    ctx.lineWidth = 3 * this.scale;
+
+    ctx.beginPath();
+    ctx.moveTo(star.x, star.y);
+    ctx.lineTo(
+      star.x - star.speedX * star.length * 0.05,
+      star.y - star.speedY * star.length * 0.05
+    );
+    ctx.stroke();
   }
 },
 };
