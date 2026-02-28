@@ -373,3 +373,71 @@ const Game1 = {
 };
 
 
+
+
+
+
+/*dor safety
+
+ drawDoors(ctx) {
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    for (let i = 0; i < this.doors.length; i++) {
+
+      const door = this.doors[i];
+
+      let glow = 0;
+
+      if (i === this.activeDoorIndex) {
+        glow = this.holdProgress / this.holdDuration;
+      }
+
+      ctx.beginPath();
+      ctx.fillStyle = "#222";
+      ctx.shadowBlur = 40 * glow;
+      ctx.shadowColor = "#00FFFF";
+
+      ctx.arc(
+        door.x,
+        door.y,
+        this.doorRadius,
+        0,
+        Math.PI * 2
+      );
+      ctx.fill();
+
+      ctx.shadowBlur = 0;
+
+      ctx.fillStyle = "white";
+      ctx.font = `bold ${40 * this.scale}px Arial`;
+
+      ctx.fillText(
+        door.suffix.toUpperCase(),
+        door.x,
+        door.y
+      );
+
+      if (i === this.activeDoorIndex && !this.doorLocked) {
+
+        const angle =
+          (this.holdProgress / this.holdDuration) * Math.PI * 2;
+
+        ctx.beginPath();
+        ctx.lineWidth = 8 * this.scale;
+        ctx.strokeStyle = "#00FF88";
+        
+        ctx.arc(
+          door.x,
+          door.y,
+          this.doorRadius + 12 * this.scale,
+          -Math.PI / 2,
+          -Math.PI / 2 + angle
+        );
+
+        ctx.stroke();
+      }
+    }
+  },
+*/

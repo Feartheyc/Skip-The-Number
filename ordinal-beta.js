@@ -80,6 +80,22 @@ numberPosition: {
   picked: false
 },
 
+/* ===== PORTAL SPRITE SYSTEM ===== */
+
+portalFrames: [],
+portalFrameIndex: 0,
+portalFrameTimer: 0,
+portalFrameSpeed: 80, // lower = faster animation
+
+portalSize: 260,
+
+ordinalMap: {
+  "st": "1st",
+  "nd": "2nd",
+  "rd": "3rd",
+  "th": "4th"
+},
+
 init() {
 
   this.resize();
@@ -90,6 +106,7 @@ init() {
   this.lastTime = performance.now();
 
   this.loadMascotSprites();
+  this.loadPortalSprites();   // NEW
   this.setupDoors();
   this.spawnNumber();
 
@@ -119,19 +136,26 @@ init() {
 
   setupDoors() {
 
-    const suffixes = ["st", "nd", "rd", "th"];
-    this.doors = [];
+  this.doors = [];
 
-    const spacing = this.DOOR_DISTANCE * this.scale;
+  const suffixes = ["st", "nd", "rd", "th"];
 
-    for (let i = 0; i < 4; i++) {
+  const startX = this.cssWidth * 0.2;
+  const gap = this.cssWidth * 0.2;
+  const y = this.cssHeight * 0.5;
 
-      const x = this.CENTER_X + (i - 1.5) * spacing;
-      const y = this.CENTER_Y + 150 * this.scale;
+  for (let i = 0; i < 4; i++) {
 
-      this.doors.push({ suffix: suffixes[i], x, y });
-    }
-  },
+    const suffix = suffixes[i];
+
+    this.doors.push({
+      x: startX + i * gap,
+      y: y,
+      suffix: suffix,
+      label: `${i + 1}${suffix}` // 1st 2nd 3rd 4th
+    });
+  }
+},
 
   spawnNumber() {
 
@@ -169,6 +193,8 @@ init() {
   this.updateMascot(delta);
   this.checkPickup();
   this.checkDoorAlignment(delta);
+
+  this.updatePortalAnimation(delta);   // NEW
 
   this.updateConfetti(delta);
   this.updateSparkBursts(delta);
@@ -282,65 +308,36 @@ confirmSelection(index) {
 
     drawDoors(ctx) {
 
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
+  const portalImg = this.portalFrames[this.portalFrameIndex];
+  const size = this.portalSize * this.scale;
 
-    for (let i = 0; i < this.doors.length; i++) {
+  for (let i = 0; i < this.doors.length; i++) {
 
-      const door = this.doors[i];
+    const door = this.doors[i];
 
-      let glow = 0;
-
-      if (i === this.activeDoorIndex) {
-        glow = this.holdProgress / this.holdDuration;
-      }
-
-      ctx.beginPath();
-      ctx.fillStyle = "#222";
-      ctx.shadowBlur = 40 * glow;
-      ctx.shadowColor = "#00FFFF";
-
-      ctx.arc(
-        door.x,
-        door.y,
-        this.doorRadius,
-        0,
-        Math.PI * 2
+    // ===== DRAW PORTAL SPRITE =====
+    if (portalImg) {
+      ctx.drawImage(
+        portalImg,
+        door.x - size / 2,
+        door.y - size / 2,
+        size,
+        size
       );
-      ctx.fill();
-
-      ctx.shadowBlur = 0;
-
-      ctx.fillStyle = "white";
-      ctx.font = `bold ${40 * this.scale}px Arial`;
-
-      ctx.fillText(
-        door.suffix.toUpperCase(),
-        door.x,
-        door.y
-      );
-
-      if (i === this.activeDoorIndex && !this.doorLocked) {
-
-        const angle =
-          (this.holdProgress / this.holdDuration) * Math.PI * 2;
-
-        ctx.beginPath();
-        ctx.lineWidth = 8 * this.scale;
-        ctx.strokeStyle = "#00FF88";
-        
-        ctx.arc(
-          door.x,
-          door.y,
-          this.doorRadius + 12 * this.scale,
-          -Math.PI / 2,
-          -Math.PI / 2 + angle
-        );
-
-        ctx.stroke();
-      }
     }
-  },
+
+    // ===== DRAW ORDINAL LABEL BELOW =====
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `bold ${36 * this.scale}px Arial`;
+    ctx.textAlign = "center";
+
+    ctx.fillText(
+      door.label, // precomputed ordinal
+      door.x,
+      door.y + size / 2 + 40 * this.scale
+    );
+  }
+},
 
 
   drawScore(ctx) {
@@ -653,6 +650,34 @@ drawMascot(ctx) {
       this.mascot.x,
       this.mascot.y - 60 * this.scale
     );
+  }
+},
+
+
+loadPortalSprites() {
+
+  this.portalFrames = [];
+
+  for (let i = 0; i <= 8; i++) {
+    const img = new Image();
+    img.src = `D-1/0${i}_D-1.png`;  // rename if needed
+    this.portalFrames.push(img);
+  }
+},
+
+
+updatePortalAnimation(delta) {
+
+  this.portalFrameTimer += delta;
+
+  if (this.portalFrameTimer > this.portalFrameSpeed) {
+
+    this.portalFrameIndex++;
+    this.portalFrameTimer = 0;
+
+    if (this.portalFrameIndex >= this.portalFrames.length) {
+      this.portalFrameIndex = 0;
+    }
   }
 },
 };
