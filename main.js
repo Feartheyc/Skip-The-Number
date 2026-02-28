@@ -117,6 +117,7 @@ window.startGame = function (gameName) {
   }
 
   if (gameName === "Game10") {
+    if (window.initArmDetection) window.initArmDetection(); // Start the Pose engine
     window.currentGame = Game10;
     Game10.init();
   }
