@@ -47,19 +47,57 @@ shakeDuration: 0,
 shakeIntensity: 0,
 
   sparkBursts: [],
-  init() {
 
-    this.resize();
-    window.addEventListener("resize", () => this.resize());
+  
+  /* ===== MASCOT SYSTEM ===== */
+gameState: "pickup", // "pickup" | "deliver"
 
-    this.score = 0;
-    this.running = true;
-    this.lastTime = performance.now();
+mascot: {
+  x: 0,
+  y: 0,
+  vx: 0,
+  vy: 0,
+  speed: 0.6,
+  maxSpeed: 12,
+  size: 140,
+  carryingNumber: false
+},
 
-    this.setupDoors();
-    this.spawnNumber();
-  },
+mascotImages: {
+  idle: [],
+  happy: [],
+  confused: []
+},
 
+mascotFrame: 0,
+mascotFrameTimer: 0,
+mascotFrameSpeed: 120,
+mascotState: "idle", // idle | happy | confused
+
+numberPosition: {
+  x: 0,
+  y: 0,
+  picked: false
+},
+
+init() {
+
+  this.resize();
+  window.addEventListener("resize", () => this.resize());
+
+  this.score = 0;
+  this.running = true;
+  this.lastTime = performance.now();
+
+  this.loadMascotSprites();
+  this.setupDoors();
+  this.spawnNumber();
+
+  this.mascot.x = this.CENTER_X;
+  this.mascot.y = this.CENTER_Y + 100 * this.scale;
+
+  this.gameState = "pickup";
+},
   resize() {
 
     const cssW = window.innerWidth;
@@ -97,10 +135,17 @@ shakeIntensity: 0,
 
   spawnNumber() {
 
-    const num = Math.floor(Math.random() * 10) + 1;
-    this.currentNumber = num;
-    this.correctSuffix = this.getSuffix(num);
-  },
+  const num = Math.floor(Math.random() * 10) + 1;
+  this.currentNumber = num;
+  this.correctSuffix = this.getSuffix(num);
+
+  this.numberPosition.x = this.CENTER_X;
+  this.numberPosition.y = this.CENTER_Y - 150 * this.scale;
+  this.numberPosition.picked = false;
+
+  this.mascot.carryingNumber = false;
+  this.gameState = "pickup";
+},
 
   getSuffix(num) {
     const last = num % 10;
@@ -110,7 +155,7 @@ shakeIntensity: 0,
     return "th";
   },
 
-  update(ctx) {
+ update(ctx) {
 
   if (!this.running) return;
 
@@ -120,40 +165,20 @@ shakeIntensity: 0,
 
   ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
 
-  // NEW: Apply screen shake
-  let shakeX = 0;
-  let shakeY = 0;
-
-  if (this.shakeDuration > 0) {
-    this.shakeDuration -= delta;
-
-    shakeX = (Math.random() - 0.5) * this.shakeIntensity;
-    shakeY = (Math.random() - 0.5) * this.shakeIntensity;
-
-    if (this.shakeDuration <= 0) {
-      this.shakeDuration = 0;
-    }
-  }
-
-  ctx.save();
-  ctx.translate(shakeX, shakeY);
-
   this.updateFingerPosition();
+  this.updateMascot(delta);
+  this.checkPickup();
   this.checkDoorAlignment(delta);
-  this.updateFeedback(delta);
+
   this.updateConfetti(delta);
   this.updateSparkBursts(delta);
 
-
   this.drawDoors(ctx);
   this.drawNumber(ctx);
+  this.drawMascot(ctx);
   this.drawScore(ctx);
-  this.drawFeedback(ctx);
   this.drawConfetti(ctx);
   this.drawSparkBursts(ctx);
-  this.drawFingerIndicator(ctx);
-
-  ctx.restore();
 },
 
   updateFingerPosition() {
@@ -172,83 +197,56 @@ shakeIntensity: 0,
 
   checkDoorAlignment(delta) {
 
-    if (this.fingerX === null ||
-        this.fingerY === null) {
-      this.resetHold();
-      return;
+  if (this.gameState !== "deliver") return;
+
+  let alignedIndex = null;
+
+  for (let i = 0; i < this.doors.length; i++) {
+
+    const door = this.doors[i];
+    const dx = this.mascot.x - door.x;
+    const dy = this.mascot.y - door.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+
+    if (distance <= this.doorRadius) {
+      alignedIndex = i;
+      break;
     }
+  }
 
-    let alignedIndex = null;
+  if (alignedIndex !== null) {
 
-    for (let i = 0; i < this.doors.length; i++) {
-
-      const door = this.doors[i];
-      const dx = this.fingerX - door.x;
-      const dy = this.fingerY - door.y;
-      const distance = Math.sqrt(dx * dx + dy * dy);
-
-      if (distance <= this.doorRadius) {
-        alignedIndex = i;
-        break;
-      }
-    }
-
-    if (alignedIndex !== null) {
-
-      if (this.activeDoorIndex !== alignedIndex) {
-        this.holdProgress = 0;
-        this.activeDoorIndex = alignedIndex;
-        this.doorLocked = false;
-      }
-
-      if (!this.doorLocked) {
-        this.holdProgress += delta;
-
-        if (this.holdProgress >= this.holdDuration) {
-          this.confirmSelection(alignedIndex);
-          this.doorLocked = true;
-        }
-      }
-
-    } else {
-      this.resetHold();
-    }
-  },
+    this.confirmSelection(alignedIndex);
+  }
+},
 
 confirmSelection(index) {
 
   const door = this.doors[index];
 
-  this.flashDoorIndex = index;
-  this.flashTimer = 400;
-
   if (door.suffix === this.correctSuffix) {
 
-  this.score += 10;
+    this.score += 10;
 
-  this.feedbackText = "Correct!";
-  this.feedbackColor = "#00FF88";
-  this.feedbackTimer = 1000;
+    this.mascotState = "happy";
+    this.spawnConfetti(door.x, door.y);
+    this.spawnSparkBurst(door.x, door.y);
 
-  this.spawnConfetti(door.x, door.y);
-  this.spawnSparkBurst(door.x, door.y);
-} else {
+  } else {
 
     this.score -= 5;
 
-    this.feedbackText = "Try Again!";
-    this.feedbackColor = "#FF4444";
-    this.feedbackTimer = 1000;
-
-    // Screen shake (already supported in your base)
+    this.mascotState = "confused";
     this.shakeDuration = 400;
     this.shakeIntensity = 12;
   }
 
   setTimeout(() => {
+
+    this.mascotState = "idle";
     this.spawnNumber();
-    this.resetHold();
-  }, 700);
+
+  }, 1200);
 },
   updateFeedback(delta) {
 
@@ -269,16 +267,18 @@ confirmSelection(index) {
 
   drawNumber(ctx) {
 
-    ctx.fillStyle = "#00FF88";
-    ctx.font = `bold ${70 * this.scale}px Arial`;
-    ctx.textAlign = "center";
+  if (this.numberPosition.picked) return;
 
-    ctx.fillText(
-      this.currentNumber,
-      this.CENTER_X,
-      this.CENTER_Y - 120 * this.scale
-    );
-  },
+  ctx.fillStyle = "#00FF88";
+  ctx.font = `bold ${70 * this.scale}px Arial`;
+  ctx.textAlign = "center";
+
+  ctx.fillText(
+    this.currentNumber,
+    this.numberPosition.x,
+    this.numberPosition.y
+  );
+},
 
     drawDoors(ctx) {
 
@@ -543,5 +543,116 @@ resetHold() {
   this.holdProgress = 0;
   this.activeDoorIndex = null;
   this.doorLocked = false;
+},
+
+loadMascotSprites() {
+
+  // IDLE 00_MID-I to 04_MID-I
+  for (let i = 0; i <= 4; i++) {
+    const img = new Image();
+    img.src = `MID-I/0${i}_MID-I.png`;
+    this.mascotImages.idle.push(img);
+  }
+
+  // HAPPY 00_MID-H to 03_MID-H
+  for (let i = 0; i <= 3; i++) {
+    const img = new Image();
+    img.src = `MID-H/0${i}_MID-H.png`;
+    this.mascotImages.happy.push(img);
+  }
+
+  // CONFUSED 00_MID-C to 02_MID-C
+  for (let i = 0; i <= 2; i++) {
+    const img = new Image();
+    img.src = `MID-C/0${i}_MID-C.png`;
+    this.mascotImages.confused.push(img);
+  }
+},
+
+
+updateMascot(delta) {
+
+  if (this.fingerX === null || this.fingerY === null) return;
+
+  const dx = this.fingerX - this.mascot.x;
+  const dy = this.fingerY - this.mascot.y;
+
+  const distance = Math.sqrt(dx * dx + dy * dy);
+
+  if (distance > 5) {
+
+    const force = Math.min(distance * this.mascot.speed, this.mascot.maxSpeed);
+
+    this.mascot.vx = (dx / distance) * force;
+    this.mascot.vy = (dy / distance) * force;
+
+  } else {
+    this.mascot.vx *= 0.9;
+    this.mascot.vy *= 0.9;
+  }
+
+  this.mascot.x += this.mascot.vx;
+  this.mascot.y += this.mascot.vy;
+
+  // Clamp to screen
+  this.mascot.x = Math.max(80, Math.min(this.cssWidth - 80, this.mascot.x));
+  this.mascot.y = Math.max(80, Math.min(this.cssHeight - 80, this.mascot.y));
+},
+
+checkPickup() {
+
+  if (this.gameState !== "pickup") return;
+
+  const dx = this.mascot.x - this.numberPosition.x;
+  const dy = this.mascot.y - this.numberPosition.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist < 80 * this.scale) {
+
+    this.numberPosition.picked = true;
+    this.mascot.carryingNumber = true;
+    this.gameState = "deliver";
+  }
+},
+
+drawMascot(ctx) {
+
+  let spriteArray = this.mascotImages[this.mascotState];
+  if (!spriteArray || spriteArray.length === 0) return;
+
+  this.mascotFrameTimer += 16;
+
+  if (this.mascotFrameTimer > this.mascotFrameSpeed) {
+    this.mascotFrame++;
+    this.mascotFrameTimer = 0;
+  }
+
+  if (this.mascotFrame >= spriteArray.length) {
+    this.mascotFrame = 0;
+  }
+
+  const img = spriteArray[this.mascotFrame];
+
+  ctx.drawImage(
+    img,
+    this.mascot.x - (this.mascot.size * this.scale) / 2,
+    this.mascot.y - (this.mascot.size * this.scale) / 2,
+    this.mascot.size * this.scale,
+    this.mascot.size * this.scale
+  );
+
+  // Draw carried number
+  if (this.mascot.carryingNumber) {
+
+    ctx.fillStyle = "#00FFAA";
+    ctx.font = `bold ${40 * this.scale}px Arial`;
+    ctx.textAlign = "center";
+
+    ctx.fillText(
+      this.currentNumber,
+      this.mascot.x,
+      this.mascot.y - 60 * this.scale
+    );
+  }
 },
 };
