@@ -107,7 +107,7 @@ window.startGame = function (gameName) {
     Game7.init();
   }
 
-  if (gameName === "Game8") {
+   if (gameName === "Game8") {
     window.currentGame = Game8;
     Game8.init();
   }
