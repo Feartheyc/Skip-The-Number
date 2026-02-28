@@ -538,4 +538,10 @@ drawSparkBursts(ctx) {
 
   ctx.globalAlpha = 1;
 },
+
+resetHold() {
+  this.holdProgress = 0;
+  this.activeDoorIndex = null;
+  this.doorLocked = false;
+},
 };
