@@ -96,6 +96,31 @@ ordinalMap: {
   "th": "4th"
 },
 
+
+
+/* ===== FLOATING NUMBER SYSTEM ===== */
+
+floatTime: 0,
+floatAmplitude: 20,
+floatSpeed: 0.002,
+
+numberRotation: 0,
+rotationSpeed: 0.0015,
+
+numberScalePulse: 0,
+pulseSpeed: 0.003,
+
+
+/* ===== STARFIELD SYSTEM ===== */
+
+starsFar: [],
+starsMid: [],
+starsNear: [],
+
+starCountFar: 80,
+starCountMid: 50,
+starCountNear: 30,
+
 init() {
 
   this.resize();
@@ -106,7 +131,9 @@ init() {
   this.lastTime = performance.now();
 
   this.loadMascotSprites();
-  this.loadPortalSprites();   // NEW
+  this.loadPortalSprites();
+  this.initStarfield();      // NEW
+
   this.setupDoors();
   this.spawnNumber();
 
@@ -189,16 +216,29 @@ init() {
 
   ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
 
+  // 🌌 STARFIELD UPDATE
+  this.updateStarLayer(this.starsFar, delta);
+  this.updateStarLayer(this.starsMid, delta);
+  this.updateStarLayer(this.starsNear, delta);
+
+  // 🎮 GAME LOGIC
   this.updateFingerPosition();
   this.updateMascot(delta);
   this.checkPickup();
   this.checkDoorAlignment(delta);
 
-  this.updatePortalAnimation(delta);   // NEW
+  this.updateFloatingNumber(delta);
+  this.updatePortalAnimation(delta);
 
   this.updateConfetti(delta);
   this.updateSparkBursts(delta);
 
+  // 🌌 DRAW BACKGROUND FIRST
+  this.drawStarLayer(ctx, this.starsFar);
+  this.drawStarLayer(ctx, this.starsMid);
+  this.drawStarLayer(ctx, this.starsNear);
+
+  // 🎮 DRAW GAME
   this.drawDoors(ctx);
   this.drawNumber(ctx);
   this.drawMascot(ctx);
@@ -295,15 +335,31 @@ confirmSelection(index) {
 
   if (this.numberPosition.picked) return;
 
-  ctx.fillStyle = "#00FF88";
-  ctx.font = `bold ${70 * this.scale}px Arial`;
-  ctx.textAlign = "center";
+  const baseX = this.numberPosition.x;
+  const baseY = this.numberPosition.y;
 
-  ctx.fillText(
-    this.currentNumber,
-    this.numberPosition.x,
-    this.numberPosition.y
-  );
+  const floatOffset = Math.sin(this.floatTime * this.floatSpeed) * this.floatAmplitude * this.scale;
+
+  const scalePulse = 1 + Math.sin(this.numberScalePulse) * 0.1;
+
+  ctx.save();
+
+  ctx.translate(baseX, baseY + floatOffset);
+  ctx.rotate(Math.sin(this.numberRotation) * 0.2);
+  ctx.scale(scalePulse, scalePulse);
+
+  // Glow effect
+  ctx.shadowColor = "#00FFFF";
+  ctx.shadowBlur = 30;
+
+  ctx.fillStyle = "#00FFAA";
+  ctx.font = `bold ${80 * this.scale}px Arial`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.fillText(this.currentNumber, 0, 0);
+
+  ctx.restore();
 },
 
     drawDoors(ctx) {
@@ -678,6 +734,69 @@ updatePortalAnimation(delta) {
     if (this.portalFrameIndex >= this.portalFrames.length) {
       this.portalFrameIndex = 0;
     }
+  }
+},
+
+updateFloatingNumber(delta) {
+
+  if (this.numberPosition.picked) return;
+
+  this.floatTime += delta;
+  this.numberRotation += delta * this.rotationSpeed;
+  this.numberScalePulse += delta * this.pulseSpeed;
+},
+
+
+initStarfield() {
+
+  this.starsFar = [];
+  this.starsMid = [];
+  this.starsNear = [];
+
+  for (let i = 0; i < this.starCountFar; i++) {
+    this.starsFar.push(this.createStar(0.2));
+  }
+
+  for (let i = 0; i < this.starCountMid; i++) {
+    this.starsMid.push(this.createStar(0.5));
+  }
+
+  for (let i = 0; i < this.starCountNear; i++) {
+    this.starsNear.push(this.createStar(1));
+  }
+},
+
+createStar(speedFactor) {
+
+  return {
+    x: Math.random() * this.cssWidth,
+    y: Math.random() * this.cssHeight,
+    size: Math.random() * 3 + 1,
+    speed: speedFactor
+  };
+},
+
+updateStarLayer(layer, delta) {
+
+  for (let star of layer) {
+
+    star.y += star.speed * delta * 0.02;
+
+    if (star.y > this.cssHeight) {
+      star.y = 0;
+      star.x = Math.random() * this.cssWidth;
+    }
+  }
+},
+
+drawStarLayer(ctx, layer) {
+
+  for (let star of layer) {
+
+    ctx.beginPath();
+    ctx.arc(star.x, star.y, star.size * this.scale, 0, Math.PI * 2);
+    ctx.fillStyle = "white";
+    ctx.fill();
   }
 },
 };
