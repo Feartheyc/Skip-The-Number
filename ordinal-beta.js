@@ -1,4 +1,4 @@
-const Game8 = {
+const Game9 = {
 
   BASE_WIDTH: 1280,
   BASE_HEIGHT: 720,
