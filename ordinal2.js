@@ -3,26 +3,26 @@ const Game10 = {
   BASE_HEIGHT: 720,
   scale: 1,
 
-  // Game Constants
   COLUMN_COUNT: 5,
-  TIME_LIMIT: 5000, // 5 seconds to move
-  RESET_REQUIRED: true, // Must return to center between rounds
+  TIME_LIMIT: 5000,
+  RESET_REQUIRED: true,
 
-  // State
   currentNumber: 0,
   correctSuffix: "",
-  suffixMap: ["st", "nd", "rd", "th"],
-  
-  playerColumn: 2, // Start in center
+  playerColumn: 2,
   targetColumn: -1,
   
   timer: 0,
   score: 0,
-  gameState: "WAITING", // WAITING, MOVING, FEEDBACK, RETURN
+  gameState: "WAITING",
   
   feedbackText: "",
   feedbackColor: "white",
   feedbackTimer: 0,
+
+  // NEW: Debugging and Tracking state
+  debugPoints: [],
+  bodyCenterX: 0,
 
   lastTime: performance.now(),
   running: false,
@@ -48,11 +48,10 @@ const Game10 = {
   },
 
   startNewRound() {
-    const num = Math.floor(Math.random() * 20) + 1;
+    const num = Math.floor(Math.random() * 30) + 1;
     this.currentNumber = num;
     this.correctSuffix = this.getSuffix(num);
     
-    // Map suffix to a specific column (0:ST, 1:ND, 3:RD, 4:TH) - skip 2 (center)
     const suffixIndices = { "st": 0, "nd": 1, "rd": 3, "th": 4 };
     this.targetColumn = suffixIndices[this.correctSuffix];
     
@@ -77,31 +76,39 @@ const Game10 = {
 
     this.processPose();
     this.updateLogic(delta);
-
     this.draw(ctx);
   },
 
   processPose() {
-    // MediaPipe landmarks: 11(L shoulder), 12(R shoulder), 25(L knee), 26(R knee)
     if (!window.currentPoseLandmarks) return;
 
-    const indices = [11, 12, 25, 26];
+    const indices = [11, 12, 25, 26]; // Shoulder L/R, Knee L/R
     let avgX = 0;
     let count = 0;
+    this.debugPoints = [];
+
+    const cssW = canvasElement.width / (window.devicePixelRatio || 1);
+    const cssH = canvasElement.height / (window.devicePixelRatio || 1);
 
     indices.forEach(idx => {
       const landmark = window.currentPoseLandmarks[idx];
+      // Check visibility/confidence score
       if (landmark && landmark.visibility > 0.5) {
-        avgX += landmark.x; // Normalized 0 to 1
+        // Map normalized 0-1 to actual CSS pixels for drawing
+        const x = landmark.x * cssW;
+        const y = landmark.y * cssH;
+        
+        this.debugPoints.push({ x, y });
+        avgX += landmark.x;
         count++;
       }
     });
 
     if (count > 0) {
       const finalX = avgX / count;
-      // Determine column (0 to 4)
+      this.bodyCenterX = finalX * cssW; // Real-time center line position
+      
       this.playerColumn = Math.floor(finalX * this.COLUMN_COUNT);
-      // Clamp values
       this.playerColumn = Math.max(0, Math.min(4, this.playerColumn));
     }
   },
@@ -112,8 +119,6 @@ const Game10 = {
     switch (this.gameState) {
       case "MOVING":
         this.timer -= delta;
-        
-        // Success check: If they are in the right column
         if (this.playerColumn === this.targetColumn) {
           this.triggerFeedback(true);
         } else if (this.timer <= 0) {
@@ -122,7 +127,6 @@ const Game10 = {
         break;
 
       case "RETURN":
-        // Wait for player to go back to column 2 (center)
         if (this.playerColumn === 2) {
           this.startNewRound();
         }
@@ -133,14 +137,14 @@ const Game10 = {
   triggerFeedback(isCorrect) {
     if (isCorrect) {
       this.score += 10;
-      this.feedbackText = "EXCELLENT!";
+      this.feedbackText = "CORRECT!";
       this.feedbackColor = "#00FF88";
     } else {
       this.score -= 5;
-      this.feedbackText = "TOO SLOW!";
+      this.feedbackText = "MISS!";
       this.feedbackColor = "#FF4444";
     }
-    this.feedbackTimer = 1500;
+    this.feedbackTimer = 1000;
     this.gameState = "RETURN";
   },
 
@@ -151,58 +155,74 @@ const Game10 = {
 
     const colWidth = w / this.COLUMN_COUNT;
 
-    // Draw Columns
+    // 1. Draw Columns
     for (let i = 0; i < this.COLUMN_COUNT; i++) {
-      // Highlight current player position
       if (i === this.playerColumn) {
-        ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
+        ctx.fillStyle = "rgba(0, 255, 255, 0.1)";
         ctx.fillRect(i * colWidth, 0, colWidth, h);
       }
-
-      // Draw Column Borders
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
       ctx.strokeRect(i * colWidth, 0, colWidth, h);
 
-      // Draw Suffix labels for columns
-      ctx.fillStyle = "white";
-      ctx.font = `bold ${30 * this.scale}px Arial`;
+      ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+      ctx.font = `bold ${24 * this.scale}px Arial`;
       ctx.textAlign = "center";
-      let label = "";
-      if (i === 0) label = "ST";
-      if (i === 1) label = "ND";
-      if (i === 2) label = "PRIME";
-      if (i === 3) label = "RD";
-      if (i === 4) label = "TH";
-      ctx.fillText(label, i * colWidth + colWidth/2, h - 50 * this.scale);
+      const labels = ["ST", "ND", "PRIME", "RD", "TH"];
+      ctx.fillText(labels[i], i * colWidth + colWidth/2, h - 30 * this.scale);
     }
 
-    // Draw Main Number
-    ctx.fillStyle = "#00FFFF";
-    ctx.font = `bold ${120 * this.scale}px Arial`;
-    ctx.fillText(this.currentNumber, w / 2, h / 2 - 50 * this.scale);
+    // 2. Draw Body Tracking Markers
+    this.debugPoints.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 10 * this.scale, 0, Math.PI * 2);
+      ctx.fillStyle = "#FF00FF"; // Bright magenta dots
+      ctx.fill();
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
 
-    // Draw Instruction / State
-    ctx.font = `italic ${40 * this.scale}px Arial`;
+    // Vertical indicator for the average center
+    if (this.debugPoints.length > 0) {
+      ctx.beginPath();
+      ctx.setLineDash([10, 5]);
+      ctx.moveTo(this.bodyCenterX, 0);
+      ctx.lineTo(this.bodyCenterX, h);
+      ctx.strokeStyle = "yellow";
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // 3. Draw Game UI
     ctx.fillStyle = "white";
+    ctx.textAlign = "center";
+    ctx.font = `bold ${100 * this.scale}px Arial`;
+    ctx.fillText(this.currentNumber, w / 2, h / 2);
+
+    ctx.font = `italic ${30 * this.scale}px Arial`;
     if (this.gameState === "MOVING") {
-      ctx.fillText(`Move to the ${this.correctSuffix} zone!`, w / 2, h / 2 + 50 * this.scale);
-      // Progress bar for timer
+      ctx.fillText(`Move to ${this.correctSuffix.toUpperCase()}`, w / 2, h / 2 + 60 * this.scale);
+      // Timer Bar
       ctx.fillStyle = "orange";
-      ctx.fillRect(0, 0, w * (this.timer / this.TIME_LIMIT), 10 * this.scale);
+      ctx.fillRect(0, 0, w * (this.timer / this.TIME_LIMIT), 8 * this.scale);
     } else if (this.gameState === "RETURN") {
-      ctx.fillText("Return to center (PRIME)", w / 2, h / 2 + 50 * this.scale);
+      ctx.fillStyle = "#FFDD00";
+      ctx.fillText("Go back to center!", w / 2, h / 2 + 60 * this.scale);
     }
 
-    // Draw Feedback
+    // Feedback Text
     if (this.feedbackTimer > 0) {
+      ctx.globalAlpha = this.feedbackTimer / 1000;
       ctx.fillStyle = this.feedbackColor;
       ctx.font = `bold ${80 * this.scale}px Arial`;
-      ctx.fillText(this.feedbackText, w/2, h/2 - 150 * this.scale);
+      ctx.fillText(this.feedbackText, w / 2, h / 2 - 120 * this.scale);
+      ctx.globalAlpha = 1.0;
     }
 
-    // Draw Score
+    // Score
+    ctx.textAlign = "left";
     ctx.fillStyle = "white";
-    ctx.font = `bold ${30 * this.scale}px Arial`;
-    ctx.fillText("SCORE: " + this.score, 100 * this.scale, 50 * this.scale);
+    ctx.font = `bold ${24 * this.scale}px Arial`;
+    ctx.fillText("Score: " + this.score, 20, 40);
   }
 };
