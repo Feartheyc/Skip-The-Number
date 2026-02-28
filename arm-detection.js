@@ -54,13 +54,25 @@ window.sendFrameToPose = async function (video) {
 /* =========================================
    PROCESS RESULTS
 ========================================= */
+/* =========================================
+   PROCESS RESULTS
+========================================= */
 function onPoseResults(results) {
 
-  if (!results.poseLandmarks) return;
+  if (!results.poseLandmarks) {
+    // Optional: Clear global data if no one is in frame
+    window.currentPoseLandmarks = null;
+    return;
+  }
+
+  // ⭐ THE CRITICAL ADDITION ⭐
+  // This line allows Game10 to see the raw data (Nose, Shoulders, etc.)
+  window.currentPoseLandmarks = results.poseLandmarks;
 
   const lm = results.poseLandmarks;
 
-  const width = 640;
+  // Keep your existing width/height logic for other games that use window.armData
+  const width = 640; 
   const height = 480;
 
   function convert(p) {
