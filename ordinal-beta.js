@@ -141,6 +141,10 @@ shootingStars: [],
 shootingStarSpawnTimer: 0,
 shootingStarSpawnInterval: 2000, // average spawn time (ms)
 
+/* ===== SHOOTING STAR BURST SYSTEM ===== */
+
+shootingStarBursts: [],
+
 init() {
 
   this.resize();
@@ -255,6 +259,9 @@ init() {
   // 🌠 SHOOTING STARS
   this.updateShootingStars(delta);
   this.drawShootingStars(ctx);
+
+    this.updateStarBursts(delta);
+  this.drawStarBursts(ctx);
 
   // 🎮 GAME LOGIC
   this.updateFingerPosition();
@@ -939,7 +946,6 @@ updateShootingStars(delta) {
     this.createShootingStar();
     this.shootingStarSpawnTimer = 0;
 
-    // Randomize next spawn slightly
     this.shootingStarSpawnInterval = 1500 + Math.random() * 3000;
   }
 
@@ -954,6 +960,10 @@ updateShootingStars(delta) {
     star.opacity = 1 - (star.life / star.maxLife);
 
     if (star.life > star.maxLife) {
+
+      // 🌟 CREATE BURST AT END
+      this.createStarBurst(star.x, star.y);
+
       this.shootingStars.splice(i, 1);
     }
   }
@@ -983,6 +993,58 @@ drawShootingStars(ctx) {
       star.y - star.speedY * star.length * 0.05
     );
     ctx.stroke();
+  }
+},
+
+createStarBurst(x, y) {
+
+  const particleCount = 15;
+
+  for (let i = 0; i < particleCount; i++) {
+
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random() * 3 + 2;
+
+    this.shootingStarBursts.push({
+      x: x,
+      y: y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: 0,
+      maxLife: 600,
+      size: Math.random() * 3 + 1
+    });
+  }
+},
+
+updateStarBursts(delta) {
+
+  for (let i = this.shootingStarBursts.length - 1; i >= 0; i--) {
+
+    const p = this.shootingStarBursts[i];
+
+    p.x += p.vx;
+    p.y += p.vy;
+
+    p.life += delta;
+
+    if (p.life > p.maxLife) {
+      this.shootingStarBursts.splice(i, 1);
+    }
+  }
+},
+
+drawStarBursts(ctx) {
+
+  for (let p of this.shootingStarBursts) {
+
+    const opacity = 1 - (p.life / p.maxLife);
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * this.scale, 0, Math.PI * 2);
+
+    ctx.fillStyle = `rgba(255, 255, 200, ${opacity})`;
+    ctx.fill();
   }
 },
 };
