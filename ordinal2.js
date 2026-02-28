@@ -20,10 +20,14 @@ const Game10 = {
   feedbackColor: "white",
   feedbackTimer: 0,
 
-  // Tracking State
-  bodyPoints: [], // For the pink dots
+  // Tracking & Effects State
+  bodyPoints: [],
   bodyCenterX: null,
-  systemStatus: "SCANNING...",
+  shakeDuration: 0,
+  shakeIntensity: 0,
+  sparks: [],
+
+  systemStatus: "SCANNING UPPER BODY...",
   lastTime: performance.now(),
   running: false,
 
@@ -33,6 +37,7 @@ const Game10 = {
     this.score = 0;
     this.running = true;
     this.lastTime = performance.now();
+    this.sparks = [];
     this.startNewRound();
   },
 
@@ -48,11 +53,10 @@ const Game10 = {
   },
 
   startNewRound() {
-    const num = Math.floor(Math.random() * 50) + 1;
+    const num = Math.floor(Math.random() * 60) + 1;
     this.currentNumber = num;
     this.correctSuffix = this.getSuffix(num);
     
-    // Column Map: 0:ST, 1:ND, 3:RD, 4:TH (Center 2 is PRIME)
     const suffixIndices = { "st": 0, "nd": 1, "rd": 3, "th": 4 };
     this.targetColumn = suffixIndices[this.correctSuffix];
     
@@ -72,26 +76,37 @@ const Game10 = {
   update(ctx) {
     if (!this.running) return;
     const now = performance.now();
-    const delta = (now - this.lastTime);
+    const delta = now - this.lastTime;
     this.lastTime = now;
 
-    this.processFullBody();
+    this.processUpperBody();
     this.updateLogic(delta);
+    this.updateEffects(delta);
+
+    // Apply Screen Shake
+    let sx = 0, sy = 0;
+    if (this.shakeDuration > 0) {
+      sx = (Math.random() - 0.5) * this.shakeIntensity;
+      sy = (Math.random() - 0.5) * this.shakeIntensity;
+      this.shakeDuration -= delta;
+    }
+
+    ctx.save();
+    ctx.translate(sx, sy);
     this.draw(ctx);
+    ctx.restore();
   },
 
-  processFullBody() {
-    // Check all possible MediaPipe sources
+  processUpperBody() {
     const landmarks = window.currentPoseLandmarks || window.poseLandmarks;
-
     if (!landmarks) {
-      this.systemStatus = "SIGNAL LOST: NO BODY DETECTED";
+      this.systemStatus = "SIGNAL LOST: NO BODY";
       this.bodyCenterX = null;
-      this.bodyPoints = [];
       return;
     }
 
-    const indices = [11, 12, 25, 26]; // Shoulders and Knees
+    // Use Nose (0) and Shoulders (11, 12) for reliable laptop tracking
+    const indices = [0, 11, 12]; 
     let sumX = 0;
     let count = 0;
     this.bodyPoints = [];
@@ -101,9 +116,7 @@ const Game10 = {
 
     indices.forEach(idx => {
       const lm = landmarks[idx];
-      // Laptop visibility can be low; threshold at 0.4
-      if (lm && lm.visibility > 0.4) {
-        // Mirror the X so stepping left moves left on screen
+      if (lm && lm.visibility > 0.5) {
         const mirroredX = 1 - lm.x;
         this.bodyPoints.push({ x: mirroredX * cssW, y: lm.y * cssH });
         sumX += mirroredX;
@@ -112,15 +125,11 @@ const Game10 = {
     });
 
     if (count > 0) {
-      this.systemStatus = count === 4 ? "FULL BODY TRACKING" : "PARTIAL TRACKING";
+      this.systemStatus = "UPPER BODY ACTIVE";
       const avgX = sumX / count;
       this.bodyCenterX = avgX * cssW;
-
-      // Update the active column based on body center
       this.playerColumn = Math.floor(avgX * this.COLUMN_COUNT);
       this.playerColumn = Math.max(0, Math.min(4, this.playerColumn));
-    } else {
-      this.systemStatus = "STAND BACK: NEED SHOULDERS & KNEES";
     }
   },
 
@@ -137,25 +146,45 @@ const Game10 = {
         }
         break;
       case "RETURN":
-        // Player must go back to PRIME center to start next round
-        if (this.playerColumn === 2) {
-          this.startNewRound();
-        }
+        if (this.playerColumn === 2) this.startNewRound();
         break;
+    }
+  },
+
+  updateEffects(delta) {
+    for (let i = this.sparks.length - 1; i >= 0; i--) {
+      const s = this.sparks[i];
+      s.x += s.vx;
+      s.y += s.vy;
+      s.life -= delta;
+      if (s.life <= 0) this.sparks.splice(i, 1);
     }
   },
 
   triggerFeedback(isCorrect) {
     if (isCorrect) {
       this.score += 10;
-      this.feedbackText = "PERFECT!";
+      this.feedbackText = "CORRECT!";
       this.feedbackColor = "#00FF88";
+      // Spawn Energy Sparks
+      for (let i = 0; i < 20; i++) {
+        this.sparks.push({
+          x: this.bodyCenterX,
+          y: canvasElement.height / (2 * (window.devicePixelRatio || 1)),
+          vx: (Math.random() - 0.5) * 15,
+          vy: (Math.random() - 0.5) * 15,
+          life: 800,
+          color: "#00FFFF"
+        });
+      }
     } else {
       this.score -= 5;
-      this.feedbackText = "OUT OF TIME!";
+      this.feedbackText = "MISS!";
       this.feedbackColor = "#FF4444";
+      this.shakeDuration = 300;
+      this.shakeIntensity = 15;
     }
-    this.feedbackTimer = 1200;
+    this.feedbackTimer = 1000;
     this.gameState = "RETURN";
   },
 
@@ -169,69 +198,69 @@ const Game10 = {
     // 1. Columns
     for (let i = 0; i < this.COLUMN_COUNT; i++) {
       if (i === this.playerColumn) {
-        ctx.fillStyle = "rgba(0, 255, 255, 0.15)";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
         ctx.fillRect(i * colWidth, 0, colWidth, h);
       }
       ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
       ctx.strokeRect(i * colWidth, 0, colWidth, h);
-      
       const labels = ["ST", "ND", "PRIME", "RD", "TH"];
       ctx.fillStyle = (i === this.targetColumn && this.gameState === "MOVING") ? "yellow" : "white";
       ctx.font = `bold ${24 * this.scale}px Arial`;
-      ctx.textAlign = "center";
       ctx.fillText(labels[i], i * colWidth + colWidth/2, h - 30);
     }
 
-    // 2. Full Body Visualization (Shoulders and Knees)
-    
+    // 2. Tracking Markers
     this.bodyPoints.forEach(p => {
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 12 * this.scale, 0, Math.PI * 2);
-      ctx.fillStyle = "#FF00FF";
+      ctx.arc(p.x, p.y, 10 * this.scale, 0, Math.PI * 2);
+      ctx.fillStyle = "#00FFFF";
       ctx.fill();
-      ctx.strokeStyle = "white";
-      ctx.stroke();
     });
 
-    if (this.bodyCenterX !== null) {
+    if (this.bodyCenterX) {
       ctx.beginPath();
       ctx.moveTo(this.bodyCenterX, 0);
       ctx.lineTo(this.bodyCenterX, h);
       ctx.strokeStyle = "yellow";
-      ctx.lineWidth = 3;
-      ctx.setLineDash([10, 5]);
       ctx.stroke();
-      ctx.setLineDash([]);
     }
 
-    // 3. Game HUD
+    // 3. Sparks Effect
+    this.sparks.forEach(s => {
+      ctx.globalAlpha = s.life / 800;
+      ctx.fillStyle = s.color;
+      ctx.fillRect(s.x, s.y, 4, 4);
+    });
+    ctx.globalAlpha = 1;
+
+    // 4. UI
     ctx.textAlign = "center";
     ctx.fillStyle = "white";
     ctx.font = `bold ${110 * this.scale}px Arial`;
-    ctx.fillText(this.currentNumber, w/2, h/2);
+    ctx.fillText(this.currentNumber, w / 2, h / 2);
 
     ctx.font = `italic ${30 * this.scale}px Arial`;
     if (this.gameState === "MOVING") {
-      ctx.fillText(`Jump to the ${this.correctSuffix.toUpperCase()} zone!`, w/2, h/2 + 75);
+      ctx.fillText(`Lean to the ${this.correctSuffix.toUpperCase()} zone`, w / 2, h / 2 + 70);
       ctx.fillStyle = "orange";
-      ctx.fillRect(0, 0, w * (this.timer / this.TIME_LIMIT), 12);
+      ctx.fillRect(0, 0, w * (this.timer / this.TIME_LIMIT), 10);
     } else {
       ctx.fillStyle = "#00FFFF";
-      ctx.fillText("Return to PRIME center", w/2, h/2 + 75);
+      ctx.fillText("Back to center (PRIME)", w / 2, h / 2 + 70);
     }
 
     if (this.feedbackTimer > 0) {
       ctx.fillStyle = this.feedbackColor;
-      ctx.font = `bold ${85 * this.scale}px Arial`;
-      ctx.fillText(this.feedbackText, w/2, h/2 - 130);
+      ctx.font = `bold ${90 * this.scale}px Arial`;
+      ctx.fillText(this.feedbackText, w/2, h/2 - 140);
     }
 
-    // 4. Status Bar
+    // HUD
     ctx.textAlign = "left";
     ctx.font = "14px monospace";
-    ctx.fillStyle = this.systemStatus.includes("LOST") ? "red" : "#00FF88";
-    ctx.fillText(this.systemStatus, 20, 35);
+    ctx.fillStyle = "#00FF88";
+    ctx.fillText(`STATUS: ${this.systemStatus}`, 20, 30);
     ctx.fillStyle = "white";
-    ctx.fillText(`SCORE: ${this.score}`, 20, 60);
+    ctx.fillText(`SCORE: ${this.score}`, 20, 55);
   }
 };
