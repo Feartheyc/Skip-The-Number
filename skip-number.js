@@ -71,7 +71,10 @@ const Game1 = {
 
   previewCannons: [],
   previewTimer: 0,
-  previewDuration: 0.6, // seconds (tweak if needed)
+  previewDuration: 0.6, 
+
+  missQueue: [],
+  
   /* ============================== */
   init() {
     const rect = document
@@ -576,46 +579,52 @@ drawFinger(ctx, x, y) {
 
   /* ============================== */
   drawHitText(ctx) {
-    if (this.hitTextTimer > 0) {
-      const totalTime = 40;
 
-      const progress =
-        this.hitTextTimer /
-        totalTime;
+  // If no current message, pull next from queue
+  if (this.hitTextTimer <= 0 && this.missQueue.length > 0) {
 
-      const alpha =
-        Math.sin(progress * Math.PI);
+    // Always show smallest number first
+    this.missQueue.sort((a, b) => a - b);
 
-      ctx.save();
+    const nextMiss = this.missQueue.shift();
 
-      ctx.globalAlpha = alpha;
+    this.lastHitType = "YOU SKIPPED NUMBER " + nextMiss;
+    this.hitTextTimer = 40;
+  }
 
-      let color = "#FFFFFF";
+  if (this.hitTextTimer > 0) {
 
-      if (this.lastHitType === "CORRECT")
-        color = "#00FF66";
-      else if (this.lastHitType === "WRONG")
-        color = "#FF3333";
-      else if (
-        this.lastHitType.includes("SKIPPED")
-      )
-        color = "#FFAA00";
+    const totalTime = 40;
+    const progress = this.hitTextTimer / totalTime;
+    const alpha = Math.sin(progress * Math.PI);
 
-      ctx.fillStyle = color;
-      ctx.font = "bold 36px Arial";
-      ctx.textAlign = "center";
+    ctx.save();
+    ctx.globalAlpha = alpha;
 
-      ctx.fillText(
-        this.lastHitType,
-        this.centerX,
-        this.centerY - 120
-      );
+    let color = "#FFFFFF";
 
-      ctx.restore();
+    if (this.lastHitType === "CORRECT")
+      color = "#00FF66";
+    else if (this.lastHitType === "WRONG")
+      color = "#FF3333";
+    else if (this.lastHitType.includes("SKIPPED"))
+      color = "#FFAA00";
 
-      this.hitTextTimer--;
-    }
-  },
+    ctx.fillStyle = color;
+    ctx.font = "bold 36px Arial";
+    ctx.textAlign = "center";
+
+    ctx.fillText(
+      this.lastHitType,
+      this.centerX,
+      this.centerY - 120
+    );
+
+    ctx.restore();
+
+    this.hitTextTimer--;
+  }
+},
 
   /* ============================== */
   spawnCannonNote() {
@@ -684,10 +693,7 @@ updateCannonNotes(ctx, dt) {
         this.combo = 0;
         this.multiplier = 1;
 
-        this.lastHitType =
-          "YOU SKIPPED NUMBER " + note.value;
-
-        this.hitTextTimer = 40;
+        this.missQueue.push(note.value);
 
         this.createExplosion(
           note.x,
@@ -1210,23 +1216,10 @@ spawnTripleNote() {
   const angle = Math.random() * Math.PI * 2;
   const speed = this.baseOuterRadius * 0.9;
 
-  const values = [];
-
-  for (let i = 0; i < this.tripleCount; i++) {
-
-    values.push(this.currentNumber);
-
-    this.currentNumber++;
-
-    if (this.currentNumber > this.maxNumber)
-      this.currentNumber = 1;
-  }
-
-  this.pendingShot = {
-    angle,
-    speed,
-    values   // array of numbers
-  };
+ this.pendingShot = {
+  angle,
+  speed
+};
 
   this.tripleTargetAngle = angle + Math.PI / 2;
 
@@ -1360,27 +1353,32 @@ executeTripleShot() {
 
   for (const i of this.previewCannons) {
 
-    const cannon = this.tripleCannons[i];
+  const cannon = this.tripleCannons[i];
 
-    const angle =
-      this.tripleBaseAngle +
-      cannon.offset -
-      Math.PI / 2;
+  const angle =
+    this.tripleBaseAngle +
+    cannon.offset -
+    Math.PI / 2;
 
-    const value = shot.values[i];
+  const value = this.currentNumber;
 
-    const note = {
-      x: this.centerX,
-      y: this.centerY,
-      radius: this.baseOuterRadius * 0.12,
-      value: value,
-      vx: Math.cos(angle) * speed,
-      vy: Math.sin(angle) * speed,
-      spawnProtected: true
-    };
+  this.currentNumber++;
 
-    this.notes.push(note);
-  }
+  if (this.currentNumber > this.maxNumber)
+    this.currentNumber = 1;
+
+  const note = {
+    x: this.centerX,
+    y: this.centerY,
+    radius: this.baseOuterRadius * 0.12,
+    value: value,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    spawnProtected: true
+  };
+
+  this.notes.push(note);
+}
 
   // Reset
   this.previewCannons = [];

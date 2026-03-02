@@ -1,0 +1,174 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: black;
+  overflow: hidden;
+  font-family: Arial, sans-serif;
+  touch-action: none;
+}
+
+#container {
+  position: relative;
+  background: black;
+  /* fill whatever space the viewport provides; avoids 100vh issues on mobile browsers */
+  width: 100%;
+  height: 100%;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+/* Camera */
+#input_video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scaleX(-1);
+  z-index: 0;
+}
+
+/* Canvas overlay */
+#game_canvas {
+  position: absolute; /* sit inside #container */
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: auto;
+  display: block;
+}
+
+/* ============================= */
+/* MENU */
+/* ============================= */
+
+#menu {
+  position: absolute;
+  inset: 0;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+
+  padding: 20px;
+
+  /* IMPORTANT FIXES */
+  gap: 10px;
+  max-height: 100vh;
+  overflow: hidden;
+
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 3;
+}
+
+#menu h1 {
+  color: white;
+  margin-bottom: 15px;
+  text-align: center;
+  font-size: clamp(1.4rem, 4vw, 2rem);
+}
+
+/* Buttons scale with screen height */
+#menu button {
+  width: 90%;
+  max-width: 400px;
+
+  padding: clamp(8px, 2vh, 14px);
+  font-size: clamp(0.8rem, 2.5vh, 1rem);
+
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+
+  background: #00CC99;
+  transition: 0.2s ease;
+}
+
+#menu button:hover {
+  background: #00FF99;
+  transform: scale(1.03);
+}
+
+/* ============================= */
+/* PAUSE BUTTON */
+/* ============================= */
+
+#pauseBtn {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  z-index: 5;
+
+  padding: 8px 12px;
+  font-size: 1rem;
+
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* ============================= */
+/* PAUSE OVERLAY */
+/* ============================= */
+
+#pauseOverlay {
+  position: absolute;
+  inset: 0;
+
+  display: none; /* show via JS */
+  justify-content: center;
+  align-items: center;
+
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 10;
+}
+
+.pauseBox {
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
+  text-align: center;
+  width: 90%;
+  max-width: 350px;
+}
+
+.pauseBox h2 {
+  margin-bottom: 15px;
+}
+
+.pauseBox button {
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  font-size: 0.9rem;
+
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+/* ============================= */
+/* SMALL SCREEN OPTIMIZATION */
+/* ============================= */
+
+@media (max-height: 600px) {
+
+  #menu {
+    gap: 6px;
+    padding: 15px;
+  }
+
+  #menu h1 {
+    margin-bottom: 10px;
+  }
+
+  #menu button {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
+}
