@@ -67,6 +67,11 @@ const Game1 = {
   tripleBaseAngle: 0,
   tripleTargetAngle: 0,
   tripleCount: 3,
+
+
+  previewCannons: [],
+  previewTimer: 0,
+  previewDuration: 0.6, // seconds (tweak if needed)
   /* ============================== */
   init() {
     const rect = document
