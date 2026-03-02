@@ -3,23 +3,17 @@ html, body {
   padding: 0;
   width: 100%;
   height: 100%;
-  background: black;
+  background: #1a0033;
   overflow: hidden;
   font-family: Arial, sans-serif;
-  touch-action: none;
 }
 
 #container {
   position: relative;
-  background: black;
-  /* fill whatever space the viewport provides; avoids 100vh issues on mobile browsers */
   width: 100%;
   height: 100%;
-  min-height: 100vh;
-  overflow: hidden;
 }
 
-/* Camera */
 #input_video {
   position: absolute;
   inset: 0;
@@ -28,147 +22,150 @@ html, body {
   object-fit: cover;
   transform: scaleX(-1);
   z-index: 0;
+  opacity: 0;
 }
 
-/* Canvas overlay */
 #game_canvas {
-  position: absolute; /* sit inside #container */
+  position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
   z-index: 1;
-  pointer-events: auto;
-  display: block;
 }
 
 /* ============================= */
-/* MENU */
+/* POPPY MAIN MENU GRID */
 /* ============================= */
 
 #menu {
   position: absolute;
   inset: 0;
-
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-
+  background: rgba(0, 0, 0, 0.85);
+  z-index: 10; /* Lower than pause button/overlay */
   padding: 20px;
-
-  /* IMPORTANT FIXES */
-  gap: 10px;
-  max-height: 100vh;
-  overflow: hidden;
-
-  background: rgba(0, 0, 0, 0.7);
-  z-index: 3;
 }
 
 #menu h1 {
-  color: white;
-  margin-bottom: 32px;
-  text-align: center;
-  font-size: clamp(1.4rem, 4vw, 2rem);
+  color: #ff00ff;
+  text-shadow: 0 0 10px #ff00ff;
+  font-size: clamp(2rem, 8vw, 3.5rem);
+  margin-bottom: 30px;
+  text-transform: uppercase;
 }
 
-/* Buttons scale with screen height */
+.game-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 15px;
+  width: 95%;
+  max-width: 1200px;
+  height: 60vh;
+}
+
 #menu button {
-  width: 90%;
-  max-width: 400px;
-
-  padding: clamp(8px, 2vh, 32px);
-  font-size: clamp(1rem, 2.5vh, 1.5rem);
-
-  border: black solid 4px;
-  border-radius: 32px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 20px;
   cursor: pointer;
-
-  background: #00CC99;
-  transition: 0.2s ease;
+  color: white;
+  font-weight: bold;
+  font-size: clamp(0.7rem, 2vh, 1rem);
+  transition: transform 0.2s;
+  box-shadow: 0 6px 0 rgba(0,0,0,0.3);
 }
 
-#menu button:hover {
-  background: #00FF99;
-  transform: scale(1.05);
+#menu button span {
+  font-size: clamp(1.5rem, 5vh, 3rem);
+  margin-bottom: 8px;
+}
+
+.tile-1, .tile-6 { background: #FF3D6E; } 
+.tile-2, .tile-7 { background: #00D2FF; } 
+.tile-3, .tile-8 { background: #FFD700; color: #333; } 
+.tile-4, .tile-9 { background: #A033FF; } 
+.tile-5, .tile-10 { background: #2DFF8E; color: #111; }
+
+#menu button:hover { transform: translateY(-5px) scale(1.02); }
+
+@media (max-width: 800px) {
+  .game-grid {
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(5, 1fr);
+    height: 75vh;
+  }
 }
 
 /* ============================= */
-/* PAUSE BUTTON */
+/* PAUSE UI - FIXED & RIGHT ALIGNED */
 /* ============================= */
 
 #pauseBtn {
   position: absolute;
   top: 15px;
-  right: 15px;
-  z-index: 5;
-
-  padding: 8px 12px;
-  font-size: 1rem;
-
+  right: 15px; /* Back to the right side */
+  z-index: 100;
+  width: 50px;
+  height: 50px;
+  background: #ff00ff;
+  color: white;
   border: none;
-  border-radius: 6px;
+  border-radius: 50%;
+  font-size: 1.2rem;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 0px #cc00cc;
 }
 
-/* ============================= */
-/* PAUSE OVERLAY */
-/* ============================= */
-
 #pauseOverlay {
-  position: absolute;
+  position: fixed; 
   inset: 0;
-
-  display: none; /* show via JS */
+  display: none; 
   justify-content: center;
   align-items: center;
-
-  background: rgba(0, 0, 0, 0.75);
-  z-index: 10;
+  background: rgba(0, 0, 0, 0.9);
+  z-index: 200;
 }
 
 .pauseBox {
   background: white;
-  padding: 20px;
-  border-radius: 10px;
+  padding: 30px;
+  border-radius: 20px;
   text-align: center;
-  width: 90%;
-  max-width: 350px;
+  width: 280px;
+  box-shadow: 0 0 30px rgba(255, 0, 255, 0.6);
 }
 
-.pauseBox h2 {
-  margin-bottom: 15px;
+.pauseBox h2 { 
+  color: #333; 
+  margin-bottom: 25px; 
+  font-size: 1.8rem;
 }
 
 .pauseBox button {
   width: 100%;
-  margin-top: 10px;
-  padding: 10px;
-  font-size: 0.9rem;
-
+  padding: 15px;
+  margin-top: 12px;
   border: none;
-  border-radius: 6px;
+  border-radius: 12px;
+  font-weight: bold;
+  font-size: 1rem;
   cursor: pointer;
+  background: #f0f0f0;
+  color: #333;
+  transition: background 0.2s;
 }
 
-/* ============================= */
-/* SMALL SCREEN OPTIMIZATION */
-/* ============================= */
-
-@media (max-height: 600px) {
-
-  #menu {
-    gap: 6px;
-    padding: 15px;
-  }
-
-  #menu h1 {
-    margin-bottom: 10px;
-  }
-
-  #menu button {
-    padding: 6px 10px;
-    font-size: 0.8rem;
-  }
+.pauseBox button:hover {
+  background: #e0e0e0;
 }
