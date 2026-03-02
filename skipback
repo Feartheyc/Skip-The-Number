@@ -354,7 +354,7 @@ const Game1 = {
 
       ctx.fillStyle =
         this.lastHitType === "CORRECT"
-          ? "#00FF66"
+          ? "#00FF66"z
           : "#FF3333";
 
       ctx.font = "bold 40px Arial";

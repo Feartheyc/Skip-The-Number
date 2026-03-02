@@ -1,221 +1,178 @@
-html, body {
+/* ============================= */
+/* GLOBAL RESET */
+/* ============================= */
+
+* {
   margin: 0;
   padding: 0;
+  box-sizing: border-box;
+}
+
+html, body {
   width: 100%;
   height: 100%;
-  background: black;
   overflow: hidden;
-  font-family: Arial, sans-serif;
-  touch-action: none;
+  font-family: Arial, Helvetica, sans-serif;
+  background: #000;
 }
+
+/* ============================= */
+/* MAIN CONTAINER */
+/* ============================= */
 
 #container {
   position: relative;
-  background: black;
-  /* fill whatever space the viewport provides; avoids 100vh issues on mobile browsers */
-  width: 100%;
-  height: 100%;
-  min-height: 100vh;
+  width: 100vw;
+  height: 100vh;
   overflow: hidden;
 }
 
-/* Camera */
-#input_video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  transform: scaleX(-1);
-  z-index: 0;
-}
+/* ============================= */
+/* VIDEO + CANVAS */
+/* ============================= */
 
-/* Canvas overlay */
+#input_video,
 #game_canvas {
-  position: absolute; /* sit inside #container */
+  position: absolute;
   top: 0;
   left: 0;
   width: 100%;
   height: 100%;
-  z-index: 1;
-  pointer-events: auto;
-  display: block;
+  object-fit: cover;
 }
 
+/* Put canvas above video */
+#game_canvas {
+  z-index: 2;
+}
+
+/* ============================= */
 /* MENU */
+/* ============================= */
+
 #menu {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.85);
+
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  color: white;
-  z-index: 10;
-  padding: 2rem;
-  text-align: center;
+
+  padding: 20px;
+
+  /* IMPORTANT FIXES */
+  gap: 10px;
+  max-height: 100vh;
+  overflow: hidden;
+
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 3;
 }
 
 #menu h1 {
-  margin-bottom: 2rem;
-  font-size: clamp(24px, 4vw, 60px);
+  color: white;
+  margin-bottom: 15px;
+  text-align: center;
+  font-size: clamp(1.4rem, 4vw, 2rem);
 }
 
+/* Buttons scale with screen height */
 #menu button {
-  padding: clamp(12px, 2vh, 22px) clamp(24px, 4vw, 48px);
-  margin: 1vh;
-  font-size: clamp(16px, 2.5vw, 28px);
-  min-width: 180px;
-  cursor: pointer;
+  width: 90%;
+  max-width: 400px;
+
+  padding: clamp(8px, 2vh, 14px);
+  font-size: clamp(0.8rem, 2.5vh, 1rem);
+
   border: none;
-  border-radius: 10px;
-  background-color: #00FFCC;
-  color: black;
-  font-weight: bold;
-  transition: transform 0.15s, background 0.15s;
+  border-radius: 8px;
+  cursor: pointer;
+
+  background: #00CC99;
+  transition: 0.2s ease;
 }
 
-#menu button:active {
-  background-color: #00CC99;
-  transform: scale(0.95);
+#menu button:hover {
+  background: #00FF99;
+  transform: scale(1.03);
 }
 
+/* ============================= */
+/* PAUSE BUTTON */
+/* ============================= */
 
 #pauseBtn {
   position: absolute;
-  top: 20px;
-  right: 20px;
-  z-index: 10;
-  font-size: 22px;
-  padding: 10px 16px;
-  border-radius: 10px;
+  top: 15px;
+  right: 15px;
+  z-index: 5;
+
+  padding: 8px 12px;
+  font-size: 1rem;
+
   border: none;
+  border-radius: 6px;
   cursor: pointer;
 }
 
-/* 1. The Overlay: Darkened slightly to put focus on the menu */
+/* ============================= */
+/* PAUSE OVERLAY */
+/* ============================= */
+
 #pauseOverlay {
   position: absolute;
   inset: 0;
-  display: none; /* Change to 'flex' in JS to show */
+
+  display: none; /* show via JS */
   justify-content: center;
   align-items: center;
 
-  backdrop-filter: blur(8px);
-  background: rgba(0, 0, 0, 0.6);
-  z-index: 20;
-
-  /* Smooth fade-in */
-  animation: fadeIn 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  background: rgba(0, 0, 0, 0.75);
+  z-index: 10;
 }
 
-/* 2. The Dialog Box: Added Material Elevation and M3 corner radius */
 .pauseBox {
-  padding: 48px 64px;
-  border-radius: 28px; /* Material 3 large dialog radius */
-  min-width: 320px;
-
-  /* Deep material surface with a subtle glass shine */
-  background: linear-gradient(145deg, rgba(40,40,40,0.9), rgba(20,20,20,0.95));
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  backdrop-filter: blur(20px);
-
-  /* Material dp24 Shadow */
-  box-shadow: 0 24px 38px 3px rgba(0,0,0,0.14), 
-              0 9px 46px 8px rgba(0,0,0,0.12), 
-              0 11px 15px -7px rgba(0,0,0,0.2);
-
+  background: white;
+  padding: 20px;
+  border-radius: 10px;
   text-align: center;
-  color: white;
-
-  /* Pop-in animation */
-  animation: scaleUp 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 90%;
+  max-width: 350px;
 }
 
-/* Pause Title Typography */
 .pauseBox h2 {
-  margin: 0 0 32px 0;
-  font-family: 'Roboto', 'Segoe UI', sans-serif;
-  font-size: 32px;
-  font-weight: 500;
-  letter-spacing: 1px;
+  margin-bottom: 15px;
 }
 
-/* Container to stack buttons neatly */
-.pauseBox .btn-group {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-/* 3. Base Button Styling */
 .pauseBox button {
-  position: relative;
-  padding: 16px 24px;
-  font-size: 16px;
-  font-weight: 600;
-  font-family: 'Roboto', 'Segoe UI', sans-serif;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  
-  border-radius: 100px; /* Material Pill-shape */
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+  font-size: 0.9rem;
+
   border: none;
+  border-radius: 6px;
   cursor: pointer;
-  outline: none;
-
-  /* Smooth Material interactions */
-  transition: background-color 0.2s, box-shadow 0.2s, transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Primary Button (Resume) - Grabs the user's attention */
-.btn-primary {
-  background: #00FFCC; /* Use your game's accent color here */
-  color: #003322;
-  box-shadow: 0 4px 6px rgba(0, 255, 204, 0.2);
-}
-.btn-primary:hover {
-  background: #33FFD6;
-  box-shadow: 0 6px 12px rgba(0, 255, 204, 0.3);
-  transform: translateY(-2px); /* Lifts up slightly */
-}
-.btn-primary:active {
-  transform: translateY(1px); /* Presses down */
-  box-shadow: 0 2px 4px rgba(0, 255, 204, 0.2);
-}
+/* ============================= */
+/* SMALL SCREEN OPTIMIZATION */
+/* ============================= */
 
-/* Secondary Button (Restart) - Tonal filled */
-.btn-secondary {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-}
-.btn-secondary:hover {
-  background: rgba(255, 255, 255, 0.2);
-  transform: translateY(-1px);
-}
-.btn-secondary:active {
-  transform: translateY(1px);
-}
+@media (max-height: 600px) {
 
-/* Text Button (Back) - Lowest priority */
-.btn-text {
-  background: transparent !important;
-  color: #aaaaaa !important;
-  box-shadow: none !important;
-}
-.btn-text:hover {
-  color: #ffffff !important;
-  background: rgba(255, 255, 255, 0.05) !important;
-}
+  #menu {
+    gap: 6px;
+    padding: 15px;
+  }
 
-/* 4. Animations */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
+  #menu h1 {
+    margin-bottom: 10px;
+  }
 
-@keyframes scaleUp {
-  from { transform: scale(0.9); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
+  #menu button {
+    padding: 6px 10px;
+    font-size: 0.8rem;
+  }
 }
