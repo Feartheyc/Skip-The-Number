@@ -209,13 +209,12 @@ const Game1 = {
         this.drawTripleCannons(ctx, dt);
         this.drawExplosions(ctx);
         this.drawLauncherZone(ctx);
-        this.drawCharging(ctx);
 }
     else {
       this.drawNotes(ctx, dt);
     }
 
-    if (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple") {
+    if (this.mode === "cannon" || this.mode === "orb" ) {
       this.drawCharging(ctx);
      this.updateCharging(dt);
     }
@@ -1262,7 +1261,7 @@ drawTripleCannons(ctx, dt = 1/60) {
 
     ctx.fillStyle = "#66ccff";
     ctx.beginPath();
-    ctx.arc(0, 0, targetSize / 2, 0, Math.PI * 2);
+    ctx.arc(0, 0, targetSize / 2, 0, Math.PI * 2*0.8);
     ctx.fill();
   }
 
