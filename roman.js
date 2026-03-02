@@ -10,16 +10,13 @@ const Game5 = {
   playWidth: 0,
   playHeight: 0,
   
-  // State
   mode: "TRACE", 
   currentLevel: 0,
   
-  // TRACE MODE State
   tracePoints: [], 
   activeStrokeIndex: 0, 
   currentStrokeProgress: 0, 
 
-  // FREEHAND MODE State
   freehandStrokes: [], 
   currentStroke: null,
   submitTimer: 0,      
@@ -49,7 +46,6 @@ const Game5 = {
     this.generateLevels();
     this.resizeCanvas();
     this.resetLevel();
-    this.generateLevels();
     if (!this.listenersAdded) {
       this.addInputListeners();
       window.addEventListener('resize', () => { if (this.running) this.resizeCanvas(); });
@@ -138,7 +134,7 @@ const Game5 = {
             this.tracePoints = []; 
             this.cursorColor = "white"; 
         } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
-            this.submitTimer = 100; // Slightly faster submission
+            this.submitTimer = 100; 
         }
     };
 
@@ -324,12 +320,20 @@ const Game5 = {
 
     if (splitStrokes.length === 0) return this.triggerFail();
 
+    // 1. GAP CHECK: Limit distance between strokes (Prevent disjointed 6/8)
+    const maxGap = 350; // Balanced for multi-character numbers like XVIII
+    for (let i = 0; i < splitStrokes.length - 1; i++) {
+        let p1 = splitStrokes[i][splitStrokes[i].length - 1];
+        let p2 = splitStrokes[i+1][0];
+        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > maxGap) return this.triggerFail();
+    }
+
     const level = this.levels[this.currentLevel];
     const template = level.localStrokes;
     const normUser = this.normalizeStrokes(splitStrokes);
 
-    // More lenient stroke count check
-    if (Math.abs(normUser.length - template.length) > 2) return this.triggerFail();
+    // 2. STROKE COUNT: Be slightly lenient (+/- 1 stroke)
+    if (Math.abs(normUser.length - template.length) > 1) return this.triggerFail();
 
     let usedTemplate = new Array(template.length).fill(false);
     let totalScore = 0;
@@ -341,22 +345,21 @@ const Game5 = {
             const score = this.strokeMatchScore(u, template[i]);
             if (score > bestScore) { bestScore = score; bestIndex = i; }
         }
-        if (bestIndex !== -1 && bestScore > 0.4) {
+        
+        // 3. STRICT MATCH: Every stroke MUST match a template part
+        if (bestIndex !== -1 && bestScore > 0.45) {
             usedTemplate[bestIndex] = true;
             totalScore += bestScore;
+        } else {
+            return this.triggerFail(); // Reject the "creature" lines
         }
     }
 
     let matchedCount = usedTemplate.filter(v => v).length;
-    const finalScore = matchedCount > 0 ? totalScore / matchedCount : 0;
-    const passThreshold = this.mode === "TRACE" ? 0.7 : 0.55; 
-
-    if (matchedCount === template.length && finalScore > passThreshold) {
+    if (matchedCount === template.length && (totalScore / matchedCount) > 0.5) {
         this.levelCompleteTimer = 1;
         this.score += 20;
         this.cursorColor = "#00FFCC";
-        const last = splitStrokes[splitStrokes.length - 1].slice(-1)[0];
-        for (let i = 0; i < 40; i++) this.spawnParticle(last.x, last.y, true, baseUnit);
     } else {
         this.triggerFail();
     }
@@ -567,19 +570,21 @@ const Game5 = {
   normalizeStrokes(strokes) {
     let allPts = [];
     strokes.forEach(s => allPts.push(...s));
+    
+    // Find the center of your drawing
     let minX = Math.min(...allPts.map(p => p.x)), maxX = Math.max(...allPts.map(p => p.x));
     let minY = Math.min(...allPts.map(p => p.y)), maxY = Math.max(...allPts.map(p => p.y));
-    let w = Math.max(20, maxX - minX), h = Math.max(20, maxY - minY);
-    
-    // Switch to localized scaling to stop over-stretching small numbers
-    let scaleFactor = Math.max(w, h, 100); 
+    let centerX = (minX + maxX) / 2;
+    let centerY = (minY + maxY) / 2;
+
+    // FIX: Use a FIXED SCALE (e.g., 300px) instead of the drawing's width/height.
+    // This stops the AI from stretching your "11" into a weird shape.
+    const FIXED_SCALE = 300; 
 
     return strokes.map(stroke =>
         stroke.map(p => ({
-            x: (p.x - minX) / scaleFactor, 
-            y: (p.y - minY) / scaleFactor,
-            globalX: p.x / this.BASE_WIDTH, // Tracking screen position
-            globalY: p.y / this.BASE_HEIGHT
+            x: (p.x - centerX) / FIXED_SCALE, 
+            y: (p.y - centerY) / FIXED_SCALE
         }))
     );
   },
@@ -592,12 +597,10 @@ const Game5 = {
     const dirScore = Math.max(0, (udx * tdx + udy * tdy) / (ulen * tlen));
     const lenScore = 1 - Math.min(1, Math.abs(ulen - tlen));
 
-    // Distance check: Much more lenient positioning
     let dist = 0;
     stroke.forEach(p => { dist += this.pointToLineDist(p.x, p.y, tmpl.x1, tmpl.y1, tmpl.x2, tmpl.y2); });
     const distScore = 1 - Math.min(1, (dist / stroke.length) * 1.2);
 
-    // Final weighting: prioritize shape (direction) over perfect coordinates
     return (dirScore * 0.6) + (lenScore * 0.2) + (distScore * 0.2);
   },
 };
