@@ -1261,7 +1261,7 @@ fireTriple() {
   const shot = this.pendingShot;
   const speed = shot.speed;
 
-  const patternPool = [1,2,2,3]; // 2 cannons most common
+  const patternPool = [1,1,2,2,2,2,2,3]; // 2 cannons most common
   const fireCount = patternPool[Math.floor(Math.random() * patternPool.length)];
 
   // ===== RANDOMLY PICK WHICH CANNONS FIRE =====
