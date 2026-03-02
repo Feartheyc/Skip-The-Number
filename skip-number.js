@@ -85,8 +85,8 @@ const Game1 = {
     this.hitTextTimer = 1;
 
     this.mode = "default";
-    this.skipAmount = 3;
-    this.gameTitle = "SKIP 3";
+    this.skipAmount = this.getRandomSkip();
+    this.gameTitle = "SKIP " + this.skipAmount;
 
     this.noteSpeed = this.baseOuterRadius * 0.6;
 
@@ -802,6 +802,7 @@ updateCannonNotes(ctx, dt) {
   this.pendingShot = null;
   this.lastCannonNote = null;
 
+  this.skipAmount = this.getRandomSkip();
   this.gameTitle = "CANNON SKIP " + this.skipAmount;
 },
 
@@ -907,6 +908,7 @@ activateOrbMode() {
   this.orbAngle = 0;
   this.orbTargetAngle = 0;
 
+  this.skipAmount = this.getRandomSkip();
   this.gameTitle = "ORB SKIP " + this.skipAmount;
 },
 
@@ -1157,6 +1159,7 @@ activateTripleCannonMode() {
     });
   }
 
+  this.skipAmount = this.getRandomSkip();
   this.gameTitle = "TRIPLE CANNON SKIP " + this.skipAmount;
 },
 
@@ -1191,6 +1194,7 @@ spawnTripleNote() {
 
   this.startCharging();
 },
+
 
 drawTripleCannons(ctx, dt = 1/60) {
 
@@ -1285,5 +1289,11 @@ fireTriple() {
   this.isCharging = false;
   this.charge = 0;
   this.chargeParticles = [];
+},
+
+
+getRandomSkip() {
+  const weights = [1,2,2,3,3,4,4,5,6,7,8,9];
+  return weights[Math.floor(Math.random() * weights.length)];
 }
 };
