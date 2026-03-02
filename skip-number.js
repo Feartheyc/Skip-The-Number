@@ -201,6 +201,7 @@ const Game1 = {
         this.drawOrbLauncher(ctx, dt);
         this.drawExplosions(ctx);
         this.drawLauncherZone(ctx);
+        this.drawCharging(ctx);
         
       } 
       else if (this.mode === "triple") {
@@ -278,31 +279,54 @@ if (this.mode === "triple" && this.previewTimer > 0) {
   },
 
   /* ============================== */
-  drawFinger(ctx, x, y) {
-    ctx.fillStyle = "#FF2A2A";
+  // drawFinger(ctx, x, y) {
+  //   ctx.fillStyle = "#FF2A2A";
 
-    ctx.beginPath();
+  //   ctx.beginPath();
 
-    ctx.shadowColor = "#fc3434";
-    ctx.shadowBlur = 35;
-    ctx.fillStyle = "#992020";
-    ctx.fill();
+  //   ctx.shadowColor = "#fc3434";
+  //   ctx.shadowBlur = 35;
+  //   ctx.fillStyle = "#992020";
+  //   ctx.fill();
 
-    ctx.shadowBlur = 15;
-    ctx.fillStyle = "#f13232";
-    ctx.fill();
+  //   ctx.shadowBlur = 15;
+  //   ctx.fillStyle = "#f13232";
+  //   ctx.fill();
 
-    ctx.arc(
-      x,
-      y,
-      this.baseOuterRadius * 0.08,
-      0,
-      2 * Math.PI
-    );
+  //   ctx.arc(
+  //     x,
+  //     y,
+  //     this.baseOuterRadius * 0.08,
+  //     0,
+  //     2 * Math.PI
+  //   );
 
-    ctx.fill();
-  },
+  //   ctx.fill();
+  // },
+drawFinger(ctx, x, y) {
 
+  ctx.save();   // ✅ isolate canvas state
+
+  ctx.beginPath();
+  ctx.arc(
+    x,
+    y,
+    this.baseOuterRadius * 0.08,
+    0,
+    2 * Math.PI
+  );
+
+  ctx.shadowColor = "#fc3434";
+  ctx.shadowBlur = 35;
+  ctx.fillStyle = "#992020";
+  ctx.fill();
+
+  ctx.shadowBlur = 15;
+  ctx.fillStyle = "#f13232";
+  ctx.fill();
+
+  ctx.restore(); // ✅ restore canvas state
+},
   /* ============================== */
   drawRings(ctx, dt) {
     this.pulseTime += this.pulseSpeed * dt;
