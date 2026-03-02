@@ -1261,7 +1261,23 @@ fireTriple() {
   const shot = this.pendingShot;
   const speed = shot.speed;
 
-  for (let i = 0; i < this.tripleCannons.length; i++) {
+  const patternPool = [1,2,2,3]; // 2 cannons most common
+  const fireCount = patternPool[Math.floor(Math.random() * patternPool.length)];
+
+  // ===== RANDOMLY PICK WHICH CANNONS FIRE =====
+  const indices = [];
+
+  while (indices.length < fireCount) {
+
+    const randIndex = Math.floor(Math.random() * this.tripleCount);
+
+    if (!indices.includes(randIndex)) {
+      indices.push(randIndex);
+    }
+  }
+
+  // ===== FIRE SELECTED CANNONS =====
+  for (const i of indices) {
 
     const cannon = this.tripleCannons[i];
 
@@ -1270,7 +1286,7 @@ fireTriple() {
       cannon.offset -
       Math.PI / 2;
 
-    const value = shot.values[i]; // ⭐ each cannon gets its own number
+    const value = shot.values[i];
 
     const note = {
       x: this.centerX,
@@ -1285,15 +1301,15 @@ fireTriple() {
     this.notes.push(note);
   }
 
+  // Reset
   this.pendingShot = null;
   this.isCharging = false;
   this.charge = 0;
   this.chargeParticles = [];
 },
 
-
 getRandomSkip() {
-  const weights = [1,2,2,3,3,4,4,5,6,7,8,9];
+  const weights = [2,2,3,3,3,4,4,5,6,7,8,9];
   return weights[Math.floor(Math.random() * weights.length)];
 }
 };
