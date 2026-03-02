@@ -68,7 +68,7 @@ html, body {
 
 #menu h1 {
   color: white;
-  margin-bottom: 15px;
+  margin-bottom: 32px;
   text-align: center;
   font-size: clamp(1.4rem, 4vw, 2rem);
 }
@@ -78,11 +78,11 @@ html, body {
   width: 90%;
   max-width: 400px;
 
-  padding: clamp(8px, 2vh, 14px);
-  font-size: clamp(0.8rem, 2.5vh, 1rem);
+  padding: clamp(8px, 2vh, 32px);
+  font-size: clamp(1rem, 2.5vh, 1.5rem);
 
-  border: none;
-  border-radius: 8px;
+  border: black solid 4px;
+  border-radius: 32px;
   cursor: pointer;
 
   background: #00CC99;
@@ -91,7 +91,7 @@ html, body {
 
 #menu button:hover {
   background: #00FF99;
-  transform: scale(1.03);
+  transform: scale(1.05);
 }
 
 /* ============================= */
