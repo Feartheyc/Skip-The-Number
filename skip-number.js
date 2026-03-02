@@ -219,6 +219,16 @@ const Game1 = {
       this.drawCharging(ctx);
      this.updateCharging(dt);
     }
+
+    // ===== TRIPLE PREVIEW TIMER =====
+if (this.mode === "triple" && this.previewTimer > 0) {
+
+  this.previewTimer -= dt;
+
+  if (this.previewTimer <= 0) {
+    this.executeTripleShot();
+  }
+}
     this.drawPopEffects(ctx);
 
     fingers.forEach((finger) => {
@@ -1212,77 +1222,120 @@ drawTripleCannons(ctx, dt = 1/60) {
   this.tripleBaseAngle += diff * 0.18;
 
   // Fire when aligned
-  if (this.pendingShot && Math.abs(diff) < 0.05) {
-    this.fireTriple();
+  if (
+  this.pendingShot &&
+  this.previewTimer <= 0 &&
+  this.previewCannons.length === 0 &&
+  Math.abs(diff) < 0.05
+) {
+  this.fireTriple();
+}
+
+  for (let i = 0; i < this.tripleCannons.length; i++) {
+
+  const cannon = this.tripleCannons[i];
+  const angle = this.tripleBaseAngle + cannon.offset;
+
+  ctx.save();
+  ctx.translate(this.centerX, this.centerY);
+  ctx.rotate(angle);
+
+  if (this.orbImage && this.orbImage.complete) {
+
+    const img = this.orbImage;
+    const scale = targetSize / Math.max(img.width, img.height);
+
+    const drawW = img.width * scale;
+    const drawH = img.height * scale;
+
+    ctx.scale(1, -1);
+
+    ctx.drawImage(
+      img,
+      -drawW / 2,
+      -drawH / 2,
+      drawW,
+      drawH
+    );
+
+  } else {
+
+    ctx.fillStyle = "#66ccff";
+    ctx.beginPath();
+    ctx.arc(0, 0, targetSize / 2, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  for (const cannon of this.tripleCannons) {
+  // ===== PREVIEW MINI ORB =====
+  if (this.previewCannons.includes(i) && this.previewTimer > 0) {
 
-    const angle = this.tripleBaseAngle + cannon.offset;
+    const miniRadius = targetSize * 0.18;
+
+    const offsetY = -targetSize * 0.6;
+
+    const pulse = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
 
     ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.scale(1, -1);
 
-    ctx.translate(this.centerX, this.centerY);
-    ctx.rotate(angle);
+    const gradient = ctx.createRadialGradient(
+      0,
+      offsetY,
+      0,
+      0,
+      offsetY,
+      miniRadius
+    );
 
-    if (this.orbImage && this.orbImage.complete) {
+    gradient.addColorStop(0, "rgba(255,255,255,1)");
+    gradient.addColorStop(0.4, "rgba(0,255,255,0.9)");
+    gradient.addColorStop(1, "rgba(0,255,255,0)");
 
-      const img = this.orbImage;
+    ctx.fillStyle = gradient;
 
-      const scale =
-        targetSize / Math.max(img.width, img.height);
-
-      const drawW = img.width * scale;
-      const drawH = img.height * scale;
-
-      // Same flip you used in orb mode
-      ctx.scale(1, -1);
-
-      ctx.drawImage(
-        img,
-        -drawW / 2,
-        -drawH / 2,
-        drawW,
-        drawH
-      );
-
-    } else {
-
-      // fallback circle
-      ctx.fillStyle = "#66ccff";
-      ctx.beginPath();
-      ctx.arc(0, 0, targetSize / 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    ctx.beginPath();
+    ctx.arc(0, offsetY, miniRadius * pulse, 0, Math.PI * 2);
+    ctx.fill();
 
     ctx.restore();
   }
+
+  ctx.restore();
+}
 },
 
 fireTriple() {
 
   if (!this.pendingShot) return;
 
-  const shot = this.pendingShot;
-  const speed = shot.speed;
-
-  const patternPool = [1,1,2,2,2,2,2,3]; // 2 cannons most common
+  const patternPool = [1,1,2,2,2,2,2,3];
   const fireCount = patternPool[Math.floor(Math.random() * patternPool.length)];
 
-  // ===== RANDOMLY PICK WHICH CANNONS FIRE =====
-  const indices = [];
+  // Pick which cannons will fire
+  this.previewCannons = [];
 
-  while (indices.length < fireCount) {
+  while (this.previewCannons.length < fireCount) {
 
     const randIndex = Math.floor(Math.random() * this.tripleCount);
 
-    if (!indices.includes(randIndex)) {
-      indices.push(randIndex);
+    if (!this.previewCannons.includes(randIndex)) {
+      this.previewCannons.push(randIndex);
     }
   }
 
-  // ===== FIRE SELECTED CANNONS =====
-  for (const i of indices) {
+  // Start preview timer
+  this.previewTimer = this.previewDuration;
+},
+
+executeTripleShot() {
+
+  if (!this.pendingShot) return;
+
+  const shot = this.pendingShot;
+  const speed = shot.speed;
+
+  for (const i of this.previewCannons) {
 
     const cannon = this.tripleCannons[i];
 
@@ -1307,11 +1360,13 @@ fireTriple() {
   }
 
   // Reset
+  this.previewCannons = [];
   this.pendingShot = null;
   this.isCharging = false;
   this.charge = 0;
   this.chargeParticles = [];
 },
+
 
 getRandomSkip() {
   const weights = [2,2,3,3,3,4,4,5,6,7,8,9];
