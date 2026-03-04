@@ -58,7 +58,7 @@ mascot: {
   vx: 0,
   vy: 0,
   speed: 0.6,
-  maxSpeed: 12,
+  maxSpeed: 8,
   size: 140,
   carryingNumber: false
 },
@@ -90,10 +90,10 @@ portalFrameSpeed: 80, // lower = faster animation
 portalSize: 260,
 
 ordinalMap: {
-  "st": "1st",
-  "nd": "2nd",
-  "rd": "3rd",
-  "th": "4th"
+  "st": "st",
+  "nd": "nd",
+  "rd": "rd",
+  "th": "th"
 },
 
 
@@ -145,6 +145,49 @@ shootingStarSpawnInterval: 2000, // average spawn time (ms)
 
 shootingStarBursts: [],
 
+
+/* ===== GAME MODE SYSTEM ===== */
+gameMode: 0, // 0 = default (current), 1 = new mode
+
+mode1Numbers: [],
+mode1TargetSuffix: "st",
+mode1SpawnTimer: 0,
+mode1MaxMatches: 3,
+mode1MinMatches: 1,
+mode1Collected: false,
+
+
+/* ===== MODE 1 ROUND STATE ===== */
+mode1CorrectTotal: 0,
+mode1CorrectCollected: 0,
+mode1RoundActive: true,
+mode1Confirming: false,
+mode1PortalTargetX: 0,
+mode1PortalTargetY: 0,
+mode1GameOver: false,
+
+/* ===== MODE 1 SUCTION SYSTEM ===== */
+mode1SuctionActive: false,
+mode1SuctionData: null,
+mode1SuctionDuration: 600,
+
+
+// 🎁 Sticker System
+stickers: [],
+stickerThreshold: 30,
+nextStickerScore: 30,
+newStickerUnlocked: false,
+stickerDisplayTimer: 0,
+
+// 🏆 Level System
+level: 1,
+levelThreshold: 50,
+nextLevelScore: 50,
+levelUpActive: false,
+levelUpTimer: 0,
+
+// 🌈 Background Evolution
+backgroundHueShift: 0,
 init() {
 
   this.resize();
@@ -165,6 +208,19 @@ init() {
   this.mascot.y = this.CENTER_Y + 100 * this.scale;
 
   this.gameState = "pickup";
+
+  window.addEventListener("keydown", (e) => {
+  if (e.key === "1") {
+    this.activateGameMode1();
+  }
+
+  window.addEventListener("click", () => {
+
+  if (this.gameMode === 1 && this.mode1GameOver) {
+    this.retryMode1();
+  }
+});
+});
 },
   resize() {
 
@@ -185,6 +241,22 @@ init() {
     this.CENTER_Y = cssH / 2;
   },
 
+  activateGameMode1() {
+
+  this.gameMode = 1;
+
+  // Reset mascot behavior
+  this.mascot.carryingNumber = false;
+  this.numberPosition.picked = true; // hide default floating number
+
+  // Choose random target suffix
+  const suffixes = ["st", "nd", "rd", "th"];
+  this.mode1TargetSuffix = suffixes[Math.floor(Math.random() * 4)];
+
+  // Clear and spawn numbers
+  this.spawnMode1Numbers();
+},
+
   setupDoors() {
 
   this.doors = [];
@@ -193,7 +265,7 @@ init() {
 
   const startX = this.cssWidth * 0.2;
   const gap = this.cssWidth * 0.2;
-  const y = this.cssHeight * 0.5;
+  const y = this.cssHeight * 0.55;
 
   for (let i = 0; i < 4; i++) {
 
@@ -215,21 +287,30 @@ init() {
   this.correctSuffix = this.getSuffix(num);
 
   this.numberPosition.x = this.CENTER_X;
-  this.numberPosition.y = this.CENTER_Y - 150 * this.scale;
+  this.numberPosition.y = this.CENTER_Y - 230 * this.scale;
   this.numberPosition.picked = false;
 
   this.mascot.carryingNumber = false;
   this.gameState = "pickup";
 },
 
-  getSuffix(num) {
-    const last = num % 10;
-    if (last === 1) return "st";
-    if (last === 2) return "nd";
-    if (last === 3) return "rd";
-    return "th";
-  },
+getSuffix(num) {
 
+  const lastTwo = num % 100;
+
+  // Special case: 11, 12, 13
+  if (lastTwo >= 11 && lastTwo <= 13) {
+    return "th";
+  }
+
+  const last = num % 10;
+
+  if (last === 1) return "st";
+  if (last === 2) return "nd";
+  if (last === 3) return "rd";
+
+  return "th";
+},
  update(ctx) {
 
   if (!this.running) return;
@@ -238,7 +319,7 @@ init() {
   const delta = now - this.lastTime;
   this.lastTime = now;
 
-  ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
+  this.drawDreamBackground(ctx);
 
   // 🌌 NEBULA BACKGROUND
   // this.drawNebula(ctx);
@@ -276,9 +357,33 @@ init() {
   this.updateSparkBursts(delta);
 
   // 🎮 FOREGROUND
+// 🎮 GAME MODE SWITCH
+if (this.gameMode === 0) {
+
+  // DEFAULT MODE (UNCHANGED)
   this.drawDoors(ctx);
   this.drawNumber(ctx);
   this.drawMascot(ctx);
+
+} else if (this.gameMode === 1) {
+
+  this.updateMode1Logic();
+  
+  this.updateMode1Suction(delta);
+
+  // Draw portal first (background layer)
+  this.drawMode1PortalPlayer(ctx);
+
+  // Then draw numbers above portal
+  this.drawMode1Numbers(ctx);
+
+  this.drawMode1Instruction(ctx);
+
+  this.drawMode1GameOver(ctx);
+
+}
+
+
   this.drawScore(ctx);
   // this.drawConfetti(ctx);
   this.drawSparkBursts(ctx);
@@ -335,6 +440,8 @@ confirmSelection(index) {
     // this.spawnConfetti(door.x, door.y);
     this.spawnSparkBurst(door.x, door.y);
 
+    
+
   } else {
 
     this.score -= 5;
@@ -368,47 +475,81 @@ confirmSelection(index) {
     return this.DOOR_RADIUS * this.scale;
   },
 
-  drawNumber(ctx) {
+drawNumber(ctx) {
 
   if (this.numberPosition.picked) return;
 
   const baseX = this.numberPosition.x;
   const baseY = this.numberPosition.y;
 
-  const floatOffset = Math.sin(this.floatTime * this.floatSpeed) * this.floatAmplitude * this.scale;
+  const floatOffset =
+    Math.sin(this.floatTime * this.floatSpeed) *
+    this.floatAmplitude *
+    this.scale;
 
-  const scalePulse = 1 + Math.sin(this.numberScalePulse) * 0.1;
+  const pulse =
+    1 + Math.sin(this.numberScalePulse) * 0.15;
 
   ctx.save();
 
   ctx.translate(baseX, baseY + floatOffset);
-  ctx.rotate(Math.sin(this.numberRotation) * 0.2);
-  ctx.scale(scalePulse, scalePulse);
+  ctx.scale(pulse, pulse);
 
-  // Glow effect
-  ctx.shadowColor = "#00FFFF";
-  ctx.shadowBlur = 30;
+  // Sparkle glow
+  ctx.shadowColor = "#FFD700";
+  ctx.shadowBlur = 40;
 
-  ctx.fillStyle = "#00FFAA";
-  ctx.font = `bold ${80 * this.scale}px Arial`;
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = "#FFD700";
+  ctx.font = `bold ${90 * this.scale}px Comic Sans MS`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
+  ctx.strokeText(this.currentNumber, 0, 0);
+
+  ctx.fillStyle = "#FFFFFF";
   ctx.fillText(this.currentNumber, 0, 0);
 
   ctx.restore();
+
+  this.drawFloatingSparkles(ctx, baseX, baseY + floatOffset);
 },
 
-    drawDoors(ctx) {
+  drawDoors(ctx) {
 
-  const portalImg = this.portalFrames[this.portalFrameIndex];
   const size = this.portalSize * this.scale;
 
   for (let i = 0; i < this.doors.length; i++) {
 
     const door = this.doors[i];
 
-    // ===== DRAW PORTAL SPRITE =====
+    // Rainbow glow
+    const pulse = 1 + Math.sin(performance.now() * 0.003 + i) * 0.05;
+
+    const gradient = ctx.createRadialGradient(
+      door.x,
+      door.y,
+      size * 0.2,
+      door.x,
+      door.y,
+      size * 0.6
+    );
+
+    gradient.addColorStop(0, "#FFFFFF");
+    gradient.addColorStop(0.3, "#FDE047");
+    gradient.addColorStop(0.6, "#A78BFA");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(door.x, door.y, size * 0.6 * pulse, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+
+    // Portal sprite (unchanged)
+    const portalImg = this.portalFrames[this.portalFrameIndex];
     if (portalImg) {
       ctx.drawImage(
         portalImg,
@@ -419,32 +560,96 @@ confirmSelection(index) {
       );
     }
 
-    // ===== DRAW ORDINAL LABEL BELOW =====
+    // Floating label ABOVE
     ctx.fillStyle = "#FFFFFF";
-    ctx.font = `bold ${36 * this.scale}px Arial`;
+    ctx.font = `bold ${42 * this.scale}px Comic Sans MS`;
     ctx.textAlign = "center";
 
     ctx.fillText(
-      door.label, // precomputed ordinal
+      `${this.ordinalMap[door.suffix]}`,
       door.x,
-      door.y + size / 2 + 40 * this.scale
+      door.y - size / 2 - 20 * this.scale
     );
   }
 },
 
 
-  drawScore(ctx) {
+drawScore(ctx) {
 
-    ctx.fillStyle = "white";
-    ctx.font = `bold ${28 * this.scale}px Arial`;
-    ctx.textAlign = "center";
+  const padding = 20 * this.scale;
+  const width = 220 * this.scale;
+  const height = 70 * this.scale;
+  const x = 20 * this.scale;
+  const y = 20 * this.scale;
 
-    ctx.fillText(
-      "Score: " + this.score,
-      this.CENTER_X,
-      50 * this.scale
-    );
-  },
+  // Soft rounded bubble
+  ctx.save();
+
+  ctx.shadowColor = "rgba(0,0,0,0.4)";
+  ctx.shadowBlur = 15;
+
+  ctx.fillStyle = "#1E3A8A"; // deep blue
+  ctx.beginPath();
+  ctx.roundRect(x, y, width, height, 25 * this.scale);
+  ctx.fill();
+
+  ctx.shadowBlur = 0;
+
+  // Score text
+  ctx.fillStyle = "#FFD700"; // gold
+  ctx.font = `bold ${32 * this.scale}px Comic Sans MS`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.fillText(
+    `⭐ ${this.score}`,
+    x + width / 2,
+    y + height / 2
+  );
+
+  ctx.restore();
+},
+
+// drawScore(ctx) {
+
+//   const x = 30 * this.scale;
+//   const y = 30 * this.scale;
+//   const width = 260 * this.scale;
+//   const height = 80 * this.scale;
+
+//   const gradient = ctx.createLinearGradient(
+//     x, y,
+//     x, y + height
+//   );
+
+//   gradient.addColorStop(0, "#FDE047");
+//   gradient.addColorStop(1, "#F59E0B");
+
+//   ctx.save();
+
+//   ctx.shadowColor = "rgba(0,0,0,0.4)";
+//   ctx.shadowBlur = 20;
+
+//   ctx.fillStyle = gradient;
+//   ctx.beginPath();
+//   ctx.roundRect(x, y, width, height, 40 * this.scale);
+//   ctx.fill();
+
+//   ctx.shadowBlur = 0;
+
+//   ctx.fillStyle = "#FFFFFF";
+//   ctx.font = `bold ${36 * this.scale}px Comic Sans MS`;
+//   ctx.textAlign = "center";
+//   ctx.textBaseline = "middle";
+
+//   ctx.fillText(
+//     `⭐ ${this.score}`,
+//     x + width / 2,
+//     y + height / 2
+//   );
+
+//   ctx.restore();
+// }
 
   // drawFeedback(ctx) {
 
@@ -662,6 +867,34 @@ loadMascotSprites() {
 
 updateMascot(delta) {
 
+  // MODE 1 CONFIRMATION MOVE
+if (this.gameMode === 1 && this.mode1Confirming) {
+
+  const dx = this.mode1PortalTargetX - this.mascot.x;
+  const dy = this.mode1PortalTargetY - this.mascot.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist > 5) {
+
+    this.mascot.x += dx * 0.05;
+    this.mascot.y += dy * 0.05;
+
+  } else {
+
+    // Confirmation reached
+    this.mode1Confirming = false;
+
+    // NEW ROUND
+    const suffixes = ["st", "nd", "rd", "th"];
+    this.mode1TargetSuffix =
+      suffixes[Math.floor(Math.random() * 4)];
+
+    this.spawnMode1Numbers();
+  }
+
+  return;
+}
+
   if (this.fingerX === null || this.fingerY === null) return;
 
   const dx = this.fingerX - this.mascot.x;
@@ -710,42 +943,134 @@ drawMascot(ctx) {
   let spriteArray = this.mascotImages[this.mascotState];
   if (!spriteArray || spriteArray.length === 0) return;
 
+  // Animate sprite frames
   this.mascotFrameTimer += 16;
-
   if (this.mascotFrameTimer > this.mascotFrameSpeed) {
     this.mascotFrame++;
     this.mascotFrameTimer = 0;
   }
-
   if (this.mascotFrame >= spriteArray.length) {
     this.mascotFrame = 0;
   }
 
   const img = spriteArray[this.mascotFrame];
 
+  const time = performance.now();
+
+  // 🌬️ Gentle breathing animation
+  const breathe = 1 + Math.sin(time * 0.002) * 0.03;
+
+  // 🎈 Floating bounce
+  const floatOffset =
+    Math.sin(time * 0.004) *
+    8 *
+    this.scale;
+
+  const mascotX = this.mascot.x;
+  const mascotY = this.mascot.y + floatOffset;
+
+  // 🐾 Detect movement speed
+  const speed =
+    Math.sqrt(this.mascot.vx * this.mascot.vx +
+              this.mascot.vy * this.mascot.vy);
+
+  // 🧃 Squash & stretch when moving
+  let stretchX = 1;
+  let stretchY = 1;
+
+  if (speed > 2) {
+    stretchX = 1 + Math.min(speed * 0.02, 0.15);
+    stretchY = 1 - Math.min(speed * 0.015, 0.1);
+  }
+
+  ctx.save();
+
+
+  // 🫧 Soft shadow
+  ctx.beginPath();
+  ctx.ellipse(
+    mascotX,
+    mascotY + 70 * this.scale,
+    65 * this.scale,
+    22 * this.scale,
+    0,
+    0,
+    Math.PI * 2
+  );
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.fill();
+
+  // ✨ Happy success aura
+  if (this.mascotState === "happy") {
+    const glowPulse =
+      30 + Math.sin(time * 0.01) * 10;
+
+    ctx.shadowColor = "#FFF59D";
+    ctx.shadowBlur = glowPulse;
+
+    // Radiating ring
+    ctx.beginPath();
+    ctx.arc(
+      mascotX,
+      mascotY,
+      90 * this.scale,
+      0,
+      Math.PI * 2
+    );
+    ctx.strokeStyle = "rgba(255,255,150,0.5)";
+    ctx.lineWidth = 6 * this.scale;
+    ctx.stroke();
+  }
+
+  // 🎮 Apply squash + breathe scaling
+  ctx.translate(mascotX, mascotY);
+  ctx.scale(
+    stretchX * breathe,
+    stretchY * breathe
+  );
+
   ctx.drawImage(
     img,
-    this.mascot.x - (this.mascot.size * this.scale) / 2,
-    this.mascot.y - (this.mascot.size * this.scale) / 2,
+    -(this.mascot.size * this.scale) / 2,
+    -(this.mascot.size * this.scale) / 2,
     this.mascot.size * this.scale,
     this.mascot.size * this.scale
   );
 
-  // Draw carried number
+  ctx.shadowBlur = 0;
+
+  // 💎 Magical carried number badge
   if (this.mascot.carryingNumber) {
 
-    ctx.fillStyle = "#00FFAA";
-    ctx.font = `bold ${40 * this.scale}px Arial`;
+    const badgeY = -80 * this.scale;
+
+    ctx.shadowColor = "#FFD700";
+    ctx.shadowBlur = 30;
+
+    ctx.lineWidth = 7;
+    ctx.strokeStyle = "#FFD700";
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `bold ${44 * this.scale}px Comic Sans MS`;
     ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    ctx.strokeText(
+      this.currentNumber,
+      0,
+      badgeY
+    );
 
     ctx.fillText(
       this.currentNumber,
-      this.mascot.x,
-      this.mascot.y - 60 * this.scale
+      0,
+      badgeY
     );
-  }
-},
 
+    ctx.shadowBlur = 0;
+  }
+
+  ctx.restore();
+},
 
 loadPortalSprites() {
 
@@ -1047,4 +1372,343 @@ drawStarBursts(ctx) {
     ctx.fill();
   }
 },
+
+spawnMode1Numbers() {
+
+  this.mode1Numbers = [];
+
+  const correctCount =
+    Math.floor(Math.random() *
+      (this.mode1MaxMatches - this.mode1MinMatches + 1)
+    ) + this.mode1MinMatches;
+
+  this.mode1CorrectTotal = correctCount;
+  this.mode1CorrectCollected = 0;
+  this.mode1RoundActive = true;
+  this.mode1Confirming = false;
+
+  let correctSpawned = 0;
+
+  const shuffledDoors = [...this.doors].sort(() => Math.random() - 0.5);
+
+  for (let i = 0; i < shuffledDoors.length; i++) {
+
+    const door = shuffledDoors[i];
+    let num;
+
+    if (correctSpawned < correctCount) {
+
+      num = this.generateNumberWithSuffix(this.mode1TargetSuffix);
+      correctSpawned++;
+
+    } else {
+
+      do {
+        num = Math.floor(Math.random() * 30) + 1;
+      } while (this.getSuffix(num) === this.mode1TargetSuffix);
+    }
+
+    this.mode1Numbers.push({
+      number: num,
+      x: door.x,
+      y: door.y,
+      size: 60 * this.scale
+    });
+  }
+},
+
+generateNumberWithSuffix(suffix) {
+
+  while (true) {
+
+    const num = Math.floor(Math.random() * 30) + 1;
+
+    if (this.getSuffix(num) === suffix) {
+      return num;
+    }
+  }
+},
+
+
+drawMode1PortalPlayer(ctx) {
+
+  const portalImg = this.portalFrames[this.portalFrameIndex];
+  const size = this.portalSize * this.scale;
+
+  if (!portalImg) return;
+
+  ctx.drawImage(
+    portalImg,
+    this.mascot.x - size / 2,
+    this.mascot.y - size / 2,
+    size,
+    size
+  );
+},
+
+
+drawMode1Numbers(ctx) {
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  for (let n of this.mode1Numbers) {
+
+    const scale = n.renderScale || 1;
+    const rotation = n.renderRotation || 0;
+
+    ctx.save();
+
+    ctx.translate(n.x, n.y);
+    ctx.rotate(rotation);
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = "#00FFAA";
+    ctx.font = `bold ${60 * this.scale}px Arial`;
+
+    ctx.fillText(n.number, 0, 0);
+
+    ctx.restore();
+  }
+},
+
+updateMode1Logic() {
+
+  if (!this.mode1RoundActive || 
+      this.mode1GameOver || 
+      this.mode1SuctionActive) return;
+
+  for (let i = 0; i < this.mode1Numbers.length; i++) {
+
+    const n = this.mode1Numbers[i];
+
+    const dx = this.mascot.x - n.x;
+    const dy = this.mascot.y - n.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+
+    if (dist < 70 * this.scale) {
+
+      this.startMode1Suction(i);
+      break;
+    }
+  }
+},
+
+drawMode1Instruction(ctx) {
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `bold ${40 * this.scale}px Arial`;
+  ctx.textAlign = "center";
+
+  ctx.fillText(
+    `You Are Galaxy ${this.mode1TargetSuffix.toUpperCase()}! Collect Matching Numbers`,
+    this.CENTER_X,
+    60 * this.scale
+  );
+},
+
+
+startMode1Confirmation() {
+
+  this.mode1RoundActive = false;
+  this.mode1Confirming = true;
+
+  // Target bottom-left
+  this.mode1PortalTargetX = 120 * this.scale;
+  this.mode1PortalTargetY = this.cssHeight - 120 * this.scale;
+},
+
+drawMode1GameOver(ctx) {
+
+  if (!this.mode1GameOver) return;
+
+  ctx.fillStyle = "red";
+  ctx.font = `bold ${60 * this.scale}px Arial`;
+  ctx.textAlign = "center";
+
+  ctx.fillText(
+    "Wrong Galaxy! Game Over",
+    this.CENTER_X,
+    this.CENTER_Y
+  );
+},
+
+
+drawMode1GameOver(ctx) {
+
+  if (!this.mode1GameOver) return;
+
+  // Translucent black overlay
+  ctx.fillStyle = "rgba(0,0,0,0.7)";
+  ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+
+  // GAME OVER text
+  ctx.fillStyle = "#FF4444";
+  ctx.font = `bold ${70 * this.scale}px Arial`;
+  ctx.textAlign = "center";
+
+  ctx.fillText(
+    "Galaxy Collapse!",
+    this.CENTER_X,
+    this.CENTER_Y - 40 * this.scale
+  );
+
+  // Retry button
+  ctx.fillStyle = "#00FFAA";
+  ctx.font = `bold ${40 * this.scale}px Arial`;
+
+  ctx.fillText(
+    "Tap To Retry",
+    this.CENTER_X,
+    this.CENTER_Y + 40 * this.scale
+  );
+},
+retryMode1() {
+
+  this.mode1GameOver = false;
+
+  const suffixes = ["st", "nd", "rd", "th"];
+  this.mode1TargetSuffix =
+    suffixes[Math.floor(Math.random() * 4)];
+
+  this.spawnMode1Numbers();
+},
+
+
+startMode1Suction(index) {
+
+  const n = this.mode1Numbers[index];
+
+  this.mode1SuctionActive = true;
+
+  this.mode1SuctionData = {
+    index: index,
+    startX: n.x,
+    startY: n.y,
+    time: 0,
+    rotation: 0,
+    scale: 1
+  };
+},
+
+
+updateMode1Suction(delta) {
+
+  if (!this.mode1SuctionActive) return;
+
+  const s = this.mode1SuctionData;
+  const n = this.mode1Numbers[s.index];
+
+  if (!n) {
+    this.mode1SuctionActive = false;
+    return;
+  }
+
+  s.time += delta;
+
+  const progress = s.time / this.mode1SuctionDuration;
+
+  // Spiral movement
+  const angle = progress * Math.PI * 4;
+  const radius = (1 - progress) * 60 * this.scale;
+
+  n.x = this.mascot.x + Math.cos(angle) * radius;
+  n.y = this.mascot.y + Math.sin(angle) * radius;
+
+  s.rotation += 0.3;
+  s.scale = 1 - progress;
+
+  n.renderRotation = s.rotation;
+  n.renderScale = s.scale;
+
+  if (progress >= 1) {
+
+    this.finishMode1Suction();
+  }
+},
+
+finishMode1Suction() {
+
+  const s = this.mode1SuctionData;
+  const n = this.mode1Numbers[s.index];
+
+  if (!n) {
+    this.mode1SuctionActive = false;
+    return;
+  }
+
+  // Check correctness AFTER animation
+  if (this.getSuffix(n.number) === this.mode1TargetSuffix) {
+
+    this.score += 10;
+    this.mode1CorrectCollected++;
+    this.spawnSparkBurst(this.mascot.x, this.mascot.y);
+
+    this.mode1Numbers.splice(s.index, 1);
+
+    if (this.mode1CorrectCollected === this.mode1CorrectTotal) {
+      this.startMode1Confirmation();
+    }
+
+  } else {
+
+    this.score -= 5;
+    this.mode1GameOver = true;
+    this.mode1RoundActive = false;
+  }
+
+  this.mode1SuctionActive = false;
+  this.mode1SuctionData = null;
+} ,
+
+
+drawDreamBackground(ctx) {
+  const gradient = ctx.createLinearGradient(
+    0, 0,
+    0, this.cssHeight
+  );
+
+  gradient.addColorStop(0, "#60A5FA");  // sky blue
+  gradient.addColorStop(0.5, "#A78BFA"); // lavender
+  gradient.addColorStop(1, "#F472B6");  // soft pink
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+
+  // soft radial glow center
+  const glow = ctx.createRadialGradient(
+    this.CENTER_X,
+    this.CENTER_Y,
+    0,
+    this.CENTER_X,
+    this.CENTER_Y,
+    this.cssWidth * 0.8
+  );
+
+  glow.addColorStop(0, "rgba(255,255,255,0.15)");
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+},
+
+
+drawFloatingSparkles(ctx, x, y) {
+
+  const time = performance.now() * 0.002;
+
+  for (let i = 0; i < 6; i++) {
+
+    const angle = (Math.PI * 2 / 6) * i + time;
+    const radius = 70 * this.scale;
+
+    const sx = x + Math.cos(angle) * radius;
+    const sy = y + Math.sin(angle) * radius;
+
+    ctx.beginPath();
+    ctx.arc(sx, sy, 6 * this.scale, 0, Math.PI * 2);
+    ctx.fillStyle = "#FFFACD";
+    ctx.fill();
+  }
+}
 };
