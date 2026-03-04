@@ -1,5 +1,4 @@
 const Game3 = {
-
   centerX: 0,
   centerY: 0,
   scale: 1,
@@ -17,7 +16,7 @@ const Game3 = {
   score: 0,
   combo: 0,
   gameState: "PLAYING",
-  running: true, // ⭐ ADDED: Required for PauseArea to control game state
+  running: true, 
 
   currentGrade: 1,
 
@@ -45,7 +44,6 @@ const Game3 = {
   symbolHue: 0,
 
   init() {
-    // use the viewport size directly – container bounds can be unreliable on mobile
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.onResize(w, h);
@@ -63,14 +61,12 @@ const Game3 = {
 
     this.spawnNumbers();
 
-    // ⭐ ADDED: Initialize the Pause Menu connection
     if (typeof PauseArea !== 'undefined') {
       const canvas = document.getElementById("game_canvas") || document.querySelector("canvas");
       if (canvas) PauseArea.init(canvas, canvas.getContext('2d'), this);
     }
   },
 
-  // ⭐ ADDED: Allows the Restart button on the pause menu to work
   reset() {
       this.init();
   },
@@ -172,17 +168,12 @@ const Game3 = {
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
-  update(ctx, fingers, dt = 1/60) {
-    // ⭐ ADDED: The Event Shield. If paused, we set time (dt) to 0. This freezes all animations instantly!
+  update(ctx, landmarks, dt = 1/60) {
     const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
-    if (isPaused) {
-        dt = 0; 
-    }
+    if (isPaused) dt = 0; 
 
     ctx.save();
-
     this.symbolHue = (this.symbolHue + 200 * dt) % 360;
-
     this.drawConfetti(ctx, dt); 
 
     if (this.shakeTime > 0) {
@@ -200,20 +191,19 @@ const Game3 = {
     if (this.gameState !== "PLAYING") { 
         ctx.restore(); 
     } else {
-        if (fingers.length < 2) {
-          this.drawFeedback(ctx, "Need 2 Hands!", "orange");
+        if (!landmarks || landmarks.length < 3) {
+          this.drawFeedback(ctx, "Show One Hand!", "orange");
         } else {
-          fingers.sort((a,b)=>a.y-b.y);
-          const h1=fingers[0];
-          const h2=fingers[1];
+          const indexTip = landmarks[0];
+          const thumbTip = landmarks[1];
+          const wrist = landmarks[2];
 
-          this.checkPose(ctx,h1,h2,dt);
-          this.drawArmSymbol(ctx,h1,h2);
+          this.checkPose(ctx, indexTip, thumbTip, wrist, dt);
+          this.drawArmSymbol(ctx, indexTip, thumbTip, wrist);
         }
         ctx.restore();
     }
 
-    // ⭐ ADDED: Draw the Pause UI over the frozen game
     if (typeof PauseArea !== 'undefined') {
         PauseArea.drawPauseIcon(ctx);
         if (isPaused) PauseArea.draw();
@@ -237,24 +227,34 @@ const Game3 = {
     ctx.globalAlpha=1;
   },
 
-  checkPose(ctx,h1,h2,dt){
-    if(h1.x<this.centerX-this.margin && h2.x<this.centerX-this.margin) this.detectedSymbol=">";
-    else if(h1.x>this.centerX+this.margin && h2.x>this.centerX+this.margin) this.detectedSymbol="<";
-    else this.detectedSymbol="Center";
+  checkPose(ctx, indexTip, thumbTip, wrist, dt) {
+    const tipsX = (indexTip.x + thumbTip.x) / 2;
+    const threshold = 30 * this.scale; 
 
-    const wrongRelation=this.currentRelation===">"?"<":">";
-
-    if(this.detectedSymbol===this.currentRelation){
-      this.winHoldTime+=dt;
-      this.failHoldTime=0;
-      this.drawProgressBar(ctx,this.winHoldTime/this.winHoldThreshold,"#00FFCC");
-      if(this.winHoldTime>=this.winHoldThreshold) this.handleSuccess();
+    if (tipsX < wrist.x - threshold) {
+        this.detectedSymbol = ">"; 
+    } else if (tipsX > wrist.x + threshold) {
+        this.detectedSymbol = "<"; 
+    } else {
+        this.detectedSymbol = "Center";
     }
-    else if(this.detectedSymbol===wrongRelation){
-      this.failHoldTime+=dt;
-      this.winHoldTime=0;
-      this.drawProgressBar(ctx,this.failHoldTime/this.failHoldThreshold,"#FF0000");
-      if(this.failHoldTime>=this.failHoldThreshold) this.handleFail();
+
+    const wrongRelation = this.currentRelation === ">" ? "<" : ">";
+
+    if (this.detectedSymbol === this.currentRelation) {
+      this.winHoldTime += dt;
+      this.failHoldTime = 0;
+      this.drawProgressBar(ctx, this.winHoldTime / this.winHoldThreshold, "#00FFCC");
+      if(this.winHoldTime >= this.winHoldThreshold) this.handleSuccess();
+    }
+    else if (this.detectedSymbol === wrongRelation) {
+      this.failHoldTime += dt;
+      this.winHoldTime = 0;
+      this.drawProgressBar(ctx, this.failHoldTime / this.failHoldThreshold, "#FF0000");
+      if(this.failHoldTime >= this.failHoldThreshold) this.handleFail();
+    } else {
+      this.winHoldTime = Math.max(0, this.winHoldTime - dt);
+      this.failHoldTime = Math.max(0, this.failHoldTime - dt);
     }
   },
 
@@ -317,43 +317,40 @@ const Game3 = {
     this.popups=this.popups.filter(p=>p.life>0);
   },
 
-  drawArmSymbol(ctx, h1, h2) {
-
+  drawArmSymbol(ctx, indexTip, thumbTip, wrist) {
     ctx.lineWidth = 12 * this.scale;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.shadowBlur = 15 * this.scale;
 
-    // 🎨 ONLY pose-based color (like old version)
-    let color = "#00FFCC"; // Neutral Cyan
+    let color = "#00FFCC"; 
 
     if (this.detectedSymbol === ">") {
-        color = "#FFFF00"; // Yellow
+        color = "#FFFF00"; 
     } 
     else if (this.detectedSymbol === "<") {
-        color = "#00AAFF"; // Blue
+        color = "#00AAFF"; 
     }
 
     ctx.strokeStyle = color;
     ctx.shadowColor = color;
 
-    // 🖐 Natural hand-created symbol
     ctx.beginPath();
-    ctx.moveTo(h1.x, h1.y);
-    ctx.lineTo(this.centerX, this.centerY);
-    ctx.lineTo(h2.x, h2.y);
+    ctx.moveTo(indexTip.x, indexTip.y);
+    ctx.lineTo(wrist.x, wrist.y);
+    ctx.lineTo(thumbTip.x, thumbTip.y);
     ctx.stroke();
 
     ctx.shadowBlur = 0;
 
-    // Optional white hand dots (clean look)
     ctx.fillStyle = "white";
-    [h1, h2].forEach(h => {
+    [indexTip, thumbTip, wrist].forEach(point => {
         ctx.beginPath();
-        ctx.arc(h.x, h.y, 8 * this.scale, 0, Math.PI * 2);
+        ctx.arc(point.x, point.y, 8 * this.scale, 0, Math.PI * 2);
         ctx.fill();
     });
-},
+  },
+  
   drawUI(ctx){
     ctx.textAlign="center";
     ctx.textBaseline="middle";
@@ -412,5 +409,93 @@ const Game3 = {
 
     ctx.fillStyle=color;
     ctx.fillRect(this.centerX-width/2,this.centerY+70*this.scale,width*Math.min(1,percentage),height);
+  },
+
+  // ⭐ ADDITIVE LOGIC: 100% Native MediaPipe Integration Below Here ⭐
+  lastTime: 0,
+  gameCtx: null,
+
+  startDetection(canvasId) {
+    const canvas = document.getElementById(canvasId) || document.querySelector("canvas");
+    if (!canvas) {
+        console.error("Game3: Canvas not found!");
+        return;
+    }
+    this.gameCtx = canvas.getContext('2d');
+    
+    // Create a hidden video element to feed the webcam to MediaPipe
+    const videoElement = document.createElement('video');
+    videoElement.style.display = 'none';
+    document.body.appendChild(videoElement);
+
+    // Initialize MediaPipe Hands
+    const hands = new Hands({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }});
+
+    hands.setOptions({
+      maxNumHands: 1, // Only tracking 1 hand now!
+      modelComplexity: 1,
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
+    });
+
+    // When the AI finds hands, trigger our new game loop
+    hands.onResults((results) => {
+      this.onCameraFrame(results, canvas);
+    });
+
+    // Turn on the webcam
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await hands.send({image: videoElement});
+      },
+      width: window.innerWidth,
+      height: window.innerHeight
+    });
+    camera.start();
+  },
+
+  onCameraFrame(results, canvas) {
+    // Calculate precise delta time (dt) for smooth animations
+    const now = performance.now();
+    const dt = this.lastTime ? (now - this.lastTime) / 1000 : 1/60;
+    this.lastTime = now;
+
+    // Clear the canvas and draw the webcam feed mirrored
+    this.gameCtx.clearRect(0, 0, canvas.width, canvas.height);
+    this.gameCtx.save();
+    this.gameCtx.scale(-1, 1);
+    this.gameCtx.translate(-canvas.width, 0);
+    this.gameCtx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
+    this.gameCtx.restore();
+
+    let extractedPoints = [];
+
+    // If a hand is detected, extract only the 3 points we need and convert them to screen pixels
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const hand = results.multiHandLandmarks[0];
+        
+        // MediaPipe returns coordinates from 0.0 to 1.0. We multiply by canvas size to get actual pixels.
+        // We also flip the X axis (1 - x) because the camera is mirrored like a selfie!
+        const wrist = { 
+            x: (1 - hand[0].x) * canvas.width, 
+            y: hand[0].y * canvas.height 
+        };
+        const thumbTip = { 
+            x: (1 - hand[4].x) * canvas.width, 
+            y: hand[4].y * canvas.height 
+        };
+        const indexTip = { 
+            x: (1 - hand[8].x) * canvas.width, 
+            y: hand[8].y * canvas.height 
+        };
+
+        // Put them in the specific order the update function expects
+        extractedPoints = [indexTip, thumbTip, wrist];
+    }
+
+    // Run the main game loop with the new points
+    this.update(this.gameCtx, extractedPoints, dt);
   }
 };
