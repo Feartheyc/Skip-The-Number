@@ -46,7 +46,7 @@ window.startGame = function (gameName) {
 
   if (gameName === "game1") { window.currentGame = Game1; Game1.init(); }
   if (gameName === "game2") { window.currentGame = Game2; Game2.init(); }
-  if (gameName === "Game3") { window.currentGame = Game3; Game3.init(); }
+  if (gameName === "Game3") { window.currentGame = Game3; Game3.init(); Game3.startDetection("your_canvas_id"); }
   if (gameName === "Game4") { window.currentGame = Game4; Game4.init(); }
   if (gameName === "Game5") { window.currentGame = Game5; Game5.init(); }
   if (gameName === "Game6") { window.currentGame = Game6; Game6.init(); }
@@ -54,7 +54,7 @@ window.startGame = function (gameName) {
   if (gameName === "Game8") { window.currentGame = Game8; Game8.init(); }
   if (gameName === "Game9") { window.currentGame = Game9; Game9.init(); }
   if (gameName === "Game10") {
-    if (window.initArmDetection) window.initArmDetection(); 
+    if (window.initArmDetection) window.initArmDetection();
     window.currentGame = Game10;
     Game10.init();
   }
