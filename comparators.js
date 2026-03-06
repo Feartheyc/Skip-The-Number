@@ -42,6 +42,7 @@ const Game3 = {
   shakeMag: 0,
 
   symbolHue: 0,
+  cameraStarted: false,
 
   init() {
     const w = window.innerWidth;
@@ -103,7 +104,7 @@ const Game3 = {
 
   getBrightColor() {
     const hue = Math.floor(Math.random() * 360);
-    return `hsl(${hue}, 900%, 60%)`;
+    return `hsl(${hue}, 100%, 60%)`;
   },
 
   spawnNumbers() {
@@ -169,11 +170,12 @@ const Game3 = {
   },
 
   update(ctx, landmarks, dt = 1/60) {
+
     const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
     if (isPaused) dt = 0; 
 
     ctx.save();
-    this.symbolHue = (this.symbolHue + 200 * dt) % 360;
+    
     this.drawConfetti(ctx, dt); 
 
     if (this.shakeTime > 0) {
@@ -416,6 +418,10 @@ const Game3 = {
   gameCtx: null,
 
   startDetection() {
+
+  if (this.cameraStarted) return;
+  this.cameraStarted = true;
+
   const video = document.getElementById("input_video");
 
   const hands = new Hands({
@@ -426,7 +432,7 @@ const Game3 = {
 
   hands.setOptions({
     maxNumHands: 1,
-    modelComplexity: 0,
+    modelComplexity: 1,
     minDetectionConfidence: 0.6,
     minTrackingConfidence: 0.6
   });
@@ -443,6 +449,10 @@ const Game3 = {
     height: 720
   });
 
+  // ⭐ 2-line permanent startup flicker fix
+  video.style.opacity = "0";
+  video.onplaying = () => video.style.opacity = "1";
+
   camera.start();
 },
 
@@ -452,58 +462,65 @@ const canvas = document.getElementById("game_canvas");
 const rect = canvas.getBoundingClientRect();
 
 if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-window.fingerPositions = [];
-return;
+  window.fingerPositions = [];
+  this.prevPoints = null;
+  this.skipFrame = true; // reset jitter filter
+  return;
 }
-
-const smooth = (prev, next, factor = 0.75) => {
-if (prev === undefined) return next;
-return prev * factor + next * (1 - factor);
-};
-
-this.prevPoints = this.prevPoints || {};
 
 const hand = results.multiHandLandmarks[0];
 
-// Use displayed canvas size
 const width = rect.width;
 const height = rect.height;
 
-const wristX = (1 - hand[0].x) * width;
-const wristY = hand[0].y * height;
+// mirrored camera
+const rawIndexX = (1 - hand[8].x) * width;
+const rawIndexY = hand[8].y * height;
 
-const thumbX = (1 - hand[4].x) * width;
-const thumbY = hand[4].y * height;
+const rawThumbX = (1 - hand[4].x) * width;
+const rawThumbY = hand[4].y * height;
 
-const indexX = (1 - hand[8].x) * width;
-const indexY = hand[8].y * height;
+const rawWristX = (1 - hand[0].x) * width;
+const rawWristY = hand[0].y * height;
 
-const wrist = {
-x: smooth(this.prevPoints.wristX, wristX),
-y: smooth(this.prevPoints.wristY, wristY)
-};
-
-const thumbTip = {
-x: smooth(this.prevPoints.thumbX, thumbX),
-y: smooth(this.prevPoints.thumbY, thumbY)
-};
-
-const indexTip = {
-x: smooth(this.prevPoints.indexX, indexX),
-y: smooth(this.prevPoints.indexY, indexY)
-};
-
-this.prevPoints.wristX = wrist.x;
-this.prevPoints.wristY = wrist.y;
-
-this.prevPoints.thumbX = thumbTip.x;
-this.prevPoints.thumbY = thumbTip.y;
-
-this.prevPoints.indexX = indexTip.x;
-this.prevPoints.indexY = indexTip.y;
-
-window.fingerPositions = [indexTip, thumbTip, wrist];
+// ⭐ ignore first detection frame (removes jitter)
+if (this.skipFrame) {
+  this.skipFrame = false;
+  return;
 }
 
+this.prevPoints = this.prevPoints || {};
 
+const smoothPoint = (name, x, y) => {
+
+  const prev = this.prevPoints[name];
+
+  if (!prev) {
+    this.prevPoints[name] = { x, y };
+    return { x, y };
+  }
+
+  const dx = x - prev.x;
+  const dy = y - prev.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist < 2) return prev;
+
+  const factor = dist > 20 ? 0.5 : 0.8;
+
+  const smoothed = {
+    x: prev.x * factor + x * (1 - factor),
+    y: prev.y * factor + y * (1 - factor)
+  };
+
+  this.prevPoints[name] = smoothed;
+  return smoothed;
 };
+
+const indexTip = smoothPoint("index", rawIndexX, rawIndexY);
+const thumbTip = smoothPoint("thumb", rawThumbX, rawThumbY);
+const wrist = smoothPoint("wrist", rawWristX, rawWristY);
+
+window.fingerPositions = [indexTip, thumbTip, wrist];
+},
+}
