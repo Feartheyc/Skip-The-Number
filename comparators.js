@@ -415,87 +415,95 @@ const Game3 = {
   lastTime: 0,
   gameCtx: null,
 
-  startDetection(canvasId) {
-    const canvas = document.getElementById(canvasId) || document.querySelector("canvas");
-    if (!canvas) {
-        console.error("Game3: Canvas not found!");
-        return;
-    }
-    this.gameCtx = canvas.getContext('2d');
-    
-    // Create a hidden video element to feed the webcam to MediaPipe
-    const videoElement = document.createElement('video');
-    videoElement.style.display = 'none';
-    document.body.appendChild(videoElement);
+  startDetection() {
+  const video = document.getElementById("input_video");
 
-    // Initialize MediaPipe Hands
-    const hands = new Hands({locateFile: (file) => {
+  const hands = new Hands({
+    locateFile: (file) => {
       return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-    }});
-
-    hands.setOptions({
-      maxNumHands: 1, // Only tracking 1 hand now!
-      modelComplexity: 1,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
-    });
-
-    // When the AI finds hands, trigger our new game loop
-    hands.onResults((results) => {
-      this.onCameraFrame(results, canvas);
-    });
-
-    // Turn on the webcam
-    const camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await hands.send({image: videoElement});
-      },
-      width: window.innerWidth,
-      height: window.innerHeight
-    });
-    camera.start();
-  },
-
-  onCameraFrame(results, canvas) {
-    // Calculate precise delta time (dt) for smooth animations
-    const now = performance.now();
-    const dt = this.lastTime ? (now - this.lastTime) / 1000 : 1/60;
-    this.lastTime = now;
-
-    // Clear the canvas and draw the webcam feed mirrored
-    this.gameCtx.clearRect(0, 0, canvas.width, canvas.height);
-    this.gameCtx.save();
-    this.gameCtx.scale(-1, 1);
-    this.gameCtx.translate(-canvas.width, 0);
-    this.gameCtx.drawImage(results.image, 0, 0, canvas.width, canvas.height);
-    this.gameCtx.restore();
-
-    let extractedPoints = [];
-
-    // If a hand is detected, extract only the 3 points we need and convert them to screen pixels
-    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-        const hand = results.multiHandLandmarks[0];
-        
-        // MediaPipe returns coordinates from 0.0 to 1.0. We multiply by canvas size to get actual pixels.
-        // We also flip the X axis (1 - x) because the camera is mirrored like a selfie!
-        const wrist = { 
-            x: (1 - hand[0].x) * canvas.width, 
-            y: hand[0].y * canvas.height 
-        };
-        const thumbTip = { 
-            x: (1 - hand[4].x) * canvas.width, 
-            y: hand[4].y * canvas.height 
-        };
-        const indexTip = { 
-            x: (1 - hand[8].x) * canvas.width, 
-            y: hand[8].y * canvas.height 
-        };
-
-        // Put them in the specific order the update function expects
-        extractedPoints = [indexTip, thumbTip, wrist];
     }
+  });
 
-    // Run the main game loop with the new points
-    this.update(this.gameCtx, extractedPoints, dt);
-  }
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 0,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6
+  });
+
+  hands.onResults((results) => {
+    this.processHandResults(results);
+  });
+
+  const camera = new Camera(video, {
+    onFrame: async () => {
+      await hands.send({ image: video });
+    },
+    width: 1280,
+    height: 720
+  });
+
+  camera.start();
+},
+
+  processHandResults(results) {
+
+const canvas = document.getElementById("game_canvas");
+const rect = canvas.getBoundingClientRect();
+
+if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+window.fingerPositions = [];
+return;
+}
+
+const smooth = (prev, next, factor = 0.75) => {
+if (prev === undefined) return next;
+return prev * factor + next * (1 - factor);
+};
+
+this.prevPoints = this.prevPoints || {};
+
+const hand = results.multiHandLandmarks[0];
+
+// Use displayed canvas size
+const width = rect.width;
+const height = rect.height;
+
+const wristX = (1 - hand[0].x) * width;
+const wristY = hand[0].y * height;
+
+const thumbX = (1 - hand[4].x) * width;
+const thumbY = hand[4].y * height;
+
+const indexX = (1 - hand[8].x) * width;
+const indexY = hand[8].y * height;
+
+const wrist = {
+x: smooth(this.prevPoints.wristX, wristX),
+y: smooth(this.prevPoints.wristY, wristY)
+};
+
+const thumbTip = {
+x: smooth(this.prevPoints.thumbX, thumbX),
+y: smooth(this.prevPoints.thumbY, thumbY)
+};
+
+const indexTip = {
+x: smooth(this.prevPoints.indexX, indexX),
+y: smooth(this.prevPoints.indexY, indexY)
+};
+
+this.prevPoints.wristX = wrist.x;
+this.prevPoints.wristY = wrist.y;
+
+this.prevPoints.thumbX = thumbTip.x;
+this.prevPoints.thumbY = thumbTip.y;
+
+this.prevPoints.indexX = indexTip.x;
+this.prevPoints.indexY = indexTip.y;
+
+window.fingerPositions = [indexTip, thumbTip, wrist];
+}
+
+
 };
