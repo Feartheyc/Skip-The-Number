@@ -192,6 +192,27 @@ backgroundHueShift: 0,
 
 mode1MergeActive: false,
 mode1MergeData: null,
+
+
+
+/* ===== BLACK HOLE COLLAPSE SYSTEM ===== */
+
+blackHoleActive: false,
+blackHoleTime: 0,
+blackHoleDuration: 2200,
+blackHoleStrength: 0,
+accretionAngle : 0,
+collapseMessage: "",
+collapseMessageTimer: 0,
+
+
+/* ===== BIG BANG REBUILD SYSTEM ===== */
+
+bigBangActive: false,
+bigBangTime: 0,
+bigBangDuration: 1400,
+bigBangFlash: 0,
+
 init() {
 
   this.resize();
@@ -337,6 +358,8 @@ getSuffix(num) {
   this.drawStarLayer(ctx, this.starsMid);
   this.drawStarLayer(ctx, this.starsNear);
 
+  this.updateBigBang(delta);
+
   // // 🌫 COSMIC DUST
   // this.updateCosmicDust(delta);
   // this.drawCosmicDust(ctx);
@@ -375,19 +398,23 @@ if (this.gameMode === 0) {
   
   this.updateMode1Suction(delta);
   this.updateMode1Merge(delta);
+  this.updateBlackHole(delta);
 
   // Draw portal first (background layer)
+  // this.drawAccretionDisk(ctx);
   this.drawMode1PortalPlayer(ctx);
 
   // Then draw numbers above portal
   this.drawMode1Numbers(ctx);
   this.drawMode1Merge(ctx);
+  this.drawBlackHole(ctx);
 
   this.drawMode1Instruction(ctx);
 
   this.drawMode1GameOver(ctx);
 
 }
+this.drawBigBangFlash(ctx);
 
 
   this.drawScore(ctx);
@@ -1169,86 +1196,6 @@ drawStarLayer(ctx, layer) {
 },
 
 
-// initCosmicDust() {
-
-//   this.cosmicDust = [];
-
-//   for (let i = 0; i < this.dustCount; i++) {
-
-//     this.cosmicDust.push({
-//       x: Math.random() * this.cssWidth,
-//       y: Math.random() * this.cssHeight,
-//       size: Math.random() * 2 + 0.5,
-//       alpha: Math.random(),
-//       driftSpeed: Math.random() * 0.3 + 0.1,
-//       offset: Math.random() * Math.PI * 2
-//     });
-//   }
-// },
-
-
-// updateCosmicDust(delta) {
-
-//   this.dustGlobalTime += delta;
-
-//   for (let dust of this.cosmicDust) {
-
-//     dust.x += Math.cos(this.dustDriftAngle * this.dustGlobalTime + dust.offset) * dust.driftSpeed;
-//     dust.y += 0.1 * dust.driftSpeed;
-
-//     dust.alpha = 0.5 + Math.sin(this.dustGlobalTime * 0.001 + dust.offset) * 0.5;
-
-//     if (dust.y > this.cssHeight) {
-//       dust.y = 0;
-//       dust.x = Math.random() * this.cssWidth;
-//     }
-
-//     if (dust.x > this.cssWidth) dust.x = 0;
-//     if (dust.x < 0) dust.x = this.cssWidth;
-//   }
-// },
-
-
-// drawCosmicDust(ctx) {
-
-//   for (let dust of this.cosmicDust) {
-
-//     ctx.beginPath();
-//     ctx.arc(dust.x, dust.y, dust.size * this.scale, 0, Math.PI * 2);
-
-//     ctx.fillStyle = `rgba(180, 220, 255, ${dust.alpha})`;
-//     ctx.fill();
-//   }
-// },
-
-// drawNebula(ctx) {
-
-//   this.nebulaTime += this.nebulaSpeed * this.lastTime;
-
-//   const centerX = this.cssWidth / 2;
-//   const centerY = this.cssHeight / 2;
-
-//   const radius = Math.max(this.cssWidth, this.cssHeight);
-
-//   const gradient = ctx.createRadialGradient(
-//     centerX,
-//     centerY,
-//     radius * 0.1,
-//     centerX,
-//     centerY,
-//     radius
-//   );
-
-//   const hueShift = Math.sin(performance.now() * 0.0001) * 20;
-
-//   gradient.addColorStop(0, `hsla(${260 + hueShift}, 80%, 30%, 0.8)`);
-//   gradient.addColorStop(0.5, `hsla(${280 + hueShift}, 70%, 20%, 0.5)`);
-//   gradient.addColorStop(1, `hsla(${240 + hueShift}, 60%, 10%, 1)`);
-
-//   ctx.fillStyle = gradient;
-//   ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
-// },
-
 
 createShootingStar() {
 
@@ -1555,43 +1502,24 @@ drawMode1GameOver(ctx) {
 
   if (!this.mode1GameOver) return;
 
-  ctx.fillStyle = "red";
-  ctx.font = `bold ${60 * this.scale}px Arial`;
-  ctx.textAlign = "center";
-
-  ctx.fillText(
-    "Wrong Galaxy! Game Over",
-    this.CENTER_X,
-    this.CENTER_Y
-  );
-},
-
-
-drawMode1GameOver(ctx) {
-
-  if (!this.mode1GameOver) return;
-
-  // Translucent black overlay
-  ctx.fillStyle = "rgba(0,0,0,0.7)";
+  ctx.fillStyle = "black";
   ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
 
-  // GAME OVER text
   ctx.fillStyle = "#FF4444";
   ctx.font = `bold ${70 * this.scale}px Arial`;
   ctx.textAlign = "center";
 
   ctx.fillText(
-    "Galaxy Collapse!",
+    "Universe Destroyed",
     this.CENTER_X,
     this.CENTER_Y - 40 * this.scale
   );
 
-  // Retry button
-  ctx.fillStyle = "#00FFAA";
+  ctx.fillStyle = "#FFFFFF";
   ctx.font = `bold ${40 * this.scale}px Arial`;
 
   ctx.fillText(
-    "Tap To Retry",
+    "Tap To Rebuild The Galaxy",
     this.CENTER_X,
     this.CENTER_Y + 40 * this.scale
   );
@@ -1603,6 +1531,9 @@ retryMode1() {
   const suffixes = ["st", "nd", "rd", "th"];
   this.mode1TargetSuffix =
     suffixes[Math.floor(Math.random() * 4)];
+
+  // ⭐ Start Big Bang rebuild instead of instant reset
+  this.startBigBang();
 
   this.spawnMode1Numbers();
 },
@@ -1686,50 +1617,16 @@ finishMode1Suction() {
   } else {
 
     this.score -= 5;
-    this.mode1GameOver = true;
+
+  // start black hole collapse
+    this.startBlackHoleCollapse();
+
     this.mode1RoundActive = false;
   }
 
   this.mode1SuctionActive = false;
   this.mode1SuctionData = null;
-} ,finishMode1Suction() {
-
-  const s = this.mode1SuctionData;
-  const n = this.mode1Numbers[s.index];
-
-  if (!n) {
-    this.mode1SuctionActive = false;
-    return;
-  }
-
-  // Check correctness AFTER animation
-  if (this.getSuffix(n.number) === this.mode1TargetSuffix) {
-
-    this.score += 10;
-
-    this.mode1CorrectCollected++;
-
-    this.spawnSparkBurst(this.mascot.x, this.mascot.y);
-
-    // START MERGE ANIMATION
-    this.startMode1Merge(n.number);
-
-    this.mode1Numbers.splice(s.index, 1);
-
-    if (this.mode1CorrectCollected === this.mode1CorrectTotal) {
-      this.startMode1Confirmation();
-    }
-
-  } else {
-
-    this.score -= 5;
-    this.mode1GameOver = true;
-    this.mode1RoundActive = false;
-  }
-
-  this.mode1SuctionActive = false;
-  this.mode1SuctionData = null;
-},
+} ,
 
 
 drawDreamBackground(ctx) {
@@ -1762,6 +1659,45 @@ drawDreamBackground(ctx) {
   ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
 },
 
+
+// drawDreamBackground(ctx) {
+
+//   const cx = this.mascot.x;
+//   const cy = this.mascot.y;
+
+//   const collapse = this.blackHoleActive
+//     ? this.blackHoleStrength * 0.03
+//     : 0;
+
+//   const gradient = ctx.createRadialGradient(
+//     cx,
+//     cy,
+//     100,
+//     cx,
+//     cy,
+//     this.cssWidth
+//   );
+
+//   gradient.addColorStop(0, "#000000");
+//   gradient.addColorStop(0.3, "#60A5FA");
+//   gradient.addColorStop(0.6, "#A78BFA");
+//   gradient.addColorStop(1, "#F472B6");
+
+//   ctx.save();
+
+//   if (this.blackHoleActive) {
+
+//     ctx.translate(cx, cy);
+//     ctx.scale(1 - collapse, 1 - collapse);
+//     ctx.translate(-cx, -cy);
+
+//   }
+
+//   ctx.fillStyle = gradient;
+//   ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+
+//   ctx.restore();
+// }
 
 drawFloatingSparkles(ctx, x, y) {
 
@@ -1843,5 +1779,221 @@ drawMode1Merge(ctx) {
   ctx.fillText(text, 0, 0);
 
   ctx.restore();
+},
+
+
+startBlackHoleCollapse() {
+
+  this.blackHoleActive = true;
+  this.blackHoleTime = 0;
+  this.blackHoleStrength = 0;
+  this.accretionAngle = 0;
+  this.collapseMessage = "Your Universe Has Collapsed...";
+  this.collapseMessageTimer = 0;
+  this.blackHoleFlash = false;
+  this.blackHoleFlashAlpha = 0;
+},
+
+updateBlackHole(delta) {
+
+  this.accretionAngle += 0.05 + this.blackHoleStrength * 0.1;
+  if (!this.blackHoleActive) return;
+
+  this.blackHoleTime += delta;
+
+  const progress = this.blackHoleTime / this.blackHoleDuration;
+
+  this.blackHoleStrength = progress * 25;
+
+  const cx = this.mascot.x;
+  const cy = this.mascot.y;
+
+  /* SUCK STARS */
+
+  const suckStars = (layer) => {
+
+  for (let s of layer) {
+
+    const dx = cx - s.x;
+    const dy = cy - s.y;
+
+    const dist = Math.sqrt(dx*dx + dy*dy) + 0.001;
+
+    // inward pull
+    const pull = 0.02 * this.blackHoleStrength;
+
+    // sideways orbit force (gravity bending)
+    const orbit = 0.015 * this.blackHoleStrength;
+
+    s.x += (dx / dist) * pull * dist;
+    s.y += (dy / dist) * pull * dist;
+
+    // perpendicular swirl
+    s.x += (-dy / dist) * orbit * dist;
+    s.y += (dx / dist) * orbit * dist;
+  }
+};
+
+  suckStars(this.starsFar);
+  suckStars(this.starsMid);
+  suckStars(this.starsNear);
+
+  /* SUCK NUMBERS */
+
+  for (let n of this.mode1Numbers) {
+
+    const dx = cx - n.x;
+    const dy = cy - n.y;
+
+    n.x += dx * 0.04 * this.blackHoleStrength;
+    n.y += dy * 0.04 * this.blackHoleStrength;
+
+    n.renderScale = (n.renderScale || 1) * 0.97;
+    n.renderRotation = (n.renderRotation || 0) + 0.4;
+  }
+
+  /* END COLLAPSE */
+
+  if (progress >= 1) {
+
+    this.blackHoleActive = false;
+    this.mode1GameOver = true;
+
+    this.collapseMessageTimer = 2000;
+  }
+},
+
+drawBlackHole(ctx) {
+
+  if (!this.blackHoleActive) return;
+
+  const px = this.mascot.x;
+  const py = this.mascot.y;
+
+  const radius = 120 * this.scale +
+    Math.sin(performance.now() * 0.02) * 20;
+
+  const gradient = ctx.createRadialGradient(
+    px, py, 10,
+    px, py, radius
+  );
+
+  gradient.addColorStop(0, "#000000");
+  gradient.addColorStop(0.4, "#050505");
+  gradient.addColorStop(1, "rgba(0,0,0,0)");
+
+  ctx.fillStyle = gradient;
+
+  ctx.beginPath();
+  ctx.arc(px, py, radius, 0, Math.PI * 2);
+  ctx.fill();
+},
+
+drawAccretionDisk(ctx) {
+
+  if (!this.blackHoleActive) return;
+
+  const cx = this.mascot.x;
+  const cy = this.mascot.y;
+
+  const radius = 70 + this.blackHoleStrength * 120;
+
+  ctx.save();
+
+  ctx.translate(cx, cy);
+  ctx.rotate(this.accretionAngle);
+
+  const gradient = ctx.createRadialGradient(
+    0,0,radius*0.4,
+    0,0,radius
+  );
+
+  gradient.addColorStop(0,"rgba(255,255,255,0)");
+  gradient.addColorStop(0.4,"rgba(255,200,100,0.7)");
+  gradient.addColorStop(0.7,"rgba(255,120,0,0.9)");
+  gradient.addColorStop(1,"rgba(255,0,150,0)");
+
+  ctx.fillStyle = gradient;
+
+  ctx.beginPath();
+  ctx.ellipse(0,0,radius,radius*0.35,0,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.restore();
+},
+
+startBigBang() {
+
+  this.bigBangActive = true;
+  this.bigBangTime = 0;
+  this.bigBangFlash = 1;
+
+  const cx = this.CENTER_X;
+  const cy = this.CENTER_Y;
+
+  const explodeStars = (layer) => {
+
+    for (let s of layer) {
+
+      const angle = Math.random() * Math.PI * 2;
+      const speed = Math.random() * 6 + 3;
+
+      s.x = cx;
+      s.y = cy;
+
+      s.vx = Math.cos(angle) * speed;
+      s.vy = Math.sin(angle) * speed;
+    }
+  };
+
+  explodeStars(this.starsFar);
+  explodeStars(this.starsMid);
+  explodeStars(this.starsNear);
+},
+
+updateBigBang(delta) {
+
+  if (!this.bigBangActive) return;
+
+  this.bigBangTime += delta;
+
+  const progress = this.bigBangTime / this.bigBangDuration;
+
+  const pushStars = (layer) => {
+
+    for (let s of layer) {
+
+      if (s.vx !== undefined) {
+
+        s.x += s.vx * 2;
+        s.y += s.vy * 2;
+
+        s.vx *= 0.98;
+        s.vy *= 0.98;
+      }
+    }
+  };
+
+  pushStars(this.starsFar);
+  pushStars(this.starsMid);
+  pushStars(this.starsNear);
+
+  this.bigBangFlash = Math.max(0, 1 - progress * 2);
+
+  if (progress >= 1) {
+
+    this.bigBangActive = false;
+
+    // restore normal starfield movement
+    this.initStarfield();
+  }
+},
+
+drawBigBangFlash(ctx) {
+
+  if (this.bigBangFlash <= 0) return;
+
+  ctx.fillStyle = `rgba(255,255,255,${this.bigBangFlash})`;
+  ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
 }
 };          
