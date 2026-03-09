@@ -1,5 +1,4 @@
 const Game5 = {
-
   running: false,
   score: 0,
   BASE_WIDTH: 1280,
@@ -31,6 +30,10 @@ const Game5 = {
   levelFailedTimer: 0, 
   listenersAdded: false,
 
+  // --- ADDITIVE: TFJS Properties ---
+  tfModel: null,
+  isEvaluating: false, 
+
   init() {
     this.running = true;
     this.score = 0;
@@ -39,6 +42,9 @@ const Game5 = {
     
     if (window.stopCamera) window.stopCamera();
     
+    // --- ADDITIVE: Load your custom model ---
+    this.loadModel();
+
     const menu = document.getElementById("menu");
     if (menu) menu.style.display = "none";
     const video = document.getElementById("input_video");
@@ -51,6 +57,17 @@ const Game5 = {
       window.addEventListener('resize', () => { if (this.running) this.resizeCanvas(); });
       this.listenersAdded = true;
     }
+  },
+
+  // --- ADDITIVE: Model Loading logic ---
+  async loadModel() {
+      try {
+          // Pointing to your specific folder structure from the screenshot
+          this.tfModel = await tf.loadLayersModel('./tfjs_model/model.json');
+          console.log("Custom Roman Numeral Model loaded successfully!");
+      } catch (error) {
+          console.error("Failed to load TFJS model. Make sure you are running a local server and the path is correct.", error);
+      }
   },
 
   resizeCanvas() {
@@ -84,6 +101,7 @@ const Game5 = {
     this.isDrawing = false;
     this.particles = [];
     this.cursorColor = "white"; 
+    this.isEvaluating = false; // --- ADDITIVE ---
   },
 
   getPoint(sx, sy, w, h) {
@@ -281,17 +299,120 @@ const Game5 = {
     }
   },
 
+  // --- ADDITIVE: Update to check isEvaluating and call TFJS ---
   handleFreehand(baseUnit) {
       if (!this.isDrawing && this.freehandStrokes.length > 0) {
           if (this.submitTimer > 0) {
               this.submitTimer--;
-              if (this.submitTimer <= 0) {
-                  this.evaluateShapeVector(baseUnit);
+              if (this.submitTimer <= 0 && !this.isEvaluating) {
+                  this.isEvaluating = true; 
+                  this.evaluateWithTFJS(baseUnit);
               }
           }
       }
   },
 
+  // --- ADDITIVE: The Core TFJS Integration ---
+  async evaluateWithTFJS(baseUnit) {
+      // Fallback to original vector logic if the model hasn't loaded
+      if (!this.tfModel) {
+          console.warn("TFJS model not loaded, falling back to vector check.");
+          this.evaluateShapeVector(baseUnit);
+          this.isEvaluating = false;
+          return;
+      }
+
+      // 1. Create a 28x28 offscreen canvas (Adjust if your model expects 64x64 or 128x128!)
+      const MODEL_IMG_SIZE = 28; 
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = MODEL_IMG_SIZE;
+      offCanvas.height = MODEL_IMG_SIZE;
+      const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+
+      offCtx.fillStyle = "black";
+      offCtx.fillRect(0, 0, MODEL_IMG_SIZE, MODEL_IMG_SIZE);
+
+      // 2. Find bounding box to center and scale the user's drawing
+      let allPts = [];
+      this.freehandStrokes.forEach(s => allPts.push(...s));
+      let minX = Math.min(...allPts.map(p => p.x));
+      let maxX = Math.max(...allPts.map(p => p.x));
+      let minY = Math.min(...allPts.map(p => p.y));
+      let maxY = Math.max(...allPts.map(p => p.y));
+      
+      let drawWidth = Math.max(maxX - minX, 1);
+      let drawHeight = Math.max(maxY - minY, 1);
+      let padding = 4;
+      let scale = (MODEL_IMG_SIZE - padding * 2) / Math.max(drawWidth, drawHeight);
+
+      // 3. Draw strokes to the tiny canvas
+      offCtx.save();
+      offCtx.translate(MODEL_IMG_SIZE / 2, MODEL_IMG_SIZE / 2);
+      offCtx.scale(scale, scale);
+      offCtx.translate(-(minX + drawWidth / 2), -(minY + drawHeight / 2));
+
+      offCtx.lineWidth = 2 / scale; // Keep lines visible to the model
+      offCtx.strokeStyle = "white";
+      offCtx.lineCap = "round";
+      offCtx.lineJoin = "round";
+
+      this.freehandStrokes.forEach(stroke => {
+          if(stroke.length < 2) return;
+          offCtx.beginPath();
+          offCtx.moveTo(stroke[0].x, stroke[0].y);
+          for (let i = 1; i < stroke.length; i++) offCtx.lineTo(stroke[i].x, stroke[i].y);
+          offCtx.stroke();
+      });
+      offCtx.restore();
+
+      // 4. Extract data and run through the model
+      try {
+          const imageData = offCtx.getImageData(0, 0, MODEL_IMG_SIZE, MODEL_IMG_SIZE);
+          
+          // Tidy cleans up memory automatically after execution
+          const predictionData = tf.tidy(() => {
+              // Convert to 1 channel (grayscale), normalize 0-1, add batch dimension
+              const tensor = tf.browser.fromPixels(imageData, 1)
+                                       .toFloat()
+                                       .div(tf.scalar(255))
+                                       .expandDims();
+              
+              return this.tfModel.predict(tensor).dataSync(); 
+          });
+
+          // Find the class with the highest probability
+          const predictedIndex = predictionData.indexOf(Math.max(...predictionData));
+          
+          // ==========================================
+          // IMPORTANT: MAPPING LOGIC
+          // I don't know exactly how romantraining.py categorized classes.
+          // Assuming classes 0-99 correspond to numbers 1-100:
+          // ==========================================
+          const level = this.levels[this.currentLevel];
+          const targetNumber = parseInt(level.number);
+          
+          const isCorrect = (predictedIndex + 1 === targetNumber);
+
+          if (isCorrect) {
+              this.levelCompleteTimer = 1;
+              this.score += 20;
+              this.cursorColor = "#00FFCC";
+          } else {
+              console.log(`TFJS Guessed Index: ${predictedIndex}, Expected Number: ${targetNumber}`);
+              this.triggerFail();
+          }
+
+      } catch (err) {
+          console.error("TFJS Prediction Error:", err);
+          this.triggerFail();
+      }
+
+      this.isEvaluating = false; 
+  },
+
+  // -------------------------------------------------------------
+  // YOUR EXISTING VECTOR LOGIC (Untouched, used as fallback)
+  // -------------------------------------------------------------
   splitStrokeAtCorners(stroke) {
     if (stroke.length < 10) return [stroke];
     let segments = [];
@@ -320,8 +441,7 @@ const Game5 = {
 
     if (splitStrokes.length === 0) return this.triggerFail();
 
-    // 1. GAP CHECK: Limit distance between strokes (Prevent disjointed 6/8)
-    const maxGap = 350; // Balanced for multi-character numbers like XVIII
+    const maxGap = 350; 
     for (let i = 0; i < splitStrokes.length - 1; i++) {
         let p1 = splitStrokes[i][splitStrokes[i].length - 1];
         let p2 = splitStrokes[i+1][0];
@@ -332,7 +452,6 @@ const Game5 = {
     const template = level.localStrokes;
     const normUser = this.normalizeStrokes(splitStrokes);
 
-    // 2. STROKE COUNT: Be slightly lenient (+/- 1 stroke)
     if (Math.abs(normUser.length - template.length) > 1) return this.triggerFail();
 
     let usedTemplate = new Array(template.length).fill(false);
@@ -346,12 +465,11 @@ const Game5 = {
             if (score > bestScore) { bestScore = score; bestIndex = i; }
         }
         
-        // 3. STRICT MATCH: Every stroke MUST match a template part
         if (bestIndex !== -1 && bestScore > 0.45) {
             usedTemplate[bestIndex] = true;
             totalScore += bestScore;
         } else {
-            return this.triggerFail(); // Reject the "creature" lines
+            return this.triggerFail(); 
         }
     }
 
@@ -571,14 +689,11 @@ const Game5 = {
     let allPts = [];
     strokes.forEach(s => allPts.push(...s));
     
-    // Find the center of your drawing
     let minX = Math.min(...allPts.map(p => p.x)), maxX = Math.max(...allPts.map(p => p.x));
     let minY = Math.min(...allPts.map(p => p.y)), maxY = Math.max(...allPts.map(p => p.y));
     let centerX = (minX + maxX) / 2;
     let centerY = (minY + maxY) / 2;
 
-    // FIX: Use a FIXED SCALE (e.g., 300px) instead of the drawing's width/height.
-    // This stops the AI from stretching your "11" into a weird shape.
     const FIXED_SCALE = 300; 
 
     return strokes.map(stroke =>
