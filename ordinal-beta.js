@@ -188,6 +188,10 @@ levelUpTimer: 0,
 
 // 🌈 Background Evolution
 backgroundHueShift: 0,
+
+
+mode1MergeActive: false,
+mode1MergeData: null,
 init() {
 
   this.resize();
@@ -370,12 +374,14 @@ if (this.gameMode === 0) {
   this.updateMode1Logic();
   
   this.updateMode1Suction(delta);
+  this.updateMode1Merge(delta);
 
   // Draw portal first (background layer)
   this.drawMode1PortalPlayer(ctx);
 
   // Then draw numbers above portal
   this.drawMode1Numbers(ctx);
+  this.drawMode1Merge(ctx);
 
   this.drawMode1Instruction(ctx);
 
@@ -1437,13 +1443,40 @@ drawMode1PortalPlayer(ctx) {
 
   if (!portalImg) return;
 
+  const px = this.mascot.x;
+  const py = this.mascot.y;
+
+  // Draw portal sprite
   ctx.drawImage(
     portalImg,
-    this.mascot.x - size / 2,
-    this.mascot.y - size / 2,
+    px - size / 2,
+    py - size / 2,
     size,
     size
   );
+
+  // === DRAW GALAXY SUFFIX TEXT INSIDE PORTAL ===
+
+  const suffix = this.mode1TargetSuffix.toUpperCase();
+
+  ctx.save();
+
+  // glowing text
+  ctx.shadowColor = "#FFFFFF";
+  ctx.shadowBlur = 20;
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `bold ${60 * this.scale}px Comic Sans MS`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.fillText(
+    suffix,
+    px,
+    py
+  );
+
+  ctx.restore();
 },
 
 
@@ -1659,7 +1692,44 @@ finishMode1Suction() {
 
   this.mode1SuctionActive = false;
   this.mode1SuctionData = null;
-} ,
+} ,finishMode1Suction() {
+
+  const s = this.mode1SuctionData;
+  const n = this.mode1Numbers[s.index];
+
+  if (!n) {
+    this.mode1SuctionActive = false;
+    return;
+  }
+
+  // Check correctness AFTER animation
+  if (this.getSuffix(n.number) === this.mode1TargetSuffix) {
+
+    this.score += 10;
+
+    this.mode1CorrectCollected++;
+
+    this.spawnSparkBurst(this.mascot.x, this.mascot.y);
+
+    // START MERGE ANIMATION
+    this.startMode1Merge(n.number);
+
+    this.mode1Numbers.splice(s.index, 1);
+
+    if (this.mode1CorrectCollected === this.mode1CorrectTotal) {
+      this.startMode1Confirmation();
+    }
+
+  } else {
+
+    this.score -= 5;
+    this.mode1GameOver = true;
+    this.mode1RoundActive = false;
+  }
+
+  this.mode1SuctionActive = false;
+  this.mode1SuctionData = null;
+},
 
 
 drawDreamBackground(ctx) {
@@ -1710,5 +1780,68 @@ drawFloatingSparkles(ctx, x, y) {
     ctx.fillStyle = "#FFFACD";
     ctx.fill();
   }
+},
+
+startMode1Merge(number) {
+
+  this.mode1MergeActive = true;
+
+  this.mode1MergeData = {
+    number: number,
+    suffix: this.mode1TargetSuffix,
+    x: this.mascot.x,
+    y: this.mascot.y,
+    scale: 1,
+    rotation: 0,
+    time: 0,
+    duration: 500
+  };
+},
+
+updateMode1Merge(delta) {
+
+  if (!this.mode1MergeActive) return;
+
+  const m = this.mode1MergeData;
+
+  m.time += delta;
+
+  const progress = m.time / m.duration;
+
+  m.scale = 1 + progress * 0.8;
+  m.rotation += 0.15;
+
+  if (progress >= 1) {
+
+    this.mode1MergeActive = false;
+    this.mode1MergeData = null;
+  }
+},
+
+drawMode1Merge(ctx) {
+
+  if (!this.mode1MergeActive) return;
+
+  const m = this.mode1MergeData;
+
+  const text = `${m.number}${m.suffix}`;
+
+  ctx.save();
+
+  ctx.translate(m.x, m.y);
+  ctx.rotate(m.rotation);
+  ctx.scale(m.scale, m.scale);
+
+  ctx.shadowColor = "#FFD700";
+  ctx.shadowBlur = 30;
+
+  ctx.fillStyle = "#FFFFFF";
+  ctx.font = `bold ${70 * this.scale}px Comic Sans MS`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.fillText(text, 0, 0);
+
+  ctx.restore();
 }
-};
+};          
