@@ -346,8 +346,7 @@ getSuffix(num) {
 
   this.drawDreamBackground(ctx);
 
-  // 🌌 NEBULA BACKGROUND
-  // this.drawNebula(ctx);
+
 
   // 🌌 STARFIELD
   this.updateStarLayer(this.starsFar, delta);
@@ -383,8 +382,7 @@ getSuffix(num) {
   // this.updateConfetti(delta);
   this.updateSparkBursts(delta);
 
-  // 🎮 FOREGROUND
-// 🎮 GAME MODE SWITCH
+
 if (this.gameMode === 0) {
 
   // DEFAULT MODE (UNCHANGED)
@@ -403,8 +401,6 @@ if (this.gameMode === 0) {
   // Draw portal first (background layer)
   // this.drawAccretionDisk(ctx);
   this.drawMode1PortalPlayer(ctx);
-
-  // Then draw numbers above portal
   this.drawMode1Numbers(ctx);
   this.drawMode1Merge(ctx);
   this.drawBlackHole(ctx);
@@ -418,7 +414,7 @@ this.drawBigBangFlash(ctx);
 
 
   this.drawScore(ctx);
-  // this.drawConfetti(ctx);
+
   this.drawSparkBursts(ctx);
 },
 
@@ -470,7 +466,7 @@ confirmSelection(index) {
     this.score += 10;
 
     this.mascotState = "happy";
-    // this.spawnConfetti(door.x, door.y);
+   
     this.spawnSparkBurst(door.x, door.y);
 
     
@@ -491,18 +487,7 @@ confirmSelection(index) {
 
   }, 1200);
 },
-  // updateFeedback(delta) {
-
-  //   if (this.feedbackTimer > 0) {
-  //     this.feedbackTimer -= delta;
-  //     if (this.feedbackTimer < 0) this.feedbackTimer = 0;
-  //   }
-
-  //   if (this.flashTimer > 0) {
-  //     this.flashTimer -= delta;
-  //     if (this.flashTimer < 0) this.flashTimer = 0;
-  //   }
-  // },
+ 
 
   get doorRadius() {
     return this.DOOR_RADIUS * this.scale;
@@ -643,68 +628,6 @@ drawScore(ctx) {
   ctx.restore();
 },
 
-// drawScore(ctx) {
-
-//   const x = 30 * this.scale;
-//   const y = 30 * this.scale;
-//   const width = 260 * this.scale;
-//   const height = 80 * this.scale;
-
-//   const gradient = ctx.createLinearGradient(
-//     x, y,
-//     x, y + height
-//   );
-
-//   gradient.addColorStop(0, "#FDE047");
-//   gradient.addColorStop(1, "#F59E0B");
-
-//   ctx.save();
-
-//   ctx.shadowColor = "rgba(0,0,0,0.4)";
-//   ctx.shadowBlur = 20;
-
-//   ctx.fillStyle = gradient;
-//   ctx.beginPath();
-//   ctx.roundRect(x, y, width, height, 40 * this.scale);
-//   ctx.fill();
-
-//   ctx.shadowBlur = 0;
-
-//   ctx.fillStyle = "#FFFFFF";
-//   ctx.font = `bold ${36 * this.scale}px Comic Sans MS`;
-//   ctx.textAlign = "center";
-//   ctx.textBaseline = "middle";
-
-//   ctx.fillText(
-//     `⭐ ${this.score}`,
-//     x + width / 2,
-//     y + height / 2
-//   );
-
-//   ctx.restore();
-// }
-
-  // drawFeedback(ctx) {
-
-  //   if (this.feedbackTimer <= 0) return;
-
-  //   const alpha =
-  //     this.feedbackTimer / 1000;
-
-  //   ctx.globalAlpha = alpha;
-  //   ctx.fillStyle = this.feedbackColor;
-  //   ctx.font = `bold ${60 * this.scale}px Arial`;
-  //   ctx.textAlign = "center";
-
-  //   ctx.fillText(
-  //     this.feedbackText,
-  //     this.CENTER_X,
-  //     this.CENTER_Y
-  //   );
-
-  //   ctx.globalAlpha = 1;
-  // },
-
   drawFingerIndicator(ctx) {
 
     if (this.fingerX === null ||
@@ -733,59 +656,6 @@ drawScore(ctx) {
     ctx.fill();
   },
 
-//   spawnConfetti(x, y) {
-
-//   for (let i = 0; i < 40; i++) {
-
-//     this.confettiParticles.push({
-//       x: x,
-//       y: y,
-//       vx: (Math.random() - 0.5) * 8,
-//       vy: (Math.random() - 1.5) * 8,
-//       size: (Math.random() * 6 + 4) * this.scale,
-//       life: 800,
-//       color: `hsl(${Math.random() * 360}, 100%, 50%)`
-//     });
-//   }
-// },
-
-
-// updateConfetti(delta) {
-
-//   for (let i = this.confettiParticles.length - 1; i >= 0; i--) {
-
-//     const p = this.confettiParticles[i];
-
-//     p.life -= delta;
-//     p.x += p.vx;
-//     p.y += p.vy;
-//     p.vy += 0.25; // gravity
-
-//     if (p.life <= 0) {
-//       this.confettiParticles.splice(i, 1);
-//     }
-//   }
-// },
-
-
-
-// drawConfetti(ctx) {
-
-//   for (let p of this.confettiParticles) {
-
-//     ctx.globalAlpha = p.life / 800;
-//     ctx.fillStyle = p.color;
-
-//     ctx.fillRect(
-//       p.x,
-//       p.y,
-//       p.size,
-//       p.size
-//     );
-//   }
-
-//   ctx.globalAlpha = 1;
-// },
 
 spawnSparkBurst(x, y) {
 
