@@ -256,24 +256,10 @@ const Game3 = {
     return;
   }
 
-  const offsetX = 180 * this.scale;
-  const leftBoundary = this.centerX - offsetX;
-  const rightBoundary = this.centerX + offsetX;
+  const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
 
-  const handLeft = Math.min(indexTip.x, thumbTip.x);
-  const handRight = Math.max(indexTip.x, thumbTip.x);
-
-  const handWidth = handRight - handLeft;
-
-  const overlapLeft = Math.max(handLeft, leftBoundary);
-  const overlapRight = Math.min(handRight, rightBoundary);
-
-  const overlapWidth = Math.max(0, overlapRight - overlapLeft);
-
-  const overlapRatio = overlapWidth / handWidth;
-
-  // ⭐ require at least 50% of hand inside zone
-  if (overlapRatio < 0.7) {
+  // ⭐ require 50% hand inside zone
+  if (overlap < 0.5) {
     this.detectedSymbol = "None";
     this.winHoldTime = Math.max(0, this.winHoldTime - dt);
     this.failHoldTime = Math.max(0, this.failHoldTime - dt);
@@ -391,24 +377,9 @@ const Game3 = {
   const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
   if (angle < 25) return;
 
-  const offsetX = 180 * this.scale;
-  const leftBoundary = this.centerX - offsetX;
-  const rightBoundary = this.centerX + offsetX;
+  const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
 
-  const handLeft = Math.min(indexTip.x, thumbTip.x);
-  const handRight = Math.max(indexTip.x, thumbTip.x);
-
-  const handWidth = handRight - handLeft;
-
-  const overlapLeft = Math.max(handLeft, leftBoundary);
-  const overlapRight = Math.min(handRight, rightBoundary);
-
-  const overlapWidth = Math.max(0, overlapRight - overlapLeft);
-
-  const overlapRatio = overlapWidth / handWidth;
-
-  // ⭐ draw only if 50% of hand inside
-  if (overlapRatio < 0.2) return;
+  if (overlap < 0.5) return;
 
   ctx.lineWidth = 12 * this.scale;
   ctx.lineCap = "round";
@@ -634,5 +605,41 @@ calculateWristAngle(indexTip, thumbTip, wrist) {
   const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
 
   return angle * (180 / Math.PI);
+},
+
+getHandOverlapRatio(indexTip, thumbTip, wrist) {
+
+  const margin = 60 * this.scale;
+
+  const offsetX = 180 * this.scale;
+
+  const zoneLeft = this.centerX - offsetX;
+  const zoneRight = this.centerX + offsetX;
+  const zoneTop = this.centerY - margin;
+  const zoneBottom = this.centerY + margin;
+
+  const handLeft = Math.min(indexTip.x, thumbTip.x, wrist.x);
+  const handRight = Math.max(indexTip.x, thumbTip.x, wrist.x);
+  const handTop = Math.min(indexTip.y, thumbTip.y, wrist.y);
+  const handBottom = Math.max(indexTip.y, thumbTip.y, wrist.y);
+
+  const handWidth = handRight - handLeft;
+  const handHeight = handBottom - handTop;
+
+  const handArea = handWidth * handHeight;
+
+  const overlapLeft = Math.max(handLeft, zoneLeft);
+  const overlapRight = Math.min(handRight, zoneRight);
+  const overlapTop = Math.max(handTop, zoneTop);
+  const overlapBottom = Math.min(handBottom, zoneBottom);
+
+  const overlapWidth = Math.max(0, overlapRight - overlapLeft);
+  const overlapHeight = Math.max(0, overlapBottom - overlapTop);
+
+  const overlapArea = overlapWidth * overlapHeight;
+
+  if (handArea === 0) return 0;
+
+  return overlapArea / handArea;
 }
 }
