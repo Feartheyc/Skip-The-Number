@@ -1475,8 +1475,13 @@ finishMode1Suction() {
   if (this.getSuffix(n.number) === this.mode1TargetSuffix) {
 
     this.score += 10;
+
     this.mode1CorrectCollected++;
+
     this.spawnSparkBurst(this.mascot.x, this.mascot.y);
+
+    // START MERGE ANIMATION
+    this.startMode1Merge(n.number);
 
     this.mode1Numbers.splice(s.index, 1);
 
@@ -1487,16 +1492,12 @@ finishMode1Suction() {
   } else {
 
     this.score -= 5;
-
-  // start black hole collapse
     this.startBlackHoleCollapse();
-
-    this.mode1RoundActive = false;
   }
 
   this.mode1SuctionActive = false;
   this.mode1SuctionData = null;
-} ,
+},
 
 
 drawDreamBackground(ctx) {
