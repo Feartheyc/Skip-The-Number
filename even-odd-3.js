@@ -1,4 +1,4 @@
-const Game2 = {
+const Game8 = {
 
   BASE_WIDTH: 1280,
   BASE_HEIGHT: 720,
@@ -162,7 +162,7 @@ const Game2 = {
   // Mediapipe Pose indices:
   // Right wrist = 16, Right index = 20
   // Left wrist  = 15, Left index  = 19
-  updateArm("right", lm[16], lm[20]);
+  updateArm("right", lm[14], lm[16]);
   updateArm("left", lm[15], lm[19]);
 },
 
@@ -682,33 +682,42 @@ drawArms(ctx) {
     ctx.globalAlpha = 1;
   },
 
-  drawUI(ctx) {
-    if (!this.gameStarted) {
-      ctx.fillStyle = "white";
-      ctx.font = `bold ${30 * this.scale}px Arial`;
-      ctx.textAlign = "center";
-      ctx.shadowBlur = 10 * this.scale; ctx.shadowColor = "black";
-      ctx.fillText("HOLD WRIST ON DOTS TO START", this.CENTER_X, this.CENTER_Y - 50 * this.scale);
-      ctx.shadowBlur = 0;
-    }
-
-    // ANIMATED SCORE
+ drawUI(ctx) {
+  if (!this.gameStarted) {
+    ctx.fillStyle = "white";
+    ctx.font = `bold ${30 * this.scale}px Arial`;
     ctx.textAlign = "center";
-    // Scale the font size
-    const fontSize = 24 * this.scoreScale * this.scale;
-    ctx.font = `bold ${fontSize}px Arial`;
+    ctx.shadowBlur = 10 * this.scale;
+    ctx.shadowColor = "black";
+    ctx.fillText(
+      "HOLD ELBOW ON DOTS TO START",
+      this.CENTER_X,
+      this.CENTER_Y - 50 * this.scale
+    );
+    ctx.shadowBlur = 0;
+  }
 
-    ctx.fillStyle = this.scoreColor;
-    ctx.fillText(this.score, this.CENTER_X, 40 * this.scale);
+  // ===== SCORE =====
+  ctx.textAlign = "center";
+  const fontSize = 24 * this.scoreScale * this.scale;
+  ctx.font = `bold ${fontSize}px Arial`;
+  ctx.fillStyle = this.scoreColor;
+  ctx.fillText(this.score, this.CENTER_X, 40 * this.scale);
 
-    // Legend
-    ctx.font = `${16 * this.scale}px Arial`;
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#FF4444";
-    ctx.fillText("Even (Red)", 10 * this.scale, 20 * this.scale);
-    ctx.fillStyle = "#00FFFF";
-    ctx.fillText("Odd (Blue)", 10 * this.scale, 40 * this.scale);
-  },
+  // ===== LEGEND (Responsive Positions) =====
+  const w = this.cssWidth;
+
+  ctx.font = `bold ${32 * this.scale}px Arial`;
+  ctx.textAlign = "center";
+
+  // Left = 25% of screen width
+  ctx.fillStyle = "#FF4444";
+  ctx.fillText("Even (Red)", w * 0.25, 100 * this.scale);
+
+  // Right = 75% of screen width
+  ctx.fillStyle = "#00FFFF";
+  ctx.fillText("Odd (Blue)", w * 0.75, 100 * this.scale);
+},
 
   pointToLineDistance(px, py, x1, y1, x2, y2) {
     const A = px - x1; const B = py - y1;

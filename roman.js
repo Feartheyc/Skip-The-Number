@@ -1,5 +1,4 @@
 const Game5 = {
-
   running: false,
   score: 0,
   BASE_WIDTH: 1280,
@@ -10,16 +9,13 @@ const Game5 = {
   playWidth: 0,
   playHeight: 0,
   
-  // State
   mode: "TRACE", 
   currentLevel: 0,
   
-  // TRACE MODE State
   tracePoints: [], 
   activeStrokeIndex: 0, 
   currentStrokeProgress: 0, 
 
-  // FREEHAND MODE State
   freehandStrokes: [], 
   currentStroke: null,
   submitTimer: 0,      
@@ -30,33 +26,13 @@ const Game5 = {
   cursor: { x: 0, y: 0 },
   cursorColor: "white", 
 
-  // NEW AI: Added "localStrokes" which are the pure math blueprints (0.0 to 1.0)
-  levels: [
-    { symbol: "I", number: "1", 
-      strokes: [ { x1: 0.5, y1: 0.2, x2: 0.5, y2: 0.8 } ],
-      localStrokes: [ {x1: 0.5, y1: 0, x2: 0.5, y2: 1} ] 
-    },
-    { symbol: "V", number: "5", 
-      strokes: [ { x1: 0.3, y1: 0.2, x2: 0.5, y2: 0.8 }, { x1: 0.5, y1: 0.8, x2: 0.7, y2: 0.2 } ],
-      localStrokes: [ {x1: 0, y1: 0, x2: 0.5, y2: 1}, {x1: 0.5, y1: 1, x2: 1, y2: 0} ] 
-    },
-    { symbol: "X", number: "10", 
-      strokes: [ { x1: 0.3, y1: 0.2, x2: 0.7, y2: 0.8 }, { x1: 0.7, y1: 0.2, x2: 0.3, y2: 0.8 } ],
-      localStrokes: [ {x1: 0, y1: 0, x2: 1, y2: 1}, {x1: 1, y1: 0, x2: 0, y2: 1} ] 
-    },
-    { symbol: "L", number: "50", 
-      strokes: [ { x1: 0.4, y1: 0.2, x2: 0.4, y2: 0.8 }, { x1: 0.4, y1: 0.8, x2: 0.7, y2: 0.8 } ],
-      localStrokes: [ {x1: 0, y1: 0, x2: 0, y2: 1}, {x1: 0, y1: 1, x2: 1, y2: 1} ] 
-    },
-    { symbol: "III", number: "3", 
-      strokes: [ { x1: 0.35, y1: 0.2, x2: 0.35, y2: 0.8 }, { x1: 0.45, y1: 0.2, x2: 0.45, y2: 0.8 }, { x1: 0.55, y1: 0.2, x2: 0.55, y2: 0.8 } ],
-      localStrokes: [ {x1: 0, y1: 0, x2: 0, y2: 1}, {x1: 0.5, y1: 0, x2: 0.5, y2: 1}, {x1: 1, y1: 0, x2: 1, y2: 1} ] 
-    }
-  ],
-
   levelCompleteTimer: 0,
   levelFailedTimer: 0, 
   listenersAdded: false,
+
+  // --- ADDITIVE: TFJS Properties ---
+  tfModel: null,
+  isEvaluating: false, 
 
   init() {
     this.running = true;
@@ -66,19 +42,32 @@ const Game5 = {
     
     if (window.stopCamera) window.stopCamera();
     
+    // --- ADDITIVE: Load your custom model ---
+    this.loadModel();
+
     const menu = document.getElementById("menu");
     if (menu) menu.style.display = "none";
     const video = document.getElementById("input_video");
     if (video) video.style.display = "none";
-    
+    this.generateLevels();
     this.resizeCanvas();
     this.resetLevel();
-
     if (!this.listenersAdded) {
       this.addInputListeners();
       window.addEventListener('resize', () => { if (this.running) this.resizeCanvas(); });
       this.listenersAdded = true;
     }
+  },
+
+  // --- ADDITIVE: Model Loading logic ---
+  async loadModel() {
+      try {
+          // Pointing to your specific folder structure from the screenshot
+          this.tfModel = await tf.loadLayersModel('./tfjs_model/model.json');
+          console.log("Custom Roman Numeral Model loaded successfully!");
+      } catch (error) {
+          console.error("Failed to load TFJS model. Make sure you are running a local server and the path is correct.", error);
+      }
   },
 
   resizeCanvas() {
@@ -112,6 +101,7 @@ const Game5 = {
     this.isDrawing = false;
     this.particles = [];
     this.cursorColor = "white"; 
+    this.isEvaluating = false; // --- ADDITIVE ---
   },
 
   getPoint(sx, sy, w, h) {
@@ -121,9 +111,6 @@ const Game5 = {
       return { x: cx + (sx - 0.5) * size, y: cy + (sy - 0.5) * size };
   },
 
-  /* ==============================
-     INPUT HANDLING
-  ============================== */
   addInputListeners() {
     const canvas = document.getElementById('game_canvas');
 
@@ -148,7 +135,6 @@ const Game5 = {
         if (this.isDrawing) {
             this.updateCursor(e);
             if (this.mode === "FREEHAND" && this.currentStroke) {
-                // Only save points if finger moved significantly (keeps math clean)
                 let lastP = this.currentStroke[this.currentStroke.length - 1];
                 if(Math.hypot(lastP.x - this.cursor.x, lastP.y - this.cursor.y) > 5) {
                     this.currentStroke.push({x: this.cursor.x, y: this.cursor.y});
@@ -166,7 +152,7 @@ const Game5 = {
             this.tracePoints = []; 
             this.cursorColor = "white"; 
         } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
-            this.submitTimer = 120; // Give them 2 seconds to draw next line
+            this.submitTimer = 100; 
         }
     };
 
@@ -195,29 +181,24 @@ const Game5 = {
     const w = this.BASE_WIDTH;
     const h = this.BASE_HEIGHT;
     const baseUnit = Math.min(w, h);
-    
-    const btnW = Math.max(140, baseUnit * 0.25); 
-    const btnH = Math.max(50, baseUnit * 0.08); 
-    const btnY = h - btnH - (baseUnit * 0.05); 
-    const traceX = w / 2 - btnW - (baseUnit * 0.02); 
+    const btnW = Math.max(140, baseUnit * 0.25);
+    const btnH = Math.max(50, baseUnit * 0.08);
+    const btnY = h - btnH - (baseUnit * 0.05);
+    const traceX = w / 2 - btnW - (baseUnit * 0.02);
     const freeX = w / 2 + (baseUnit * 0.02);
-    const pad = 50; 
+    const x = this.cursor.x;
+    const y = this.cursor.y;
 
-    if (this.cursor.x >= traceX - pad && this.cursor.x <= traceX + btnW + pad && this.cursor.y >= btnY - pad && this.cursor.y <= btnY + btnH + pad) {
-      this.setMode("TRACE"); return true;
-    }
-    if (this.cursor.x >= freeX - pad && this.cursor.x <= freeX + btnW + pad && this.cursor.y >= btnY - pad && this.cursor.y <= btnY + btnH + pad) {
-      this.setMode("FREEHAND"); return true;
-    }
+    const insideTrace = x >= traceX && x <= traceX + btnW && y >= btnY && y <= btnY + btnH;
+    const insideFree = x >= freeX && x <= freeX + btnW && y >= btnY && y <= btnY + btnH;
+
+    if (insideTrace) { this.setMode("TRACE"); return true; }
+    if (insideFree) { this.setMode("FREEHAND"); return true; }
     return false;
   },
 
-  /* ==============================
-     UPDATE LOOP
-  ============================== */
   update(ctx) {
     if (!this.running) return;
-
     const canvas = ctx.canvas;
     const screenW = canvas.width;
     const screenH = canvas.height;
@@ -248,7 +229,6 @@ const Game5 = {
     }
     
     this.updateParticles();
-
     this.drawTemplate(ctx, w, h, baseUnit);
     this.drawUserInk(ctx, baseUnit);
     this.drawParticles(ctx, baseUnit); 
@@ -282,9 +262,6 @@ const Game5 = {
     ctx.restore();
   },
 
-  /* ==============================
-     1. TRACE MODE LOGIC
-  ============================== */
   handleTracing(w, h, baseUnit) {
     const level = this.levels[this.currentLevel];
     const stroke = level.strokes[this.activeStrokeIndex];
@@ -292,15 +269,12 @@ const Game5 = {
 
     const p1 = this.getPoint(stroke.x1, stroke.y1, w, h);
     const p2 = this.getPoint(stroke.x2, stroke.y2, w, h);
-
     const lineLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     const distToStart = Math.hypot(this.cursor.x - p1.x, this.cursor.y - p1.y);
     const distToLine = this.pointToLineDist(this.cursor.x, this.cursor.y, p1.x, p1.y, p2.x, p2.y);
-
     const snapAllowed = baseUnit * 0.08; 
 
     if (distToLine > snapAllowed) { this.cursorColor = "#FF4444"; return; }
-
     const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
     if (this.currentStrokeProgress === 0 && newProgress > 0.15) { this.cursorColor = "#FF4444"; return; }
     if (newProgress > this.currentStrokeProgress + 0.15) return; 
@@ -311,7 +285,6 @@ const Game5 = {
       this.cursorColor = "#00FFCC"; 
       if (Math.random() > 0.5) this.spawnParticle(this.cursor.x, this.cursor.y, false, baseUnit);
     }
-
     if (this.currentStrokeProgress >= 0.95) this.completeStroke(baseUnit);
   },
 
@@ -321,101 +294,193 @@ const Game5 = {
     this.tracePoints = []; 
     this.score += 10;
     for(let i=0; i<20; i++) this.spawnParticle(this.cursor.x, this.cursor.y, true, baseUnit);
-
     if (this.activeStrokeIndex >= this.levels[this.currentLevel].strokes.length) {
       this.levelCompleteTimer = 1; 
     }
   },
 
-  /* ==============================
-     2. THE NEW FROM-SCRATCH AI
-  ============================== */
+  // --- ADDITIVE: Update to check isEvaluating and call TFJS ---
   handleFreehand(baseUnit) {
       if (!this.isDrawing && this.freehandStrokes.length > 0) {
           if (this.submitTimer > 0) {
               this.submitTimer--;
-              if (this.submitTimer <= 0) {
-                  this.evaluateShapeVector(baseUnit);
+              if (this.submitTimer <= 0 && !this.isEvaluating) {
+                  this.isEvaluating = true; 
+                  this.evaluateWithTFJS(baseUnit);
               }
           }
       }
   },
 
-  evaluateShapeVector(baseUnit) {
-      // 1. Gather all drawn points
-      let pts = [];
-      this.freehandStrokes.forEach(s => pts.push(...s));
+  // --- ADDITIVE: The Core TFJS Integration ---
+  async evaluateWithTFJS(baseUnit) {
+      // Fallback to original vector logic if the model hasn't loaded
+      if (!this.tfModel) {
+          console.warn("TFJS model not loaded, falling back to vector check.");
+          this.evaluateShapeVector(baseUnit);
+          this.isEvaluating = false;
+          return;
+      }
+
+      // 1. Create a 28x28 offscreen canvas (Adjust if your model expects 64x64 or 128x128!)
+      const MODEL_IMG_SIZE = 28; 
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = MODEL_IMG_SIZE;
+      offCanvas.height = MODEL_IMG_SIZE;
+      const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
+
+      offCtx.fillStyle = "black";
+      offCtx.fillRect(0, 0, MODEL_IMG_SIZE, MODEL_IMG_SIZE);
+
+      // 2. Find bounding box to center and scale the user's drawing
+      let allPts = [];
+      this.freehandStrokes.forEach(s => allPts.push(...s));
+      let minX = Math.min(...allPts.map(p => p.x));
+      let maxX = Math.max(...allPts.map(p => p.x));
+      let minY = Math.min(...allPts.map(p => p.y));
+      let maxY = Math.max(...allPts.map(p => p.y));
       
-      // Filter out accidental clicks
-      if (pts.length < 5) { this.triggerFail(); return; }
+      let drawWidth = Math.max(maxX - minX, 1);
+      let drawHeight = Math.max(maxY - minY, 1);
+      let padding = 4;
+      let scale = (MODEL_IMG_SIZE - padding * 2) / Math.max(drawWidth, drawHeight);
 
-      // 2. Find the bounding box of whatever they drew
-      let minX = Math.min(...pts.map(p=>p.x)), maxX = Math.max(...pts.map(p=>p.x));
-      let minY = Math.min(...pts.map(p=>p.y)), maxY = Math.max(...pts.map(p=>p.y));
-      
-      let w = maxX - minX;
-      let h = maxY - minY;
-      
-      // Fix for straight vertical/horizontal lines
-      if (w < 40) { minX -= 20; w = 40; }
-      if (h < 40) { minY -= 20; h = 40; }
+      // 3. Draw strokes to the tiny canvas
+      offCtx.save();
+      offCtx.translate(MODEL_IMG_SIZE / 2, MODEL_IMG_SIZE / 2);
+      offCtx.scale(scale, scale);
+      offCtx.translate(-(minX + drawWidth / 2), -(minY + drawHeight / 2));
 
-      // 3. Normalize all points to 0.0 - 1.0 based on their own drawing
-      let normPts = pts.map(p => ({
-          x: (p.x - minX) / w,
-          y: (p.y - minY) / h
-      }));
+      offCtx.lineWidth = 2 / scale; // Keep lines visible to the model
+      offCtx.strokeStyle = "white";
+      offCtx.lineCap = "round";
+      offCtx.lineJoin = "round";
 
-      const level = this.levels[this.currentLevel];
-      const template = level.localStrokes;
-
-      // --- TEST 1: Neatness (Did they scribble outside the lines?) ---
-      let neatPoints = 0;
-      normPts.forEach(p => {
-          let closestDist = Infinity;
-          template.forEach(ts => {
-              let d = this.pointToLineDist(p.x, p.y, ts.x1, ts.y1, ts.x2, ts.y2);
-              if (d < closestDist) closestDist = d;
-          });
-          // Allow a 20% margin of error off the perfect line
-          if (closestDist < 0.20) neatPoints++; 
+      this.freehandStrokes.forEach(stroke => {
+          if(stroke.length < 2) return;
+          offCtx.beginPath();
+          offCtx.moveTo(stroke[0].x, stroke[0].y);
+          for (let i = 1; i < stroke.length; i++) offCtx.lineTo(stroke[i].x, stroke[i].y);
+          offCtx.stroke();
       });
-      let neatness = neatPoints / normPts.length;
+      offCtx.restore();
 
-      // --- TEST 2: Coverage (Did they draw the whole letter?) ---
-      let totalSamples = 0;
-      let coveredSamples = 0;
-      
-      template.forEach(ts => {
-          let steps = 15; // Sample 15 checkpoints along every perfect line
-          for(let i=0; i<=steps; i++) {
-              totalSamples++;
-              let targetX = ts.x1 + (ts.x2 - ts.x1) * (i/steps);
-              let targetY = ts.y1 + (ts.y2 - ts.y1) * (i/steps);
+      // 4. Extract data and run through the model
+      try {
+          const imageData = offCtx.getImageData(0, 0, MODEL_IMG_SIZE, MODEL_IMG_SIZE);
+          
+          // Tidy cleans up memory automatically after execution
+          const predictionData = tf.tidy(() => {
+              // Convert to 1 channel (grayscale), normalize 0-1, add batch dimension
+              const tensor = tf.browser.fromPixels(imageData, 1)
+                                       .toFloat()
+                                       .div(tf.scalar(255))
+                                       .expandDims();
               
-              let closestDist = Infinity;
-              normPts.forEach(p => {
-                  let d = Math.hypot(p.x - targetX, p.y - targetY);
-                  if (d < closestDist) closestDist = d;
-              });
-              // Must draw within 25% of the checkpoint
-              if (closestDist < 0.25) coveredSamples++;
+              return this.tfModel.predict(tensor).dataSync(); 
+          });
+
+          // Find the class with the highest probability
+          const predictedIndex = predictionData.indexOf(Math.max(...predictionData));
+          
+          // ==========================================
+          // IMPORTANT: MAPPING LOGIC
+          // I don't know exactly how romantraining.py categorized classes.
+          // Assuming classes 0-99 correspond to numbers 1-100:
+          // ==========================================
+          const level = this.levels[this.currentLevel];
+          const targetNumber = parseInt(level.number);
+          
+          const isCorrect = (predictedIndex + 1 === targetNumber);
+
+          if (isCorrect) {
+              this.levelCompleteTimer = 1;
+              this.score += 20;
+              this.cursorColor = "#00FFCC";
+          } else {
+              console.log(`TFJS Guessed Index: ${predictedIndex}, Expected Number: ${targetNumber}`);
+              this.triggerFail();
           }
-      });
-      let coverage = coveredSamples / totalSamples;
 
-      console.log(`Vector AI -> Coverage: ${(coverage*100).toFixed(0)}% | Neatness: ${(neatness*100).toFixed(0)}%`);
-
-      // 4. Final Decision
-      if (coverage > 0.60 && neatness > 0.60) {
-          this.levelCompleteTimer = 1;
-          this.score += 20; 
-          this.cursorColor = "#00FFCC";
-          let lastPoint = pts[pts.length-1];
-          for(let i=0; i<40; i++) this.spawnParticle(lastPoint.x, lastPoint.y, true, baseUnit);
-      } else {
+      } catch (err) {
+          console.error("TFJS Prediction Error:", err);
           this.triggerFail();
       }
+
+      this.isEvaluating = false; 
+  },
+
+  // -------------------------------------------------------------
+  // YOUR EXISTING VECTOR LOGIC (Untouched, used as fallback)
+  // -------------------------------------------------------------
+  splitStrokeAtCorners(stroke) {
+    if (stroke.length < 10) return [stroke];
+    let segments = [];
+    let startIdx = 0;
+    for (let i = 5; i < stroke.length - 5; i++) {
+      const p1 = stroke[i - 4], p2 = stroke[i], p3 = stroke[i + 4];
+      const v1 = { x: p2.x - p1.x, y: p2.y - p1.y }, v2 = { x: p3.x - p2.x, y: p3.y - p2.y };
+      const mag1 = Math.hypot(v1.x, v1.y), mag2 = Math.hypot(v2.x, v2.y);
+      if (mag1 < 1 || mag2 < 1) continue;
+      const dot = (v1.x * v2.x + v1.y * v2.y) / (mag1 * mag2);
+      if (dot < 0.3) {
+        segments.push(stroke.slice(startIdx, i + 1));
+        startIdx = i;
+        i += 5; 
+      }
+    }
+    segments.push(stroke.slice(startIdx));
+    return segments;
+  },
+
+  evaluateShapeVector(baseUnit) {
+    let splitStrokes = [];
+    this.freehandStrokes.forEach(s => {
+        if(s.length > 3) splitStrokes.push(...this.splitStrokeAtCorners(s));
+    });
+
+    if (splitStrokes.length === 0) return this.triggerFail();
+
+    const maxGap = 350; 
+    for (let i = 0; i < splitStrokes.length - 1; i++) {
+        let p1 = splitStrokes[i][splitStrokes[i].length - 1];
+        let p2 = splitStrokes[i+1][0];
+        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > maxGap) return this.triggerFail();
+    }
+
+    const level = this.levels[this.currentLevel];
+    const template = level.localStrokes;
+    const normUser = this.normalizeStrokes(splitStrokes);
+
+    if (Math.abs(normUser.length - template.length) > 1) return this.triggerFail();
+
+    let usedTemplate = new Array(template.length).fill(false);
+    let totalScore = 0;
+
+    for (let u of normUser) {
+        let bestScore = -Infinity, bestIndex = -1;
+        for (let i = 0; i < template.length; i++) {
+            if (usedTemplate[i]) continue;
+            const score = this.strokeMatchScore(u, template[i]);
+            if (score > bestScore) { bestScore = score; bestIndex = i; }
+        }
+        
+        if (bestIndex !== -1 && bestScore > 0.45) {
+            usedTemplate[bestIndex] = true;
+            totalScore += bestScore;
+        } else {
+            return this.triggerFail(); 
+        }
+    }
+
+    let matchedCount = usedTemplate.filter(v => v).length;
+    if (matchedCount === template.length && (totalScore / matchedCount) > 0.5) {
+        this.levelCompleteTimer = 1;
+        this.score += 20;
+        this.cursorColor = "#00FFCC";
+    } else {
+        this.triggerFail();
+    }
   },
 
   triggerFail() {
@@ -424,40 +489,25 @@ const Game5 = {
       this.cursorColor = "#FF4444";
   },
 
-  /* ==============================
-     DRAWING HELPERS 
-  ============================== */
   drawTemplate(ctx, w, h, baseUnit) {
     if (this.mode === "FREEHAND") return; 
-
     const level = this.levels[this.currentLevel];
     ctx.lineCap = "round"; ctx.lineJoin = "round";
-
     level.strokes.forEach((s, index) => {
       ctx.beginPath();
       ctx.lineWidth = baseUnit * 0.04; 
-      let color = index < this.activeStrokeIndex ? "#00FF66" : 
-                  index === this.activeStrokeIndex ? "#555" : "#2a2a2a";
-
+      let color = index < this.activeStrokeIndex ? "#00FF66" : index === this.activeStrokeIndex ? "#555" : "#2a2a2a";
       ctx.strokeStyle = color;
-      let p1 = this.getPoint(s.x1, s.y1, w, h);
-      let p2 = this.getPoint(s.x2, s.y2, w, h);
-      
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.stroke();
-
+      let p1 = this.getPoint(s.x1, s.y1, w, h), p2 = this.getPoint(s.x2, s.y2, w, h);
+      ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
       if (index === this.activeStrokeIndex) this.drawArrow(ctx, p1.x, p1.y, p2.x, p2.y, baseUnit);
     });
-
     const active = level.strokes[this.activeStrokeIndex];
     if (active) {
       const pulse = Math.sin(Date.now() / 150) * (baseUnit * 0.01);
-      ctx.fillStyle = "#FFCC00"; 
-      ctx.beginPath(); 
+      ctx.fillStyle = "#FFCC00"; ctx.beginPath(); 
       let startP = this.getPoint(active.x1, active.y1, w, h);
-      ctx.arc(startP.x, startP.y, (baseUnit * 0.02) + pulse, 0, Math.PI*2); 
-      ctx.fill();
+      ctx.arc(startP.x, startP.y, (baseUnit * 0.02) + pulse, 0, Math.PI*2); ctx.fill();
     }
   },
 
@@ -472,27 +522,18 @@ const Game5 = {
 
   drawUserInk(ctx, baseUnit) {
     ctx.lineWidth = baseUnit * 0.03; 
-    
-    if (this.levelFailedTimer > 0) {
-        ctx.strokeStyle = "#FF4444"; ctx.shadowColor = "red";
-    } else {
-        ctx.strokeStyle = "#00FFFF"; ctx.shadowColor = "cyan";
-    }
-    
+    if (this.levelFailedTimer > 0) { ctx.strokeStyle = "#FF4444"; ctx.shadowColor = "red"; } 
+    else { ctx.strokeStyle = "#00FFFF"; ctx.shadowColor = "cyan"; }
     ctx.shadowBlur = baseUnit * 0.02;
     ctx.lineCap = "round"; ctx.lineJoin = "round";
-
     if (this.mode === "TRACE" && this.tracePoints.length > 1) {
-        ctx.beginPath();
-        ctx.moveTo(this.tracePoints[0].x, this.tracePoints[0].y);
+        ctx.beginPath(); ctx.moveTo(this.tracePoints[0].x, this.tracePoints[0].y);
         for (let i = 1; i < this.tracePoints.length; i++) ctx.lineTo(this.tracePoints[i].x, this.tracePoints[i].y);
         ctx.stroke();
-    } 
-    else if (this.mode === "FREEHAND") {
+    } else if (this.mode === "FREEHAND") {
         this.freehandStrokes.forEach(stroke => {
             if(stroke.length < 2) return;
-            ctx.beginPath();
-            ctx.moveTo(stroke[0].x, stroke[0].y);
+            ctx.beginPath(); ctx.moveTo(stroke[0].x, stroke[0].y);
             for (let i = 1; i < stroke.length; i++) ctx.lineTo(stroke[i].x, stroke[i].y);
             ctx.stroke();
         });
@@ -502,104 +543,70 @@ const Game5 = {
 
   drawCursor(ctx, baseUnit) {
       if (this.levelFailedTimer > 0 || this.levelCompleteTimer > 0) return; 
-      
       ctx.beginPath(); ctx.fillStyle = this.cursorColor;
       ctx.arc(this.cursor.x, this.cursor.y, baseUnit * 0.015, 0, Math.PI*2); ctx.fill(); 
-      ctx.strokeStyle = "black";
-      ctx.lineWidth = baseUnit * 0.005;
-      ctx.stroke();
+      ctx.strokeStyle = "black"; ctx.lineWidth = baseUnit * 0.005; ctx.stroke();
   },
 
   drawUI(ctx, w, h, baseUnit) {
-    ctx.fillStyle = "white"; 
-    ctx.font = `bold ${Math.max(16, baseUnit * 0.04)}px Arial`; 
+    ctx.fillStyle = "white"; ctx.font = `bold ${Math.max(16, baseUnit * 0.04)}px Arial`; 
     ctx.textAlign = "left"; ctx.textBaseline = "top";
     ctx.fillText("Score: " + this.score, baseUnit * 0.03, baseUnit * 0.03);
-
     const level = this.levels[this.currentLevel];
-    ctx.textAlign = "center"; 
-    ctx.font = `bold ${Math.max(24, baseUnit * 0.06)}px Arial`; 
+    ctx.textAlign = "center"; ctx.font = `bold ${Math.max(24, baseUnit * 0.06)}px Arial`; 
     ctx.fillStyle = "#FFCC00"; ctx.shadowBlur = 10; ctx.shadowColor = "rgba(255, 204, 0, 0.5)";
     ctx.fillText("Number: " + level.number, w / 2, baseUnit * 0.05);
     ctx.shadowBlur = 0;
-
     if (this.mode === "FREEHAND" && this.submitTimer > 0 && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
-        let progress = this.submitTimer / 120; 
-        let barW = baseUnit * 0.3; 
-        ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-        ctx.fillRect(w/2 - barW/2, baseUnit * 0.12, barW, baseUnit*0.015);
-        ctx.fillStyle = "#00FFCC";
-        ctx.fillRect(w/2 - barW/2, baseUnit * 0.12, barW * progress, baseUnit*0.015);
+        let progress = this.submitTimer / 100; let barW = baseUnit * 0.3; 
+        ctx.fillStyle = "rgba(255, 255, 255, 0.2)"; ctx.fillRect(w/2 - barW/2, baseUnit * 0.12, barW, baseUnit*0.015);
+        ctx.fillStyle = "#00FFCC"; ctx.fillRect(w/2 - barW/2, baseUnit * 0.12, barW * progress, baseUnit*0.015);
     } else if (this.mode === "FREEHAND" && this.freehandStrokes.length === 0 && this.levelFailedTimer === 0) {
         ctx.font = `${Math.max(14, baseUnit * 0.03)}px Arial`; ctx.fillStyle = "#888";
         ctx.fillText("Draw anywhere! Any size!", w / 2, baseUnit * 0.12);
     }
-
-    const btnW = Math.max(140, baseUnit * 0.25); 
-    const btnH = Math.max(50, baseUnit * 0.08); 
-    const btnY = h - btnH - (baseUnit * 0.05); 
-    const traceX = w / 2 - btnW - (baseUnit * 0.02); 
-    const freeX = w / 2 + (baseUnit * 0.02);
-
+    const btnW = Math.max(140, baseUnit * 0.25), btnH = Math.max(50, baseUnit * 0.08), btnY = h - btnH - (baseUnit * 0.05); 
+    const traceX = w / 2 - btnW - (baseUnit * 0.02), freeX = w / 2 + (baseUnit * 0.02);
     ctx.font = `bold ${Math.max(12, baseUnit * 0.025)}px Arial`; ctx.textBaseline = "middle";
-
     ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#444";
-    ctx.fillRect(traceX, btnY, btnW, btnH);
-    ctx.strokeStyle = "white"; ctx.lineWidth = baseUnit * 0.005; ctx.strokeRect(traceX, btnY, btnW, btnH);
-    ctx.fillStyle = this.mode === "TRACE" ? "black" : "white";
-    ctx.fillText("TRACE", traceX + btnW/2, btnY + btnH/2);
-
+    ctx.fillRect(traceX, btnY, btnW, btnH); ctx.strokeStyle = "white"; ctx.lineWidth = baseUnit * 0.005; ctx.strokeRect(traceX, btnY, btnW, btnH);
+    ctx.fillStyle = this.mode === "TRACE" ? "black" : "white"; ctx.fillText("TRACE", traceX + btnW/2, btnY + btnH/2);
     ctx.fillStyle = this.mode === "FREEHAND" ? "#FF4444" : "#444";
-    ctx.fillRect(freeX, btnY, btnW, btnH);
-    ctx.strokeRect(freeX, btnY, btnW, btnH);
-    ctx.fillStyle = this.mode === "FREEHAND" ? "white" : "white";
-    ctx.fillText("FREEHAND", freeX + btnW/2, btnY + btnH/2);
+    ctx.fillRect(freeX, btnY, btnW, btnH); ctx.strokeRect(freeX, btnY, btnW, btnH);
+    ctx.fillStyle = "white"; ctx.fillText("FREEHAND", freeX + btnW/2, btnY + btnH/2);
   },
 
   drawSuccessEffect(ctx, w, h, baseUnit) {
     const canvas = ctx.canvas;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0); 
-    ctx.fillStyle = "rgba(0, 255, 100, 0.2)"; 
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.restore(); 
-
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
+    ctx.fillStyle = "rgba(0, 255, 100, 0.2)"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore(); 
     ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.shadowBlur = 20; ctx.shadowColor = "#00FF66";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.shadowBlur = 20; ctx.shadowColor = "#00FF66";
     ctx.fillText("NICE!", w/2, h/2);
   },
 
   drawFailEffect(ctx, w, h, baseUnit) {
     const canvas = ctx.canvas;
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0); 
-    ctx.fillStyle = "rgba(255, 50, 50, 0.15)"; 
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.restore(); 
-
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = "#FF4444"; ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
+    ctx.fillStyle = "rgba(255, 50, 50, 0.15)"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore(); 
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#FF4444"; ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
     ctx.shadowBlur = 20; ctx.shadowColor = "rgba(255, 0, 0, 0.8)";
     ctx.fillText("WRONG!", w/2, h/2 - (baseUnit * 0.05));
-    
-    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.04}px Arial`; 
-    ctx.shadowBlur = 10; ctx.shadowColor = "black";
+    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.04}px Arial`; ctx.shadowBlur = 10; ctx.shadowColor = "black";
     ctx.fillText("Use TRACE mode if you forgot!", w/2, h/2 + (baseUnit * 0.08));
   },
 
   pointToLineDist(px, py, x1, y1, x2, y2) {
-    const A = px - x1; const B = py - y1; const C = x2 - x1; const D = y2 - y1;
-    const dot = A * C + B * D; const len_sq = C * C + D * D;
+    const A = px - x1, B = py - y1, C = x2 - x1, D = y2 - y1;
+    const dot = A * C + B * D, len_sq = C * C + D * D;
     let param = -1; if (len_sq !== 0) param = dot / len_sq;
     let xx, yy;
     if (param < 0) { xx = x1; yy = y1; } else if (param > 1) { xx = x2; yy = y2; } else { xx = x1 + param * C; yy = y1 + param * D; }
-    const dx = px - xx; const dy = py - yy; return Math.sqrt(dx * dx + dy * dy);
+    return Math.hypot(px - xx, py - yy);
   },
 
   spawnParticle(x, y, burst = false, baseUnit) {
-    const angle = Math.random() * Math.PI * 2;
-    const mult = baseUnit ? baseUnit * 0.005 : 2; 
+    const angle = Math.random() * Math.PI * 2, mult = baseUnit ? baseUnit * 0.005 : 2; 
     const speed = burst ? (Math.random() * 5 + 2) * mult : (Math.random() * 2 + 1) * mult;
     this.particles.push({ 
         x, y, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed, 
@@ -621,5 +628,94 @@ const Game5 = {
           ctx.arc(p.x, p.y, p.size || (baseUnit*0.008), 0, Math.PI*2); ctx.fill(); 
       } 
       ctx.globalAlpha = 1.0; 
-  }
+  },
+
+  setMode(newMode) { if (this.mode !== newMode) { this.mode = newMode; this.resetLevel(); } },
+
+  toRoman(num) {
+    const map = [
+      { value: 100, numeral: "C" }, { value: 90, numeral: "XC" }, { value: 50, numeral: "L" },
+      { value: 40, numeral: "XL" }, { value: 10, numeral: "X" }, { value: 9, numeral: "IX" },
+      { value: 5, numeral: "V" }, { value: 4, numeral: "IV" }, { value: 1, numeral: "I" }
+    ];
+    let result = "";
+    for (let i = 0; i < map.length; i++) {
+      while (num >= map[i].value) { result += map[i].numeral; num -= map[i].value; }
+    }
+    return result;
+  },
+
+  generateLevels() {
+    this.levels = [];
+    for (let i = 1; i <= 100; i++) {
+      const roman = this.toRoman(i);
+      this.levels.push({
+        symbol: roman, number: i.toString(),
+        strokes: this.buildStrokesFromRoman(roman),
+        localStrokes: this.buildLocalFromRoman(roman)
+      });
+    }
+  },
+
+  buildStrokesFromRoman(roman) {
+    const chars = roman.split(""), strokes = [];
+    const spacing = 0.15, startX = 0.5 - (chars.length - 1) * spacing / 2;
+    chars.forEach((ch, index) => {
+      const offset = startX + index * spacing;
+      if (ch === "I") strokes.push({ x1: offset, y1: 0.2, x2: offset, y2: 0.8 });
+      if (ch === "V") strokes.push({ x1: offset - 0.05, y1: 0.2, x2: offset, y2: 0.8 }, { x1: offset, y1: 0.8, x2: offset + 0.05, y2: 0.2 });
+      if (ch === "X") strokes.push({ x1: offset - 0.05, y1: 0.2, x2: offset + 0.05, y2: 0.8 }, { x1: offset + 0.05, y1: 0.2, x2: offset - 0.05, y2: 0.8 });
+      if (ch === "L") strokes.push({ x1: offset - 0.05, y1: 0.2, x2: offset - 0.05, y2: 0.8 }, { x1: offset - 0.05, y1: 0.8, x2: offset + 0.05, y2: 0.8 });
+      if (ch === "C") strokes.push({ x1: offset + 0.05, y1: 0.2, x2: offset - 0.05, y2: 0.5 }, { x1: offset - 0.05, y1: 0.5, x2: offset + 0.05, y2: 0.8 });
+    });
+    return strokes;
+  },
+
+  buildLocalFromRoman(roman) {
+    const chars = roman.split(""), strokes = [];
+    const spacing = 1.2, totalWidth = chars.length * spacing, startX = 0.5 - totalWidth / 2 + spacing / 2;
+    chars.forEach((ch, index) => {
+      const offset = startX + index * spacing;
+      if (ch === "I") strokes.push({ x1: offset, y1: 0, x2: offset, y2: 1 });
+      if (ch === "V") strokes.push({ x1: offset - 0.5, y1: 0, x2: offset, y2: 1 }, { x1: offset, y1: 1, x2: offset + 0.5, y2: 0 });
+      if (ch === "X") strokes.push({ x1: offset - 0.5, y1: 0, x2: offset + 0.5, y2: 1 }, { x1: offset + 0.5, y1: 0, x2: offset - 0.5, y2: 1 });
+      if (ch === "L") strokes.push({ x1: offset - 0.5, y1: 0, x2: offset - 0.5, y2: 1 }, { x1: offset - 0.5, y1: 1, x2: offset + 0.5, y2: 1 });
+      if (ch === "C") strokes.push({ x1: offset + 0.5, y1: 0, x2: offset - 0.5, y2: 0.5 }, { x1: offset - 0.5, y1: 0.5, x2: offset + 0.5, y2: 1 });
+    });
+    return strokes;
+  },
+
+  normalizeStrokes(strokes) {
+    let allPts = [];
+    strokes.forEach(s => allPts.push(...s));
+    
+    let minX = Math.min(...allPts.map(p => p.x)), maxX = Math.max(...allPts.map(p => p.x));
+    let minY = Math.min(...allPts.map(p => p.y)), maxY = Math.max(...allPts.map(p => p.y));
+    let centerX = (minX + maxX) / 2;
+    let centerY = (minY + maxY) / 2;
+
+    const FIXED_SCALE = 300; 
+
+    return strokes.map(stroke =>
+        stroke.map(p => ({
+            x: (p.x - centerX) / FIXED_SCALE, 
+            y: (p.y - centerY) / FIXED_SCALE
+        }))
+    );
+  },
+
+  strokeMatchScore(stroke, tmpl) {
+    const p1 = stroke[0], p2 = stroke[stroke.length - 1];
+    const udx = p2.x - p1.x, udy = p2.y - p1.y, ulen = Math.hypot(udx, udy) + 0.0001;
+    const tdx = tmpl.x2 - tmpl.x1, tdy = tmpl.y2 - tmpl.y1, tlen = Math.hypot(tdx, tdy) + 0.0001;
+
+    const dirScore = Math.max(0, (udx * tdx + udy * tdy) / (ulen * tlen));
+    const lenScore = 1 - Math.min(1, Math.abs(ulen - tlen));
+
+    let dist = 0;
+    stroke.forEach(p => { dist += this.pointToLineDist(p.x, p.y, tmpl.x1, tmpl.y1, tmpl.x2, tmpl.y2); });
+    const distScore = 1 - Math.min(1, (dist / stroke.length) * 1.2);
+
+    return (dirScore * 0.6) + (lenScore * 0.2) + (distScore * 0.2);
+  },
 };

@@ -1,5 +1,4 @@
 const Game3 = {
-
   centerX: 0,
   centerY: 0,
   scale: 1,
@@ -17,6 +16,7 @@ const Game3 = {
   score: 0,
   combo: 0,
   gameState: "PLAYING",
+  running: true, 
 
   currentGrade: 1,
 
@@ -37,14 +37,19 @@ const Game3 = {
 
   popups: [],
   particles: [],
-  confetti: [], // ⭐ FLOATING MATH SYMBOLS
+  confetti: [], 
   shakeTime: 0,
   shakeMag: 0,
 
+  symbolHue: 0,
+  cameraStarted: false,
+
   init() {
-    const rect = document.getElementById("container").getBoundingClientRect();
-    this.onResize(rect.width, rect.height);
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    this.onResize(w, h);
     this.score = 0;
+    this.running = true;
 
     this.createConfetti();
 
@@ -56,6 +61,15 @@ const Game3 = {
     });
 
     this.spawnNumbers();
+
+    if (typeof PauseArea !== 'undefined') {
+      const canvas = document.getElementById("game_canvas") || document.querySelector("canvas");
+      if (canvas) PauseArea.init(canvas, canvas.getContext('2d'), this);
+    }
+  },
+
+  reset() {
+      this.init();
   },
 
   onResize(width, height) {
@@ -90,7 +104,7 @@ const Game3 = {
 
   getBrightColor() {
     const hue = Math.floor(Math.random() * 360);
-    return `hsl(${hue}, 900%, 60%)`;
+    return `hsl(${hue}, 100%, 60%)`;
   },
 
   spawnNumbers() {
@@ -155,40 +169,64 @@ const Game3 = {
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
-  update(ctx, fingers, dt = 1/60) {
-    ctx.save();
+  update(ctx, landmarks, dt = 1/60) {
 
-    this.drawConfetti(ctx, dt); // ⭐ FLOATING SYMBOLS
+  const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
+  if (isPaused) dt = 0; 
 
-    if (this.shakeTime > 0) {
-      this.shakeTime -= dt;
-      ctx.translate((Math.random()-0.5)*this.shakeMag,(Math.random()-0.5)*this.shakeMag);
-    }
+  ctx.save();
+  
+  this.drawConfetti(ctx, dt); 
 
-    this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
-    this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
+  if (this.shakeTime > 0) {
+    this.shakeTime -= dt;
+    ctx.translate((Math.random()-0.5)*this.shakeMag,(Math.random()-0.5)*this.shakeMag);
+  }
 
-    this.drawUI(ctx);
-    this.drawPopups(ctx, dt);
-    this.drawParticles(ctx, dt);
+  this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
+  this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
 
-    if (this.gameState !== "PLAYING") { ctx.restore(); return; }
+  this.drawUI(ctx);
+  this.drawPopups(ctx, dt);
+  this.drawParticles(ctx, dt);
 
-    if (fingers.length < 2) {
-      this.drawFeedback(ctx, "Need 2 Hands!", "orange");
+  if (this.gameState !== "PLAYING") { 
+      ctx.restore(); 
+  } 
+  else {
+
+      if (!landmarks || landmarks.length < 3) {
+
+        this.drawFeedback(ctx, "Show One Hand!", "orange");
+
+      } 
+      else {
+
+        const indexTip = landmarks[0];
+        const thumbTip = landmarks[1];
+        const wrist = landmarks[2];
+
+        const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
+
+        // ⭐ Ignore hand if angle too small
+        if (angle < 25 ) {
+          this.detectedSymbol = "None";
+          ctx.restore();
+          return;
+        }
+
+        this.checkPose(ctx, indexTip, thumbTip, wrist, dt);
+        this.drawArmSymbol(ctx, indexTip, thumbTip, wrist);
+      }
+
       ctx.restore();
-      return;
-    }
+  }
 
-    fingers.sort((a,b)=>a.y-b.y);
-    const h1=fingers[0];
-    const h2=fingers[1];
-
-    this.checkPose(ctx,h1,h2,dt);
-    this.drawArmSymbol(ctx,h1,h2);
-
-    ctx.restore();
-  },
+  if (typeof PauseArea !== 'undefined') {
+      PauseArea.drawPauseIcon(ctx);
+      if (isPaused) PauseArea.draw();
+  }
+},
 
   drawConfetti(ctx,dt){
     ctx.textAlign="center";
@@ -207,26 +245,73 @@ const Game3 = {
     ctx.globalAlpha=1;
   },
 
-  checkPose(ctx,h1,h2,dt){
-    if(h1.x<this.centerX-this.margin && h2.x<this.centerX-this.margin) this.detectedSymbol=">";
-    else if(h1.x>this.centerX+this.margin && h2.x>this.centerX+this.margin) this.detectedSymbol="<";
-    else this.detectedSymbol="Center";
+ checkPose(ctx, indexTip, thumbTip, wrist, dt) {
 
-    const wrongRelation=this.currentRelation===">"?"<":">";
+  const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
 
-    if(this.detectedSymbol===this.currentRelation){
-      this.winHoldTime+=dt;
-      this.failHoldTime=0;
-      this.drawProgressBar(ctx,this.winHoldTime/this.winHoldThreshold,"#00FFCC");
-      if(this.winHoldTime>=this.winHoldThreshold) this.handleSuccess();
+  if (angle < 25) {
+    this.detectedSymbol = "None";
+    this.winHoldTime = Math.max(0, this.winHoldTime - dt);
+    this.failHoldTime = Math.max(0, this.failHoldTime - dt);
+    return;
+  }
+
+  const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
+
+  // ⭐ require 50% hand inside zone
+  if (overlap < 0.5) {
+    this.detectedSymbol = "None";
+    this.winHoldTime = Math.max(0, this.winHoldTime - dt);
+    this.failHoldTime = Math.max(0, this.failHoldTime - dt);
+    return;
+  }
+
+  const tipsX = (indexTip.x + thumbTip.x) / 2;
+  const threshold = 30 * this.scale;
+
+  if (tipsX < wrist.x - threshold) {
+      this.detectedSymbol = ">";
+  } 
+  else if (tipsX > wrist.x + threshold) {
+      this.detectedSymbol = "<";
+  } 
+  else {
+      this.detectedSymbol = "Center";
+  }
+
+  const wrongRelation = this.currentRelation === ">" ? "<" : ">";
+
+  if (this.detectedSymbol === this.currentRelation) {
+
+    this.winHoldTime += dt;
+    this.failHoldTime = 0;
+
+    this.drawProgressBar(ctx, this.winHoldTime / this.winHoldThreshold, "#00FFCC");
+
+    if (this.winHoldTime >= this.winHoldThreshold) {
+      this.handleSuccess();
     }
-    else if(this.detectedSymbol===wrongRelation){
-      this.failHoldTime+=dt;
-      this.winHoldTime=0;
-      this.drawProgressBar(ctx,this.failHoldTime/this.failHoldThreshold,"#FF0000");
-      if(this.failHoldTime>=this.failHoldThreshold) this.handleFail();
+
+  } 
+  else if (this.detectedSymbol === wrongRelation) {
+
+    this.failHoldTime += dt;
+    this.winHoldTime = 0;
+
+    this.drawProgressBar(ctx, this.failHoldTime / this.failHoldThreshold, "#FF0000");
+
+    if (this.failHoldTime >= this.failHoldThreshold) {
+      this.handleFail();
     }
-  },
+
+  } 
+  else {
+
+    this.winHoldTime = Math.max(0, this.winHoldTime - dt);
+    this.failHoldTime = Math.max(0, this.failHoldTime - dt);
+
+  }
+},
 
   handleSuccess(){
     this.gameState="SUCCESS";
@@ -287,19 +372,49 @@ const Game3 = {
     this.popups=this.popups.filter(p=>p.life>0);
   },
 
-  drawArmSymbol(ctx,h1,h2){
-    ctx.lineWidth=12*this.scale;
-    ctx.lineCap="round";
-    ctx.shadowBlur=15*this.scale;
-    ctx.strokeStyle="#00ff37";
-    ctx.beginPath();
-    ctx.moveTo(h1.x,h1.y);
-    ctx.lineTo(this.centerX,this.centerY);
-    ctx.lineTo(h2.x,h2.y);
-    ctx.stroke();
-    ctx.shadowBlur=0;
-  },
+  drawArmSymbol(ctx, indexTip, thumbTip, wrist) {
 
+  const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
+  if (angle < 25) return;
+
+  const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
+
+  if (overlap < 0.5) return;
+
+  ctx.lineWidth = 12 * this.scale;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.shadowBlur = 15 * this.scale;
+
+  let color = "#00FFCC";
+
+  if (this.detectedSymbol === ">") {
+      color = "#FFFF00";
+  } 
+  else if (this.detectedSymbol === "<") {
+      color = "#00AAFF";
+  }
+
+  ctx.strokeStyle = color;
+  ctx.shadowColor = color;
+
+  ctx.beginPath();
+  ctx.moveTo(indexTip.x, indexTip.y);
+  ctx.lineTo(wrist.x, wrist.y);
+  ctx.lineTo(thumbTip.x, thumbTip.y);
+  ctx.stroke();
+
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "white";
+
+  [indexTip, thumbTip, wrist].forEach(point => {
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, 8 * this.scale, 0, Math.PI * 2);
+      ctx.fill();
+  });
+},
+  
   drawUI(ctx){
     ctx.textAlign="center";
     ctx.textBaseline="middle";
@@ -358,5 +473,173 @@ const Game3 = {
 
     ctx.fillStyle=color;
     ctx.fillRect(this.centerX-width/2,this.centerY+70*this.scale,width*Math.min(1,percentage),height);
+  },
+
+  // ⭐ ADDITIVE LOGIC: 100% Native MediaPipe Integration Below Here ⭐
+  lastTime: 0,
+  gameCtx: null,
+
+  startDetection() {
+
+  if (this.cameraStarted) return;
+  this.cameraStarted = true;
+
+  const video = document.getElementById("input_video");
+
+  const hands = new Hands({
+    locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
+    }
+  });
+
+  hands.setOptions({
+    maxNumHands: 1,
+    modelComplexity: 1,
+    minDetectionConfidence: 0.6,
+    minTrackingConfidence: 0.6
+  });
+
+  hands.onResults((results) => {
+    this.processHandResults(results);
+  });
+
+  const camera = new Camera(video, {
+    onFrame: async () => {
+      await hands.send({ image: video });
+    },
+    width: 1280,
+    height: 720
+  });
+
+  // ⭐ 2-line permanent startup flicker fix
+  video.style.opacity = "0";
+  video.onplaying = () => video.style.opacity = "1";
+
+  camera.start();
+},
+
+  processHandResults(results) {
+
+const canvas = document.getElementById("game_canvas");
+const rect = canvas.getBoundingClientRect();
+
+if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+  window.fingerPositions = [];
+  this.prevPoints = null;
+  this.skipFrame = true; // reset jitter filter
+  return;
+}
+
+const hand = results.multiHandLandmarks[0];
+
+const width = rect.width;
+const height = rect.height;
+
+// mirrored camera
+const rawIndexX = (1 - hand[8].x) * width;
+const rawIndexY = hand[8].y * height;
+
+const rawThumbX = (1 - hand[4].x) * width;
+const rawThumbY = hand[4].y * height;
+
+const rawWristX = (1 - hand[0].x) * width;
+const rawWristY = hand[0].y * height;
+
+// ⭐ ignore first detection frame (removes jitter)
+if (this.skipFrame) {
+  this.skipFrame = false;
+  return;
+}
+
+this.prevPoints = this.prevPoints || {};
+
+const smoothPoint = (name, x, y) => {
+
+  const prev = this.prevPoints[name];
+
+  if (!prev) {
+    this.prevPoints[name] = { x, y };
+    return { x, y };
   }
+
+  const dx = x - prev.x;
+  const dy = y - prev.y;
+  const dist = Math.sqrt(dx * dx + dy * dy);
+
+  if (dist < 2) return prev;
+
+  const factor = dist > 20 ? 0.5 : 0.8;
+
+  const smoothed = {
+    x: prev.x * factor + x * (1 - factor),
+    y: prev.y * factor + y * (1 - factor)
+  };
+
+  this.prevPoints[name] = smoothed;
+  return smoothed;
 };
+
+const indexTip = smoothPoint("index", rawIndexX, rawIndexY);
+const thumbTip = smoothPoint("thumb", rawThumbX, rawThumbY);
+const wrist = smoothPoint("wrist", rawWristX, rawWristY);
+
+window.fingerPositions = [indexTip, thumbTip, wrist];
+},
+
+calculateWristAngle(indexTip, thumbTip, wrist) {
+
+  const v1x = indexTip.x - wrist.x;
+  const v1y = indexTip.y - wrist.y;
+
+  const v2x = thumbTip.x - wrist.x;
+  const v2y = thumbTip.y - wrist.y;
+
+  const dot = v1x * v2x + v1y * v2y;
+
+  const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
+  const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
+
+  if (mag1 === 0 || mag2 === 0) return 0;
+
+  const cosAngle = dot / (mag1 * mag2);
+  const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
+
+  return angle * (180 / Math.PI);
+},
+
+getHandOverlapRatio(indexTip, thumbTip, wrist) {
+
+  const margin = 60 * this.scale;
+
+  const offsetX = 180 * this.scale;
+
+  const zoneLeft = this.centerX - offsetX;
+  const zoneRight = this.centerX + offsetX;
+  const zoneTop = this.centerY - margin;
+  const zoneBottom = this.centerY + margin;
+
+  const handLeft = Math.min(indexTip.x, thumbTip.x, wrist.x);
+  const handRight = Math.max(indexTip.x, thumbTip.x, wrist.x);
+  const handTop = Math.min(indexTip.y, thumbTip.y, wrist.y);
+  const handBottom = Math.max(indexTip.y, thumbTip.y, wrist.y);
+
+  const handWidth = handRight - handLeft;
+  const handHeight = handBottom - handTop;
+
+  const handArea = handWidth * handHeight;
+
+  const overlapLeft = Math.max(handLeft, zoneLeft);
+  const overlapRight = Math.min(handRight, zoneRight);
+  const overlapTop = Math.max(handTop, zoneTop);
+  const overlapBottom = Math.min(handBottom, zoneBottom);
+
+  const overlapWidth = Math.max(0, overlapRight - overlapLeft);
+  const overlapHeight = Math.max(0, overlapBottom - overlapTop);
+
+  const overlapArea = overlapWidth * overlapHeight;
+
+  if (handArea === 0) return 0;
+
+  return overlapArea / handArea;
+}
+}

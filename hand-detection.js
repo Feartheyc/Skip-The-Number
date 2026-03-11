@@ -79,14 +79,13 @@ window.stopCamera = function () {
 
 /* ==============================
    OPTIONAL CAMERA RESTART
-   (simple MVP method)
 ============================== */
 
 window.startCamera = function () {
 
   window.disableCameraProcessing = false;
 
-  location.reload(); // easiest restart for now
+  location.reload(); // simple restart
 };
 
 
@@ -97,6 +96,15 @@ window.startCamera = function () {
 function onResults(results) {
 
   window.fingerPositions = [];
+
+  // Reset finger states every frame
+  window.fingerStates = {
+    thumb: false,
+    index: false,
+    middle: false,
+    ring: false,
+    little: false
+  };
 
   const canvas = document.getElementById("game_canvas");
   const video = document.getElementById("input_video");
@@ -112,12 +120,12 @@ function onResults(results) {
   let drawWidth, drawHeight, offsetX = 0, offsetY = 0;
 
   if (canvasRatio > videoRatio) {
-    // canvas wider → video cropped top/bottom
+    // canvas wider → crop top/bottom
     drawWidth = rect.width;
     drawHeight = rect.width / videoRatio;
     offsetY = (drawHeight - rect.height) / 2;
   } else {
-    // canvas taller → video cropped left/right
+    // canvas taller → crop left/right
     drawHeight = rect.height;
     drawWidth = rect.height * videoRatio;
     offsetX = (drawWidth - rect.width) / 2;
@@ -130,18 +138,52 @@ function onResults(results) {
       const landmarks = results.multiHandLandmarks[i];
       const handedness = results.multiHandedness[i].label;
 
-      let x = (1 - landmarks[8].x) * drawWidth - offsetX;
-      let y = landmarks[8].y * drawHeight - offsetY;
+      /* ==============================
+         THUMB DETECTION (SIDEWAYS)
+      ============================== */
 
-      window.fingerPositions.push({
-        x: x,
-        y: y,
-        hand: handedness
-      });
+      let thumbExtended;
+
+      if (handedness === "Right") {
+        thumbExtended = landmarks[4].x < landmarks[3].x;
+      } else {
+        thumbExtended = landmarks[4].x > landmarks[3].x;
+      }
+
+      /* ==============================
+         OTHER FINGERS (VERTICAL)
+      ============================== */
+
+      const indexExtended = landmarks[8].y < landmarks[6].y;
+      const middleExtended = landmarks[12].y < landmarks[10].y;
+      const ringExtended = landmarks[16].y < landmarks[14].y;
+      const littleExtended = landmarks[20].y < landmarks[18].y;
+
+      /* ==============================
+         UPDATE GLOBAL STATES
+      ============================== */
+
+      window.fingerStates.thumb = thumbExtended;
+      window.fingerStates.index = indexExtended;
+      window.fingerStates.middle = middleExtended;
+      window.fingerStates.ring = ringExtended;
+      window.fingerStates.little = littleExtended;
+
+      /* ==============================
+         INDEX FINGER CURSOR
+      ============================== */
+
+      if (indexExtended) {
+
+        let x = (1 - landmarks[8].x) * drawWidth - offsetX;
+        let y = landmarks[8].y * drawHeight - offsetY;
+
+        window.fingerPositions.push({
+          x: x,
+          y: y,
+          hand: handedness
+        });
+      }
     }
   }
 }
-
-
-
-
