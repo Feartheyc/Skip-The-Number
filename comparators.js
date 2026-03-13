@@ -51,7 +51,7 @@ const Game3 = {
     this.score = 0;
     this.running = true;
 
-    this.createConfetti();
+    // this.createConfetti();
 
     window.addEventListener('keydown', (e) => {
       if (e.key === '1') this.setDifficulty(1);
@@ -80,20 +80,20 @@ const Game3 = {
     this.margin = 80 * this.scale;
   },
 
-  createConfetti(){
-    const symbols = ["+", "-", "×", "÷", "<", ">", "="];
-    this.confetti = [];
-    for(let i=0;i<5;i++){
-      this.confetti.push({
-        x: Math.random()*window.innerWidth,
-        y: Math.random()*window.innerHeight,
-        symbol: symbols[Math.floor(Math.random()*symbols.length)],
-        size: (60 + Math.random()*40),
-        speed: 20 + Math.random()*10,
-        color: this.getBrightColor()
-      });
-    }
-  },
+  // createConfetti(){
+  //   const symbols = ["+", "-", "×", "÷", "<", ">", "="];
+  //   this.confetti = [];
+  //   for(let i=0;i<5;i++){
+  //     this.confetti.push({
+  //       x: Math.random()*window.innerWidth,
+  //       y: Math.random()*window.innerHeight,
+  //       symbol: symbols[Math.floor(Math.random()*symbols.length)],
+  //       size: (60 + Math.random()*40),
+  //       speed: 20 + Math.random()*10,
+  //       color: this.getBrightColor()
+  //     });
+  //   }
+  // },
 
   setDifficulty(grade) {
     this.currentGrade = grade;
@@ -176,7 +176,7 @@ const Game3 = {
 
   ctx.save();
   
-  this.drawConfetti(ctx, dt); 
+  // this.drawConfetti(ctx, dt); 
 
   if (this.shakeTime > 0) {
     this.shakeTime -= dt;
@@ -209,7 +209,7 @@ const Game3 = {
         const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
 
         // ⭐ Ignore hand if angle too small
-        if (angle < 25 ) {
+        if (angle < 20 ) {
           this.detectedSymbol = "None";
           ctx.restore();
           return;
@@ -228,28 +228,28 @@ const Game3 = {
   }
 },
 
-  drawConfetti(ctx,dt){
-    ctx.textAlign="center";
-    ctx.textBaseline="middle";
-    this.confetti.forEach(c=>{
-      c.y += c.speed * dt;
-      if(c.y > window.innerHeight + 50){
-        c.y = -50;
-        c.x = Math.random()*window.innerWidth;
-      }
-      ctx.globalAlpha = 0.8;
-      ctx.fillStyle = c.color;
-      ctx.font = `bold ${c.size*this.scale}px Arial`;
-      ctx.fillText(c.symbol, c.x, c.y);
-    });
-    ctx.globalAlpha=1;
-  },
+  // drawConfetti(ctx,dt){
+  //   ctx.textAlign="center";
+  //   ctx.textBaseline="middle";
+  //   this.confetti.forEach(c=>{
+  //     c.y += c.speed * dt;
+  //     if(c.y > window.innerHeight + 50){
+  //       c.y = -50;
+  //       c.x = Math.random()*window.innerWidth;
+  //     }
+  //     ctx.globalAlpha = 0.8;
+  //     ctx.fillStyle = c.color;
+  //     ctx.font = `bold ${c.size*this.scale}px Arial`;
+  //     ctx.fillText(c.symbol, c.x, c.y);
+  //   });
+  //   ctx.globalAlpha=1;
+  // },
 
  checkPose(ctx, indexTip, thumbTip, wrist, dt) {
 
   const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
 
-  if (angle < 25) {
+  if (angle < 20) {
     this.detectedSymbol = "None";
     this.winHoldTime = Math.max(0, this.winHoldTime - dt);
     this.failHoldTime = Math.max(0, this.failHoldTime - dt);
@@ -375,7 +375,7 @@ const Game3 = {
   drawArmSymbol(ctx, indexTip, thumbTip, wrist) {
 
   const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
-  if (angle < 25) return;
+  if (angle < 20) return;
 
   const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
 
@@ -457,7 +457,291 @@ const Game3 = {
     ctx.textAlign="center";
   },
 
-  drawFeedback(ctx,text,color){
+
+//   drawUI(ctx){
+
+//   ctx.textAlign="center";
+//   ctx.textBaseline="middle";
+
+//   const offsetX = 280 * this.scale;
+//   const leftX = this.centerX - offsetX;
+//   const rightX = this.centerX + offsetX;
+//   const y = this.centerY;
+
+//   const cardW = 200 * this.scale * this.popScale;
+//   const cardH = 180 * this.scale * this.popScale;
+
+//   ctx.globalAlpha = this.fadeAlpha;
+
+//   const drawCard = (x, color, text) => {
+
+//     const radius = 25 * this.scale;
+
+//     ctx.shadowColor = "rgba(0,0,0,0.4)";
+//     ctx.shadowBlur = 25 * this.scale;
+//     ctx.shadowOffsetY = 10 * this.scale;
+
+//     ctx.fillStyle = color;
+
+//     ctx.beginPath();
+//     ctx.moveTo(x-cardW/2+radius,y-cardH/2);
+//     ctx.lineTo(x+cardW/2-radius,y-cardH/2);
+//     ctx.quadraticCurveTo(x+cardW/2,y-cardH/2,x+cardW/2,y-cardH/2+radius);
+//     ctx.lineTo(x+cardW/2,y+cardH/2-radius);
+//     ctx.quadraticCurveTo(x+cardW/2,y+cardH/2,x+cardW/2-radius,y+cardH/2);
+//     ctx.lineTo(x-cardW/2+radius,y+cardH/2);
+//     ctx.quadraticCurveTo(x-cardW/2,y+cardH/2,x-cardW/2,y+cardH/2-radius);
+//     ctx.lineTo(x-cardW/2,y-cardH/2+radius);
+//     ctx.quadraticCurveTo(x-cardW/2,y-cardH/2,x-cardW/2+radius,y-cardH/2);
+//     ctx.closePath();
+//     ctx.fill();
+
+//     ctx.shadowBlur = 0;
+
+//     ctx.fillStyle = "white";
+//     ctx.font = `bold ${90*this.scale*this.popScale}px Arial`;
+//     ctx.fillText(text,x,y);
+
+//   };
+
+//   drawCard(leftX,this.leftColor,this.leftText);
+//   drawCard(rightX,this.rightColor,this.rightText);
+
+//   ctx.globalAlpha = 1;
+
+//   // VS indicator
+//   ctx.font = `bold ${70*this.scale}px Arial`;
+//   ctx.fillStyle = "#FFFFFF";
+//   ctx.fillText("?",this.centerX,this.centerY);
+
+//   // Score
+//   ctx.font=`bold ${36*this.scale}px Arial`;
+//   ctx.fillText(`Score: ${this.score}`,this.centerX,60*this.scale);
+
+//   // Combo
+//   if(this.combo>=2){
+//     ctx.fillStyle="#FFD700";
+//     ctx.fillText(`Combo x${this.combo}`,this.centerX,100*this.scale);
+//   }
+
+//   // Grade
+//   ctx.textAlign="left";
+//   ctx.fillStyle="#FFFFFF";
+//   ctx.fillText(`Grade: ${this.currentGrade}`,30*this.scale,40*this.scale);
+//   ctx.textAlign="center";
+// },
+
+
+
+// drawUI(ctx){
+
+//   ctx.textAlign="center";
+//   ctx.textBaseline="middle";
+
+//   const offsetX = 220 * this.scale;
+//   const leftX = this.centerX - offsetX;
+//   const rightX = this.centerX + offsetX;
+//   const y = this.centerY;
+
+//   const stageW = 600 * this.scale;
+//   const stageH = 290 * this.scale;
+
+//   // =========================
+//   // BACKDROP PANEL
+//   // =========================
+
+//   const grad = ctx.createLinearGradient(
+//     this.centerX,
+//     this.centerY - stageH/2,
+//     this.centerX,
+//     this.centerY + stageH/2
+//   );
+
+//   grad.addColorStop(0,"rgba(0,0,0,0.5)");
+//   grad.addColorStop(1,"rgba(0,0,0,0.2)");
+
+//   ctx.fillStyle = grad;
+//   ctx.beginPath();
+//   ctx.roundRect(
+//     this.centerX - stageW/2,
+//     this.centerY - stageH/2,
+//     stageW,
+//     stageH,
+//     40 * this.scale
+//   );
+//   ctx.fill();
+
+//   // =========================
+//   // SPOTLIGHT CIRCLES
+//   // =========================
+
+//   const drawSpot = (x,color)=>{
+
+//     const radius = 90 * this.scale * this.popScale;
+
+//     const g = ctx.createRadialGradient(
+//       x,y,10,
+//       x,y,radius
+//     );
+
+//     g.addColorStop(0,color);
+//     g.addColorStop(1,"rgba(0,0,0,0)");
+
+//     ctx.fillStyle = g;
+
+//     ctx.beginPath();
+//     ctx.arc(x,y,radius,0,Math.PI*2);
+//     ctx.fill();
+//   };
+
+//   drawSpot(leftX,this.leftColor);
+//   drawSpot(rightX,this.rightColor);
+
+//   // =========================
+//   // NUMBERS
+//   // =========================
+
+//   ctx.globalAlpha = this.fadeAlpha;
+
+//   ctx.font = `bold ${100*this.scale*this.popScale}px Arial`;
+
+//   ctx.lineWidth = 10 * this.scale;
+//   ctx.strokeStyle = "black";
+
+//   ctx.strokeText(this.leftText,leftX,y);
+//   ctx.strokeText(this.rightText,rightX,y);
+
+//   ctx.fillStyle = "white";
+//   ctx.fillText(this.leftText,leftX,y);
+//   ctx.fillText(this.rightText,rightX,y);
+
+//   ctx.globalAlpha = 1;
+
+//   // =========================
+//   // CENTER QUESTION
+//   // =========================
+
+//   ctx.font = `bold ${80*this.scale}px Arial`;
+//   ctx.fillStyle = "#FFFFFF";
+//   ctx.fillText("?",this.centerX,this.centerY);
+
+//   // =========================
+//   // SCORE
+//   // =========================
+
+//   ctx.font=`bold ${36*this.scale}px Arial`;
+//   ctx.fillStyle="white";
+//   ctx.fillText(`Score: ${this.score}`,this.centerX,60*this.scale);
+
+//   if(this.combo>=2){
+//     ctx.fillStyle="#FFD700";
+//     ctx.fillText(`Combo x${this.combo}`,this.centerX,100*this.scale);
+//   }
+
+//   // =========================
+//   // GRADE
+//   // =========================
+
+//   ctx.textAlign="left";
+//   ctx.fillStyle="#FFFFFF";
+//   ctx.fillText(`Grade: ${this.currentGrade}`,30*this.scale,40*this.scale);
+//   ctx.textAlign="center";
+// },
+
+
+// drawUI(ctx){
+
+//   ctx.textAlign="center";
+//   ctx.textBaseline="middle";
+
+//   const offsetX = 220 * this.scale;
+//   const leftX = this.centerX - offsetX;
+//   const rightX = this.centerX + offsetX;
+
+//   const float = Math.sin(performance.now()*0.002)*8*this.scale;
+//   const y = this.centerY + float;
+
+//   const bubbleRadius = 110 * this.scale * this.popScale;
+
+//   const drawBubble = (x,color,text)=>{
+
+//     // glow
+//     ctx.shadowColor = color;
+//     ctx.shadowBlur = 30 * this.scale;
+
+//     const grad = ctx.createRadialGradient(
+//       x - bubbleRadius*0.3,
+//       y - bubbleRadius*0.3,
+//       10,
+//       x,
+//       y,
+//       bubbleRadius
+//     );
+
+//     grad.addColorStop(0,"white");
+//     grad.addColorStop(0.2,color);
+//     grad.addColorStop(1,"rgba(0,0,0,0.3)");
+
+//     ctx.fillStyle = grad;
+
+//     ctx.beginPath();
+//     ctx.arc(x,y,bubbleRadius,0,Math.PI*2);
+//     ctx.fill();
+
+//     ctx.shadowBlur = 0;
+
+//     // bubble shine
+//     ctx.fillStyle="rgba(255,255,255,0.4)";
+//     ctx.beginPath();
+//     ctx.arc(
+//       x-bubbleRadius*0.35,
+//       y-bubbleRadius*0.35,
+//       bubbleRadius*0.25,
+//       0,
+//       Math.PI*2
+//     );
+//     ctx.fill();
+
+//     // number
+//     ctx.globalAlpha=this.fadeAlpha;
+
+//     ctx.lineWidth=8*this.scale;
+//     ctx.strokeStyle="black";
+//     ctx.font=`bold ${90*this.scale*this.popScale}px Arial`;
+
+//     ctx.strokeText(text,x,y);
+//     ctx.fillStyle="white";
+//     ctx.fillText(text,x,y);
+
+//     ctx.globalAlpha=1;
+//   };
+
+//   drawBubble(leftX,this.leftColor,this.leftText);
+//   drawBubble(rightX,this.rightColor,this.rightText);
+
+//   // center symbol
+//   ctx.font=`bold ${70*this.scale}px Arial`;
+//   ctx.fillStyle="#FFFFFF";
+//   ctx.fillText("?",this.centerX,this.centerY);
+
+//   // score
+//   ctx.font=`bold ${36*this.scale}px Arial`;
+//   ctx.fillText(`Score: ${this.score}`,this.centerX,60*this.scale);
+
+//   if(this.combo>=2){
+//     ctx.fillStyle="#FFD700";
+//     ctx.fillText(`Combo x${this.combo}`,this.centerX,100*this.scale);
+//   }
+
+//   ctx.textAlign="left";
+//   ctx.fillStyle="#FFFFFF";
+//   ctx.fillText(`Grade: ${this.currentGrade}`,30*this.scale,40*this.scale);
+//   ctx.textAlign="center";
+// },
+
+
+
+drawFeedback(ctx,text,color){
     ctx.fillStyle=color;
     ctx.font=`bold ${30*this.scale}px Arial`;
     ctx.fillText(text,this.centerX,this.centerY+150*this.scale);
