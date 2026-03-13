@@ -213,6 +213,14 @@ bigBangTime: 0,
 bigBangDuration: 1400,
 bigBangFlash: 0,
 
+mode1BreakActive: false,
+mode1BreakData: null,
+
+
+
+/* ===== REALITY TEAR SYSTEM ===== */
+
+
 init() {
 
   this.resize();
@@ -397,6 +405,7 @@ if (this.gameMode === 0) {
   this.updateMode1Suction(delta);
   this.updateMode1Merge(delta);
   this.updateBlackHole(delta);
+  this.updateMode1Break(delta)
 
   // Draw portal first (background layer)
   // this.drawAccretionDisk(ctx);
@@ -408,6 +417,8 @@ if (this.gameMode === 0) {
   this.drawMode1Instruction(ctx);
 
   this.drawMode1GameOver(ctx);
+  this.drawMode1Break(ctx);
+  this.drawMode1Break(ctx);
 
 }
 this.drawBigBangFlash(ctx);
@@ -1324,9 +1335,11 @@ drawMode1Numbers(ctx) {
 
 updateMode1Logic() {
 
-  if (!this.mode1RoundActive || 
-      this.mode1GameOver || 
-      this.mode1SuctionActive) return;
+  if (!this.mode1RoundActive ||
+    this.mode1GameOver ||
+    this.mode1SuctionActive ||
+    this.mode1BreakActive ||
+    this.blackHoleActive) return;
 
   for (let i = 0; i < this.mode1Numbers.length; i++) {
 
@@ -1397,6 +1410,7 @@ drawMode1GameOver(ctx) {
 retryMode1() {
 
   this.mode1GameOver = false;
+  this.glassFadeOut=true;
 
   const suffixes = ["st", "nd", "rd", "th"];
   this.mode1TargetSuffix =
@@ -1419,9 +1433,10 @@ startMode1Suction(index) {
     index: index,
     startX: n.x,
     startY: n.y,
+    targetX: this.mascot.x,
+    targetY: this.mascot.y,
     time: 0,
-    rotation: 0,
-    scale: 1
+    duration: 500
   };
 },
 
@@ -1440,20 +1455,10 @@ updateMode1Suction(delta) {
 
   s.time += delta;
 
-  const progress = s.time / this.mode1SuctionDuration;
+  const progress = Math.min(1, s.time / s.duration);
 
-  // Spiral movement
-  const angle = progress * Math.PI * 4;
-  const radius = (1 - progress) * 60 * this.scale;
-
-  n.x = this.mascot.x + Math.cos(angle) * radius;
-  n.y = this.mascot.y + Math.sin(angle) * radius;
-
-  s.rotation += 0.3;
-  s.scale = 1 - progress;
-
-  n.renderRotation = s.rotation;
-  n.renderScale = s.scale;
+  n.x = s.startX + (s.targetX - s.startX) * progress;
+  n.y = s.startY + (s.targetY - s.startY) * progress;
 
   if (progress >= 1) {
 
@@ -1466,39 +1471,28 @@ finishMode1Suction() {
   const s = this.mode1SuctionData;
   const n = this.mode1Numbers[s.index];
 
-  if (!n) {
-    this.mode1SuctionActive = false;
-    return;
-  }
+  if (!n) return;
 
-  // Check correctness AFTER animation
-  if (this.getSuffix(n.number) === this.mode1TargetSuffix) {
+  const correct = this.getSuffix(n.number) === this.mode1TargetSuffix;
+
+  if (correct) {
 
     this.score += 10;
 
-    this.mode1CorrectCollected++;
-
-    this.spawnSparkBurst(this.mascot.x, this.mascot.y);
-
-    // START MERGE ANIMATION
-    this.startMode1Merge(n.number);
+    this.startPortalMerge(n.number);
 
     this.mode1Numbers.splice(s.index, 1);
-
-    if (this.mode1CorrectCollected === this.mode1CorrectTotal) {
-      this.startMode1Confirmation();
-    }
 
   } else {
 
     this.score -= 5;
-    this.startBlackHoleCollapse();
+
+    this.startNumberBreak(n.number);
   }
 
   this.mode1SuctionActive = false;
   this.mode1SuctionData = null;
 },
-
 
 drawDreamBackground(ctx) {
   const gradient = ctx.createLinearGradient(
@@ -1589,21 +1583,6 @@ drawFloatingSparkles(ctx, x, y) {
   }
 },
 
-startMode1Merge(number) {
-
-  this.mode1MergeActive = true;
-
-  this.mode1MergeData = {
-    number: number,
-    suffix: this.mode1TargetSuffix,
-    x: this.mascot.x,
-    y: this.mascot.y,
-    scale: 1,
-    rotation: 0,
-    time: 0,
-    duration: 500
-  };
-},
 
 updateMode1Merge(delta) {
 
@@ -1615,13 +1594,40 @@ updateMode1Merge(delta) {
 
   const progress = m.time / m.duration;
 
-  m.scale = 1 + progress * 0.8;
-  m.rotation += 0.15;
+  // Phase 1 — orbit around portal
+  if (progress < 0.5) {
+
+    m.angle += 0.12;
+
+  }
+
+  // Phase 2 — spiral inward
+  else if (progress < 0.8) {
+
+    m.angle += 0.25;
+    m.radius *= 0.93;
+
+  }
+
+  // Phase 3 — portal suction
+  else {
+
+    m.radius *= 0.75;
+    m.scale = (m.scale || 1) * 0.9;
+
+  }
 
   if (progress >= 1) {
 
+    this.spawnSparkBurst(this.mascot.x, this.mascot.y);
+
     this.mode1MergeActive = false;
-    this.mode1MergeData = null;
+
+    this.mode1CorrectCollected++;
+
+    if (this.mode1CorrectCollected === this.mode1CorrectTotal) {
+      this.startMode1Confirmation();
+    }
   }
 },
 
@@ -1631,16 +1637,24 @@ drawMode1Merge(ctx) {
 
   const m = this.mode1MergeData;
 
+  const px = this.mascot.x;
+  const py = this.mascot.y;
+
+  const x = px + Math.cos(m.angle) * m.radius;
+  const y = py + Math.sin(m.angle) * m.radius;
+
+  const scale = m.scale || 1;
+
   const text = `${m.number}${m.suffix}`;
 
   ctx.save();
 
-  ctx.translate(m.x, m.y);
-  ctx.rotate(m.rotation);
-  ctx.scale(m.scale, m.scale);
+  ctx.translate(x, y);
+
+  ctx.scale(scale, scale);
 
   ctx.shadowColor = "#FFD700";
-  ctx.shadowBlur = 30;
+  ctx.shadowBlur = 35;
 
   ctx.fillStyle = "#FFFFFF";
   ctx.font = `bold ${70 * this.scale}px Comic Sans MS`;
@@ -1651,7 +1665,6 @@ drawMode1Merge(ctx) {
 
   ctx.restore();
 },
-
 
 startBlackHoleCollapse() {
 
@@ -1798,6 +1811,7 @@ startBigBang() {
   this.bigBangActive = true;
   this.bigBangTime = 0;
   this.bigBangFlash = 1;
+  this.glassFadeOut=true;
 
   const cx = this.CENTER_X;
   const cy = this.CENTER_Y;
@@ -1820,6 +1834,7 @@ startBigBang() {
   explodeStars(this.starsFar);
   explodeStars(this.starsMid);
   explodeStars(this.starsNear);
+  
 },
 
 updateBigBang(delta) {
@@ -1866,5 +1881,126 @@ drawBigBangFlash(ctx) {
 
   ctx.fillStyle = `rgba(255,255,255,${this.bigBangFlash})`;
   ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+},
+
+startPortalMerge(number) {
+
+  this.mode1MergeActive = true;
+
+  this.mode1MergeData = {
+    number: number,
+    suffix: this.mode1TargetSuffix,
+    angle: 0,
+    radius: 90 * this.scale,
+    time: 0,
+    duration: 900
+  };
+},
+
+startNumberBreak(number) {
+
+  const px = this.mascot.x;
+  const py = this.mascot.y;
+
+  this.mode1BreakActive = true;
+
+  this.mode1BreakData = {
+    number: number,
+    suffix: this.mode1TargetSuffix,
+    x: px,
+    y: py,
+    pieces: [],
+    time: 0,
+    crackPhase: true
+  };
+
+  // create number fragments
+  for (let i = 0; i < 12; i++) {
+
+    const angle = Math.random() * Math.PI * 2;
+    const speed = Math.random()*4 + 2;
+
+    this.mode1BreakData.pieces.push({
+      x: px,
+      y: py,
+      vx: Math.cos(angle)*speed,
+      vy: Math.sin(angle)*speed,
+      rot: Math.random()*Math.PI,
+      vr: (Math.random()-0.5)*0.3
+    });
+  }
+
+this.startBlackHoleCollapse();
+},
+
+updateMode1Break(delta) {
+
+  if (!this.mode1BreakActive) return;
+
+  const b = this.mode1BreakData;
+
+  b.time += delta;
+
+  // Phase 1: number cracking
+  if (b.time < 300) {
+    this.crackAlpha = Math.min(1, b.time/300);
+    return;
+  }
+
+  // Phase 2: fragments flying
+  for (let p of b.pieces) {
+
+    p.x += p.vx;
+    p.y += p.vy;
+
+    p.vx *= 0.97;
+    p.vy *= 0.97;
+
+    p.rot += p.vr;
+  }
+
+  if (b.time > 900) {
+
+    this.mode1BreakActive = false;
+
+    this.startBlackHoleCollapse();
+  }
+},
+
+
+drawMode1Break(ctx) {
+
+  if (!this.mode1BreakActive) return;
+
+  const b = this.mode1BreakData;
+
+  ctx.font = `bold ${70 * this.scale}px Comic Sans MS`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  // Phase 1: cracked number
+  if (b.time < 300) {
+
+    ctx.fillStyle = "#FF5555";
+    ctx.fillText(b.number + b.suffix, b.x, b.y);
+
+    return;
+  }
+
+  // Phase 2: shattered pieces
+  for (let p of b.pieces) {
+
+    ctx.save();
+
+    ctx.translate(p.x, p.y);
+    ctx.rotate(p.rot);
+
+    ctx.fillStyle = "#FF4444";
+
+    ctx.fillText(b.number, 0, 0);
+
+    ctx.restore();
+  }
+},
+
 }
-};          
