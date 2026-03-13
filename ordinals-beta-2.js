@@ -202,12 +202,36 @@ const Game11 = {
 
     const handleRestart = () => {
       if (this.gameMode === 1 && this.mode1GameOver) {
+
+        // 1️⃣ Reset Score & Progress
         this.score = 0;
         this.mode1CorrectCollected = 0;
         this.mode1GameOver = false;
+
+        // 2️⃣ Clear Active Effects
+        this.sparkBursts = [];
+        this.floatingTexts = [];
+        this.confettiParticles = [];
+
+        // 3️⃣ Reset Mascot
+        this.mascot.x = this.CENTER_X;
+        this.mascot.y = this.CENTER_Y + 100 * this.scale;
+        this.mascot.vx = 0;
+        this.mascot.vy = 0;
+        this.mascot.carryingNumber = false;
+        this.mascotState = "idle";
+
+        // 4️⃣ Reset Starfield (Randomize positions again)
+        this.initStarfield();
+
+        // 5️⃣ Re-activate Mode (Resets galaxy life, black hole, etc.)
         this.activateGameMode1();
+
+        // 6️⃣ Reset Timer to prevent huge delta
+        this.lastTime = performance.now();
       }
     };
+
 
     window.addEventListener("click", handleRestart);
     window.addEventListener("touchstart", (e) => {
