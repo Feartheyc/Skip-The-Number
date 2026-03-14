@@ -61,6 +61,9 @@ const Game11 = {
   mascotFrameSpeed: 120,
   mascotState: "idle", // idle | happy | confused
 
+  /* ===== FINGERS SYSTEM ===== */
+  fingerImages: [],
+
   /* ===== PORTAL SPRITE SYSTEM ===== */
 
   portalFrames: [],
@@ -181,6 +184,7 @@ const Game11 = {
 
     this.loadMascotSprites();
     this.loadPortalSprites();
+    this.loadFingerImages();
     this.initStarfield();      // NEW
 
     this.setupDoors();
@@ -198,12 +202,36 @@ const Game11 = {
 
     const handleRestart = () => {
       if (this.gameMode === 1 && this.mode1GameOver) {
+
+        // 1️⃣ Reset Score & Progress
         this.score = 0;
         this.mode1CorrectCollected = 0;
         this.mode1GameOver = false;
+
+        // 2️⃣ Clear Active Effects
+        this.sparkBursts = [];
+        this.floatingTexts = [];
+        this.confettiParticles = [];
+
+        // 3️⃣ Reset Mascot
+        this.mascot.x = this.CENTER_X;
+        this.mascot.y = this.CENTER_Y + 100 * this.scale;
+        this.mascot.vx = 0;
+        this.mascot.vy = 0;
+        this.mascot.carryingNumber = false;
+        this.mascotState = "idle";
+
+        // 4️⃣ Reset Starfield (Randomize positions again)
+        this.initStarfield();
+
+        // 5️⃣ Re-activate Mode (Resets galaxy life, black hole, etc.)
         this.activateGameMode1();
+
+        // 6️⃣ Reset Timer to prevent huge delta
+        this.lastTime = performance.now();
       }
     };
+
 
     window.addEventListener("click", handleRestart);
     window.addEventListener("touchstart", (e) => {
@@ -319,6 +347,13 @@ const Game11 = {
 
     this.drawDreamBackground(ctx);
 
+    // 💥 Global Screen Shake
+    ctx.save();
+    if (this.galaxyCollapsed && !this.mode1GameOver && this.blackHoleActive) {
+      const shake = Math.min(20 * this.scale, this.blackHoleRadius * 0.02);
+      ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    }
+
 
 
     // 🌌 STARFIELD
@@ -364,11 +399,13 @@ const Game11 = {
     this.updateFloatingTexts(delta);
     this.drawFloatingTexts(ctx);
     this.drawGalaxyLifeBar(ctx);
+    this.drawFingerImages(ctx);
 
     this.drawBlackHole(ctx, delta);
     this.drawMode1GameOver(ctx);
 
     this.drawScore(ctx);
+    ctx.restore(); // End of screen shake
   },
 
   updateFingerPosition() {
@@ -387,6 +424,45 @@ const Game11 = {
 
   get doorRadius() {
     return this.DOOR_RADIUS * this.scale;
+  },
+
+  drawFingerImages(ctx) {
+    if (this.gameMode !== 1 || this.mode1GameOver || !this.mode1RoundActive) return;
+    if (this.fingerImages.length === 0) return;
+
+    const imgSize = 70 * this.scale;
+    const padding = 40 * this.scale;
+    const startX = 30 * this.scale;
+    const startY = 150 * this.scale; // Below the score area
+    const verticalGap = 130 * this.scale;
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.font = `bold ${20 * this.scale}px Arial`;
+    ctx.fillStyle = "white";
+    ctx.shadowColor = "rgba(0,0,0,0.5)";
+    ctx.shadowBlur = 4;
+
+    const labels = ["st", "nd", "rd", "th"];
+
+    for (let i = 0; i < this.fingerImages.length; i++) {
+      const img = this.fingerImages[i];
+      const x = startX;
+      const y = startY + i * verticalGap;
+
+      if (img.complete) {
+        // Decrease width of the second image
+        const currentWidth = (i === 1) ? imgSize * 0.7 : imgSize;
+        const currentX = x + (imgSize - currentWidth) / 2; // Keep it centered relative to others
+
+        ctx.drawImage(img, currentX, y, currentWidth, imgSize);
+        ctx.fillText(labels[i] || "", x + imgSize / 2, y + imgSize + 5 * this.scale);
+      }
+    }
+
+
+    ctx.restore();
   },
 
   drawScore(ctx) {
@@ -570,13 +646,12 @@ const Game11 = {
     }
   },
 
-
   updateMascot(delta) {
 
     // Stop moving if galaxy collapsed
     if (this.gameMode === 1 && this.galaxyCollapsed) {
-      this.mascot.vx *= 0.95;
-      this.mascot.vy *= 0.95;
+      this.mascot.vx *= 0.9;
+      this.mascot.vy *= 0.9;
       return;
     }
 
@@ -589,15 +664,13 @@ const Game11 = {
 
       if (dist > 5) {
 
-        this.mascot.x += dx * 0.05;
-        this.mascot.y += dy * 0.05;
+        this.mascot.x += dx * 0.08;
+        this.mascot.y += dy * 0.08;
 
       } else {
 
-        // Confirmation reached
         this.mode1Confirming = false;
 
-        // NEW ROUND
         const suffixes = ["st", "nd", "rd", "th"];
         this.mode1TargetSuffix =
           suffixes[Math.floor(Math.random() * 4)];
@@ -610,29 +683,71 @@ const Game11 = {
 
     if (this.fingerX === null || this.fingerY === null) return;
 
-    const dx = this.fingerX - this.mascot.x;
-    const dy = this.fingerY - this.mascot.y;
+    /* ===== FINGER SMOOTHING FILTER ===== */
+
+    if (!this.smoothedFingerX) {
+      this.smoothedFingerX = this.fingerX;
+      this.smoothedFingerY = this.fingerY;
+    }
+
+    const smoothFactor = 0.25;
+
+    this.smoothedFingerX += (this.fingerX - this.smoothedFingerX) * smoothFactor;
+    this.smoothedFingerY += (this.fingerY - this.smoothedFingerY) * smoothFactor;
+
+    const dx = this.smoothedFingerX - this.mascot.x;
+    const dy = this.smoothedFingerY - this.mascot.y;
 
     const distance = Math.sqrt(dx * dx + dy * dy);
 
-    if (distance > 5) {
+    /* ===== ACCELERATION MOVEMENT ===== */
 
-      const force = Math.min(distance * this.mascot.speed, this.mascot.maxSpeed);
+    if (distance > 2) {
 
-      this.mascot.vx = (dx / distance) * force;
-      this.mascot.vy = (dy / distance) * force;
+      const accel = 0.9;
 
-    } else {
-      this.mascot.vx *= 0.9;
-      this.mascot.vy *= 0.9;
+      this.mascot.vx += (dx / distance) * accel;
+      this.mascot.vy += (dy / distance) * accel;
+
     }
+
+    /* ===== SPEED LIMIT ===== */
+
+    const speed = Math.sqrt(
+      this.mascot.vx * this.mascot.vx +
+      this.mascot.vy * this.mascot.vy
+    );
+
+    if (speed > this.mascot.maxSpeed) {
+
+      this.mascot.vx = (this.mascot.vx / speed) * this.mascot.maxSpeed;
+      this.mascot.vy = (this.mascot.vy / speed) * this.mascot.maxSpeed;
+    }
+
+    /* ===== FRICTION ===== */
+
+    this.mascot.vx *= 0.92;
+    this.mascot.vy *= 0.92;
 
     this.mascot.x += this.mascot.vx;
     this.mascot.y += this.mascot.vy;
 
-    // Clamp to screen
-    this.mascot.x = Math.max(80, Math.min(this.cssWidth - 80, this.mascot.x));
-    this.mascot.y = Math.max(80, Math.min(this.cssHeight - 80, this.mascot.y));
+    /* ===== EDGE CLAMP (DYNAMIC) ===== */
+
+    const lifeRatio = this.galaxyLife / this.galaxyMaxLife;
+    const portalSize = this.portalSize * this.scale * lifeRatio;
+
+    const margin = portalSize * 0.45;
+
+    this.mascot.x = Math.max(
+      margin,
+      Math.min(this.cssWidth - margin, this.mascot.x)
+    );
+
+    this.mascot.y = Math.max(
+      margin,
+      Math.min(this.cssHeight - margin, this.mascot.y)
+    );
   },
 
   drawMascot(ctx) {
@@ -780,6 +895,22 @@ const Game11 = {
     }
   },
 
+  loadFingerImages() {
+    this.fingerImages = [];
+    const files = [
+      "Fingers/Fingers-ST.png",
+      "Fingers/Fingers-ND.png",
+      "Fingers/Fingers-RD.png",
+      "Fingers/Fingers-TH.png"
+    ];
+
+    for (let file of files) {
+      const img = new Image();
+      img.src = file;
+      this.fingerImages.push(img);
+    }
+  },
+
 
   updatePortalAnimation(delta) {
 
@@ -839,6 +970,20 @@ const Game11 = {
     for (let star of layer) {
 
       star.y += star.speed * delta * 0.02;
+
+      if (this.galaxyCollapsed) {
+        const dx = this.blackHoleX - star.x;
+        const dy = this.blackHoleY - star.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const pull = 0.02; // Reduced slightly for smoothness
+
+        star.x += dx * pull;
+        star.y += dy * pull;
+
+        // swirl
+        star.x += -dy * 0.01;
+        star.y += dx * 0.01;
+      }
 
       if (star.y > this.cssHeight) {
         star.y = 0;
@@ -1004,30 +1149,63 @@ const Game11 = {
 
   spawnMode1Numbers() {
 
+    const margin = 100 * this.scale;
+    const minX = 180 * this.scale;  // Beside finger images
+    const minY = 200 * this.scale;  // Below life bar
+    const maxX = this.cssWidth - margin;
+    const maxY = this.cssHeight - margin;
+
+    const minDistance = 150 * this.scale;
+
     while (this.mode1Numbers.length < this.minNumberStars) {
 
-      // Random number 1–100
-      const num = Math.floor(Math.random() * 100) + 1;
+      let foundPos = false;
+      let x, y;
+      let attempts = 0;
 
-      // Keep star inside screen
-      const margin = 120 * this.scale;
+      while (!foundPos && attempts < 50) {
+        attempts++;
+        x = minX + Math.random() * (maxX - minX);
+        y = minY + Math.random() * (maxY - minY);
 
-      const x = margin + Math.random() * (this.cssWidth - margin * 2);
-      const y = margin + Math.random() * (this.cssHeight - margin * 2);
+        let overlapping = false;
+        for (let other of this.mode1Numbers) {
+          const dx = x - other.x;
+          const dy = y - other.y;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          if (dist < minDistance) {
+            overlapping = true;
+            break;
+          }
+        }
 
-      this.mode1Numbers.push({
-        number: num,
-        x: x,
-        y: y,
-        size: 60 * this.scale,
+        if (!overlapping) {
+          foundPos = true;
+        }
+      }
 
-        starSize: 80 * this.scale,
-        starRotation: Math.random() * Math.PI * 2,
-        starOpacity: 1
-      });
+      if (foundPos) {
+        // Random number 1–100
+        const num = Math.floor(Math.random() * 100) + 1;
+
+        this.mode1Numbers.push({
+          number: num,
+          x: x,
+          y: y,
+          size: 60 * this.scale,
+
+          starSize: 80 * this.scale,
+          starRotation: Math.random() * Math.PI * 2,
+          starOpacity: 1
+        });
+      } else {
+        // Could not find a spot, wait for next attempt or lower count
+        break;
+      }
     }
 
   },
+
 
   generateNumberWithSuffix(suffix) {
 
@@ -1411,11 +1589,65 @@ const Game11 = {
 
     // Only expand after delay passes
     if (this.blackHoleActive) {
-      this.blackHoleRadius += delta * 0.6;
+      // 📈 4. Accelerating growth curve
+      this.blackHoleRadius += delta * (0.4 + this.blackHoleRadius * 0.002);
+
+      // 🌪️ 6. Suction particles
+      for (let i = 0; i < 6; i++) {
+        const px = Math.random() * this.cssWidth;
+        const py = Math.random() * this.cssHeight;
+        this.sparkBursts.push({
+          x: px,
+          y: py,
+          vx: (this.blackHoleX - px) * 0.05,
+          vy: (this.blackHoleY - py) * 0.05,
+          size: (Math.random() * 3 + 1) * this.scale,
+          life: 800,
+          type: "particle"
+        });
+      }
     }
 
-    ctx.fillStyle = "black";
+    // 1️⃣ ACCRETION DISK
+    const diskRadius = this.blackHoleRadius * 1.4;
+    const gradient = ctx.createRadialGradient(
+      this.blackHoleX,
+      this.blackHoleY,
+      this.blackHoleRadius * 0.6,
+      this.blackHoleX,
+      this.blackHoleY,
+      diskRadius
+    );
 
+    gradient.addColorStop(0, "rgba(255,200,50,0.8)");
+    gradient.addColorStop(0.3, "rgba(255,120,0,0.6)");
+    gradient.addColorStop(0.6, "rgba(255,50,0,0.3)");
+    gradient.addColorStop(1, "rgba(0,0,0,0)");
+
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(this.blackHoleX, this.blackHoleY, diskRadius, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 3️⃣ Gravitational Lens
+    ctx.save();
+    ctx.shadowColor = "white";
+    ctx.shadowBlur = 40 * this.scale;
+    ctx.strokeStyle = "rgba(255,255,255,0.15)";
+    ctx.lineWidth = 6 * this.scale;
+    ctx.beginPath();
+    ctx.arc(
+      this.blackHoleX,
+      this.blackHoleY,
+      this.blackHoleRadius * 1.05,
+      0,
+      Math.PI * 2
+    );
+    ctx.stroke();
+    ctx.restore();
+
+    // The core black circle
+    ctx.fillStyle = "black";
     ctx.beginPath();
     ctx.arc(
       this.blackHoleX,
@@ -1432,8 +1664,8 @@ const Game11 = {
       }
       this.mode1GameOver = true;
     }
-
   },
+
 
   drawDreamBackground(ctx) {
     const gradient = ctx.createLinearGradient(
@@ -1441,9 +1673,9 @@ const Game11 = {
       0, this.cssHeight
     );
 
-    gradient.addColorStop(0, "#60A5FA");  // sky blue
-    gradient.addColorStop(0.5, "#A78BFA"); // lavender
-    gradient.addColorStop(1, "#F472B6");  // soft pink
+    gradient.addColorStop(0, "rgba(96,165,250,0.6)");
+    gradient.addColorStop(0.5, "rgba(167,139,250,0.6)");
+    gradient.addColorStop(1, "rgba(244,114,182,0.6)");
 
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
