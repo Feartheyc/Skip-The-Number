@@ -74,38 +74,65 @@ fingerSmoothing: 0.25,
 
   
   /* Mode 1 */
-  mode1Numbers: [], mode1TargetSuffix: "st",
-  mode1CorrectTotal: 0, mode1CorrectCollected: 0,
-  mode1RoundActive: true, mode1Confirming: false,
-  mode1PortalTargetX: 0, mode1PortalTargetY: 0,
+  mode1Numbers: [], 
+  mode1TargetSuffix: "st",
+  mode1CorrectTotal: 0, 
+  mode1CorrectCollected: 0,
+  mode1RoundActive: true, 
+  mode1Confirming: false,
+  mode1PortalTargetX: 0, 
+  mode1PortalTargetY: 0,
   mode1GameOver: false,
-  mode1SuctionActive: false, mode1SuctionData: null,
-  mode1MergeActive: false,   mode1MergeData:   null,
-  mode1BreakActive: false,   mode1BreakData:   null,
-  mode1MaxMatches: 3, mode1MinMatches: 1,
+  mode1SuctionActive: false, 
+  mode1SuctionData: null,
+  mode1MergeActive: false,  
+   mode1MergeData:   null,
+  mode1BreakActive: false,   
+  mode1BreakData:   null,
+  wrongEffect: null,   // null | { phase, ... }
+  screenShakeX: 0, 
+  screenShakeY: 0, 
+  screenShakePower: 0,
+  mode1MaxMatches: 3, 
+  mode1MinMatches: 1,
 
   /* Progressive difficulty */
-  level: 1, roundsCompleted: 0, numberRange: 10,
+  level: 1, 
+  roundsCompleted: 0, 
+  numberRange: 10,
 
   /* Hearts */
-  hearts: 3, maxHearts: 3, heartShakeTime: 0,
+  hearts: 3, 
+  maxHearts: 3, 
+  heartShakeTime: 0,
 
   /* Streak */
-  streak: 0, bestStreak: 0, streakPulse: 0,
+  streak: 0, 
+  bestStreak: 0, 
+  streakPulse: 0,
 
   /* Round reward */
-  roundRewardActive: false, roundRewardTimer: 0, roundRewardStars: [],
+  roundRewardActive: false, 
+  roundRewardTimer: 0, 
+  roundRewardStars: [],
 
   /* Black hole */
-  blackHoleActive: false, blackHoleTime: 0,
-  blackHoleDuration: 2800, blackHoleStrength: 0, accretionAngle: 0,
+  blackHoleActive: false, 
+  blackHoleTime: 0,
+  blackHoleDuration: 2800, 
+  blackHoleStrength: 0, 
+  accretionAngle: 0,
 
   /* Big Bang */
-  bigBangActive: false, bigBangTime: 0,
-  bigBangDuration: 1400, bigBangFlash: 0,
+  bigBangActive: false, 
+  bigBangTime: 0,
+  bigBangDuration: 1400, 
+  bigBangFlash: 0,
 
   /* Particles — capped arrays to prevent unbounded growth */
-  particles: [], sparkBursts: [], floatNumbers: [],
+  particles: [], 
+  sparkBursts: [], 
+  floatNumbers: [],
   MAX_PARTICLES: 120,
   MAX_SPARKS: 80,
 
@@ -116,12 +143,18 @@ fingerSmoothing: 0.25,
   dustMotes: [],
 
   /* Portal sprite */
-  portalFrames: [], portalFrameIndex: 0,
-  portalFrameTimer: 0, portalFrameSpeed: 80, portalSize: 200,
+  portalFrames: [], 
+  portalFrameIndex: 0,
+  portalFrameTimer: 0, 
+  portalFrameSpeed: 80, 
+  portalSize: 200,
 
   /* Mascot sprites */
   mascotImages: { idle: [], happy: [], confused: [] },
-  mascotFrame: 0, mascotFrameTimer: 0, mascotFrameSpeed: 120, mascotState: "idle",
+  mascotFrame: 0, 
+  mascotFrameTimer: 0, 
+  mascotFrameSpeed: 120, 
+  mascotState: "idle",
 
   /* Per-number proximity glow */
   proximityGlow: [],
@@ -139,15 +172,26 @@ fingerSmoothing: 0.25,
     this.resize();
     window.addEventListener("resize", () => this.resize());
 
-    this.score = 0; this.running = true; this.lastTime = performance.now();
-    this.hearts = 3; this.streak = 0; this.roundsCompleted = 0;
-    this.level = 1; this.numberRange = 10;
-    this.mode1GameOver = false; this.blackHoleActive = false;
-    this.bigBangActive = false; this.bigBangFlash = 0;
-    this.particles = []; this.sparkBursts = []; this.floatNumbers = [];
+    this.score = 0; 
+    this.running = true; 
+    this.lastTime = performance.now();
+    this.hearts = 3; 
+    this.streak = 0; 
+    this.roundsCompleted = 0;
+    this.level = 1; 
+    this.numberRange = 10;
+    this.mode1GameOver = false; 
+    this.blackHoleActive = false;
+    this.bigBangActive = false; 
+    this.bigBangFlash = 0;
+    this.particles = []; 
+    this.sparkBursts = []; 
+    this.floatNumbers = [];
     this.shootingStars = [];
-    this.heartShakeTime = 0; this.streakPulse = 0;
-    this.fingerX = null; this.fingerY = null;
+    this.heartShakeTime = 0; 
+    this.streakPulse = 0;
+    this.fingerX = null; 
+    this.fingerY = null;
 
     this.loadMascotSprites();
     this.loadPortalSprites();
@@ -220,8 +264,10 @@ fingerSmoothing: 0.25,
   ============================================================ */
   spawnMode1Numbers() {
     this.mode1Numbers = []; this.proximityGlow = [];
-    this.mode1SuctionActive = false; this.mode1SuctionData = null;
-    this.mode1MergeActive   = false; this.mode1BreakActive  = false;
+    this.mode1SuctionActive = false; 
+    this.mode1SuctionData = null;
+    this.mode1MergeActive   = false; 
+    this.mode1BreakActive  = false;
 
     const correctCount = Math.floor(
       Math.random() * (this.mode1MaxMatches - this.mode1MinMatches + 1)
@@ -302,10 +348,13 @@ fingerSmoothing: 0.25,
     this.drawBackground(ctx);
 
     if (this.theme === "space") {
-      this.updateStars(delta);         this.drawStars(ctx);
-      this.updateShootingStars(delta); this.drawShootingStars(ctx);
+      this.updateStars(delta);         
+      this.drawStars(ctx);
+      this.updateShootingStars(delta); 
+      this.drawShootingStars(ctx);
     } else {
-      this.updateDustMotes(delta);     this.drawDustMotes(ctx);
+      this.updateDustMotes(delta);     
+      this.drawDustMotes(ctx);
     }
 
     this.updateBigBang(delta);
@@ -388,21 +437,7 @@ fingerSmoothing: 0.25,
   this.fingerY = this.fingerSmoothY;
 },
 
-  /* ============================================================
-     MASCOT MOVEMENT — delta-based physics (px/ms)
 
-     FIX: Previous version had max speed comparison against raw
-     velocity without normalising by delta, causing the portal to
-     freeze after the first frame because the speed cap was in px/frame
-     units (9) but velocity was in px/ms units (≈0.54), so the cap
-     was never reached but the math was also never scaling correctly.
-
-     Now:
-       • Acceleration is distance × accel × delta  → px/ms
-       • Speed cap compares |v| against maxSpeed (both px/ms)
-       • Friction uses Math.pow(friction, delta) for true frame-independence
-       • Position integrates as x += vx * delta
-  ============================================================ */
   updateMascot(delta) {
 
     /* Auto-move during round confirmation */
@@ -432,12 +467,7 @@ fingerSmoothing: 0.25,
       const dist = Math.hypot(dx, dy);
 
       if (dist > 2) {
-        /*
-         * Acceleration proportional to distance, scaled by delta.
-         * Dividing by dist gives unit direction vector,
-         * then multiply by dist again so force ∝ distance.
-         * Net effect: accel × dist × delta added to velocity.
-         */
+
         const force = Math.min(dist * this.mascot.accel * delta, this.mascot.maxSpeed);
         this.mascot.vx += (dx / dist) * force;
         this.mascot.vy += (dy / dist) * force;
@@ -471,14 +501,20 @@ fingerSmoothing: 0.25,
      SPRITE LOADING
   ============================================================ */
   loadMascotSprites() {
-    for (let i = 0; i <= 4; i++) { const img = new Image(); img.src = `MID-I/0${i}_MID-I.png`; this.mascotImages.idle.push(img); }
-    for (let i = 0; i <= 3; i++) { const img = new Image(); img.src = `MID-H/0${i}_MID-H.png`; this.mascotImages.happy.push(img); }
-    for (let i = 0; i <= 2; i++) { const img = new Image(); img.src = `MID-C/0${i}_MID-C.png`; this.mascotImages.confused.push(img); }
+    for (let i = 0; i <= 4; i++) { const img = new Image(); 
+      img.src = `MID-I/0${i}_MID-I.png`; this.mascotImages.idle.push(img); }
+    for (let i = 0; i <= 3; i++) { const img = new Image(); 
+      img.src = `MID-H/0${i}_MID-H.png`; this.mascotImages.happy.push(img); }
+    for (let i = 0; i <= 2; i++) { const img = new Image(); 
+      img.src = `MID-C/0${i}_MID-C.png`; this.mascotImages.confused.push(img); }
   },
 
   loadPortalSprites() {
     this.portalFrames = [];
-    for (let i = 0; i <= 8; i++) { const img = new Image(); img.src = `D-1/0${i}_D-1.png`; this.portalFrames.push(img); }
+    for (let i = 0; i <= 8; i++) { 
+      const img = new Image(); 
+      img.src = `D-1/0${i}_D-1.png`; 
+      this.portalFrames.push(img); }
   },
 
   updatePortalAnimation(delta) {
@@ -493,12 +529,17 @@ fingerSmoothing: 0.25,
      BACKGROUND
   ============================================================ */
   drawBackground(ctx) {
-    const T = this.T, W = this.cssWidth, H = this.cssHeight;
+    const T = this.T, 
+    W = this.cssWidth, 
+    H = this.cssHeight;
     const g = ctx.createLinearGradient(0, 0, 0, H);
     if (this.theme === "space") {
-      g.addColorStop(0, T.bg1); g.addColorStop(0.5, T.bg2); g.addColorStop(1, T.bg3);
+      g.addColorStop(0, T.bg1);
+      g.addColorStop(0.5, T.bg2); 
+      g.addColorStop(1, T.bg3);
     } else {
-      g.addColorStop(0, T.bg1); g.addColorStop(1, T.bg2);
+      g.addColorStop(0, T.bg1); 
+      g.addColorStop(1, T.bg2);
     }
     ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
 
@@ -546,14 +587,7 @@ fingerSmoothing: 0.25,
     ctx.globalAlpha = 1;
   },
 
-  /* ============================================================
-     SHOOTING STARS
-     FIX: Timer used Math.random() inside the condition on every
-     frame, so at low fps the threshold would sometimes be hit
-     multiple times, spawning many stars. Now we use a fixed
-     interval with jitter set ONCE when the timer resets.
-     Hard cap of 4 simultaneous shooting stars prevents array bloat.
-  ============================================================ */
+
   initShootingStarTimer() {
     this.shootingStarTimer    = 0;
     this.shootingStarInterval = 2500 + Math.random() * 3000; // ms, set once
@@ -603,7 +637,10 @@ fingerSmoothing: 0.25,
       grd.addColorStop(1,  "rgba(255,255,255,0)");
       ctx.strokeStyle = grd;
       ctx.lineWidth   = 2 * this.scale;
-      ctx.beginPath(); ctx.moveTo(s.x, s.y); ctx.lineTo(tx, ty); ctx.stroke();
+      ctx.beginPath(); 
+      ctx.moveTo(s.x, s.y); 
+      ctx.lineTo(tx, ty); 
+      ctx.stroke();
     }
   },
 
@@ -636,7 +673,8 @@ fingerSmoothing: 0.25,
   drawDustMotes(ctx) {
     for (let d of this.dustMotes) {
       ctx.globalAlpha = d.alpha;
-      ctx.beginPath(); ctx.arc(d.x, d.y, d.r * this.scale, 0, Math.PI * 2);
+      ctx.beginPath(); 
+      ctx.arc(d.x, d.y, d.r * this.scale, 0, Math.PI * 2);
       ctx.fillStyle = this.T.accent; ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -662,7 +700,8 @@ fingerSmoothing: 0.25,
 
     /* Glow halo */
     const halo = ctx.createRadialGradient(0, 0, sz * 0.25, 0, 0, sz * 0.75);
-    halo.addColorStop(0, T.accentGlow); halo.addColorStop(1, "rgba(0,0,0,0)");
+    halo.addColorStop(0, T.accentGlow); 
+    halo.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = halo;
     ctx.beginPath(); ctx.arc(0, 0, sz * 0.75, 0, Math.PI * 2); ctx.fill();
 
@@ -671,22 +710,31 @@ fingerSmoothing: 0.25,
     if (frame && frame.complete && frame.naturalWidth > 0) {
       ctx.drawImage(frame, -sz / 2, -sz / 2, sz, sz);
     } else {
-      ctx.beginPath(); ctx.arc(0, 0, sz * 0.44, 0, Math.PI * 2);
-      ctx.fillStyle = T.accent; ctx.globalAlpha = 0.85; ctx.fill(); ctx.globalAlpha = 1;
+      ctx.beginPath(); 
+      ctx.arc(0, 0, sz * 0.44, 0, Math.PI * 2);
+      ctx.fillStyle = T.accent; 
+      ctx.globalAlpha = 0.85; 
+      ctx.fill(); 
+      ctx.globalAlpha = 1;
     }
 
     /* Suffix label */
     ctx.shadowColor = T.accentGlow; ctx.shadowBlur = 20;
     ctx.fillStyle   = "#ffffff";
     ctx.font        = `bold ${Math.round(52 * this.scale)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
     ctx.fillText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
     ctx.shadowBlur = 0;
 
     if (this.mascotState === "happy") {
       const rr = 96 * this.scale + Math.sin(now * 0.01) * 8;
-      ctx.strokeStyle = T.correct; ctx.lineWidth = 4 * this.scale; ctx.globalAlpha = 0.6;
-      ctx.beginPath(); ctx.arc(0, 0, rr, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = T.correct; 
+      ctx.lineWidth = 4 * this.scale; 
+      ctx.globalAlpha = 0.6;
+      ctx.beginPath(); 
+      ctx.arc(0, 0, rr, 0, Math.PI * 2); 
+      ctx.stroke();
       ctx.globalAlpha = 1;
     }
 
@@ -719,16 +767,7 @@ fingerSmoothing: 0.25,
     }
   },
 
-  /* ============================================================
-     DRAW NUMBERS
-     FIX: Float animation was floatSpeed(rad/ms) × 900 × now(ms)
-     which grew to enormous angle values over time, causing the
-     sin() to be computed on huge numbers — technically fine but
-     the effective speed was way too fast (~0.135 rad/ms).
-     
-     New approach: compute offset in pixels directly from elapsed
-     time using a fixed period per number. No growing angle accumulator.
-  ============================================================ */
+
   drawMode1Numbers(ctx) {
     const T   = this.T;
     const now = performance.now();
@@ -909,9 +948,13 @@ fingerSmoothing: 0.25,
   startPortalMerge(number) {
     this.mode1MergeActive = true;
     this.mode1MergeData   = {
-      number, suffix: this.mode1TargetSuffix,
-      angle: 0, radius: 80 * this.scale,
-      time: 0, duration: 800, scale: 1
+      number, 
+      suffix: this.mode1TargetSuffix,
+      angle: 0, 
+      radius: 80 * this.scale,
+      time: 0, 
+      duration: 800, 
+      scale: 1
     };
   },
 
@@ -944,11 +987,15 @@ fingerSmoothing: 0.25,
     const m = this.mode1MergeData;
     const x = this.mascot.x + Math.cos(m.angle) * m.radius;
     const y = this.mascot.y + Math.sin(m.angle) * m.radius;
-    ctx.save(); ctx.translate(x, y); ctx.scale(m.scale, m.scale);
-    ctx.shadowColor = this.T.correct; ctx.shadowBlur = 28;
+    ctx.save(); 
+    ctx.translate(x, y); 
+    ctx.scale(m.scale, m.scale);
+    ctx.shadowColor = this.T.correct; 
+    ctx.shadowBlur = 28;
     ctx.fillStyle   = "#ffffff";
     ctx.font        = `bold ${Math.round(60 * this.scale)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign   = "center"; ctx.textBaseline = "middle";
+    ctx.textAlign   = "center"; 
+    ctx.textBaseline = "middle";
     ctx.fillText(`${m.number}${m.suffix}`, 0, 0);
     ctx.restore();
   },
@@ -995,7 +1042,11 @@ fingerSmoothing: 0.25,
       ctx.globalAlpha = lf * 0.88;
       ctx.beginPath();
       ctx.arc(px + Math.cos(s.angle) * s.radius, py + Math.sin(s.angle) * s.radius, s.size, 0, Math.PI * 2);
-      ctx.fillStyle = s.color; ctx.shadowColor = s.color; ctx.shadowBlur = 10; ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = s.color; 
+      ctx.shadowColor = s.color; 
+      ctx.shadowBlur = 10; 
+      ctx.fill(); 
+      ctx.shadowBlur = 0;
     }
     ctx.globalAlpha = 1;
 
@@ -1053,7 +1104,8 @@ fingerSmoothing: 0.25,
     b.time += delta;
     for (let p of b.pieces) {
       p.x   += p.vx * delta; p.y  += p.vy * delta;
-      p.vx  *= Math.pow(0.996, delta); p.vy *= Math.pow(0.996, delta);
+      p.vx  *= Math.pow(0.996, delta); 
+      p.vy *= Math.pow(0.996, delta);
       p.rot += p.vr * delta;
       p.alpha = Math.max(0, 1 - b.time / 700);
     }
@@ -1067,7 +1119,8 @@ fingerSmoothing: 0.25,
       ctx.translate(p.x, p.y); ctx.rotate(p.rot);
       ctx.fillStyle    = this.T.wrong;
       ctx.font         = `bold ${Math.round(40 * this.scale)}px 'Comic Sans MS', cursive`;
-      ctx.textAlign    = "center"; ctx.textBaseline = "middle";
+      ctx.textAlign    = "center"; 
+      ctx.textBaseline = "middle";
       ctx.fillText(this.mode1BreakData.number, 0, 0);
       ctx.restore();
     }
@@ -1120,19 +1173,27 @@ fingerSmoothing: 0.25,
     const px = this.mascot.x, py = this.mascot.y;
     const r  = (100 + Math.sin(performance.now() * 0.018) * 18) * this.scale;
 
-    ctx.save(); ctx.translate(px, py); ctx.rotate(this.accretionAngle);
+    ctx.save(); 
+    ctx.translate(px, py); 
+    ctx.rotate(this.accretionAngle);
     const disk = ctx.createRadialGradient(0, 0, r*0.28, 0, 0, r*1.15);
     disk.addColorStop(0,    "rgba(0,0,0,0)");
     disk.addColorStop(0.38, "rgba(255,180,60,0.55)");
     disk.addColorStop(0.74, "rgba(255,80,0,0.72)");
     disk.addColorStop(1,    "rgba(180,0,120,0)");
     ctx.fillStyle = disk;
-    ctx.beginPath(); ctx.ellipse(0, 0, r*1.15, r*0.36, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); 
+    ctx.ellipse(0, 0, r*1.15, r*0.36, 0, 0, Math.PI*2); 
+    ctx.fill();
     ctx.restore();
 
     const core = ctx.createRadialGradient(px, py, 8, px, py, r);
-    core.addColorStop(0, "#000"); core.addColorStop(0.5, "#050505"); core.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = core; ctx.beginPath(); ctx.arc(px, py, r, 0, Math.PI*2); ctx.fill();
+    core.addColorStop(0, "#000");
+    core.addColorStop(0.5, "#050505"); 
+    core.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = core; ctx.beginPath(); 
+    ctx.arc(px, py, r, 0, Math.PI*2); 
+    ctx.fill();
 
     const msgs  = ["🌀 Uh oh!", "⚠️ Collapsing!", "💀 Oh no!"];
     ctx.globalAlpha = Math.min(1, this.blackHoleTime / 400);
@@ -1162,8 +1223,10 @@ fingerSmoothing: 0.25,
     const p = this.bigBangTime / this.bigBangDuration;
     for (let s of this.stars) {
       if (s.vx !== undefined) {
-        s.x += s.vx * delta; s.y += s.vy * delta;
-        s.vx *= Math.pow(0.998, delta); s.vy *= Math.pow(0.998, delta);
+        s.x += s.vx * delta; 
+        s.y += s.vy * delta;
+        s.vx *= Math.pow(0.998, delta); 
+        s.vy *= Math.pow(0.998, delta);
       }
     }
     this.bigBangFlash = Math.max(0, 1 - p * 2.2);
@@ -1214,11 +1277,20 @@ fingerSmoothing: 0.25,
   },
 
   retryMode1() {
-    this.mode1GameOver = false; this.hearts = 3; this.streak = 0;
-    this.score = 0; this.level = 1; this.numberRange = 10; this.roundsCompleted = 0;
-    this.particles = []; this.sparkBursts = []; this.floatNumbers = [];
+    this.mode1GameOver = false; 
+    this.hearts = 3; 
+    this.streak = 0;
+    this.score = 0; 
+    this.level = 1; 
+    this.numberRange = 10; 
+    this.roundsCompleted = 0;
+    this.particles = []; 
+    this.sparkBursts = []; 
+    
+    this.floatNumbers = [];
     this.shootingStars = [];
-    this.heartShakeTime = 0; this.streakPulse = 0;
+    this.heartShakeTime = 0; 
+    this.streakPulse = 0;
     const s = ["st","nd","rd","th"];
     this.mode1TargetSuffix = s[Math.floor(Math.random() * 4)];
     this.startBigBang();
@@ -1243,7 +1315,8 @@ fingerSmoothing: 0.25,
     /* Score */
     const sw = 175 * s, sh = 54 * s, sx = 18 * s, sy = 16 * s;
     ctx.fillStyle = T.scoreBg;
-    this._rrect(ctx, sx, sy, sw, sh, 18 * s); ctx.fill();
+    this._rrect(ctx, sx, sy, sw, sh, 18 * s); 
+    ctx.fill();
     ctx.fillStyle    = T.numberColor;
     ctx.font         = `bold ${Math.round(26 * s)}px 'Comic Sans MS', cursive`;
     ctx.textAlign    = "center"; ctx.textBaseline = "middle";
@@ -1304,9 +1377,11 @@ fingerSmoothing: 0.25,
     const bh = 48 * s, bx = W / 2 - maxW / 2, by = H - 114 * s;
 
     ctx.fillStyle   = T.cardBg;
-    this._rrect(ctx, bx, by, maxW, bh, 13 * s); ctx.fill();
+    this._rrect(ctx, bx, by, maxW, bh, 13 * s); 
+    ctx.fill();
     ctx.strokeStyle = T.cardBorder; ctx.lineWidth = 1.5 * s;
-    this._rrect(ctx, bx, by, maxW, bh, 13 * s); ctx.stroke();
+    this._rrect(ctx, bx, by, maxW, bh, 13 * s); 
+    ctx.stroke();
 
     ctx.fillStyle    = T.textPrimary;
     ctx.font         = `bold ${Math.round(19 * s)}px 'Comic Sans MS', cursive`;
@@ -1322,8 +1397,10 @@ fingerSmoothing: 0.25,
   ============================================================ */
   showToast(text, color) {
     this.toast = {
-      text, color,
-      timer: 1600, maxTimer: 1600,
+      text, 
+      color,
+      timer: 1600, 
+      maxTimer: 1600,
       y: this.CENTER_Y - 220 * this.scale,
       alpha: 1
     };
@@ -1503,11 +1580,14 @@ fingerSmoothing: 0.25,
       if (s.type === "p") {
         ctx.globalAlpha = Math.max(0, s.life / s.maxLife);
         ctx.fillStyle   = this.T.correct;
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); 
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); 
+        ctx.fill();
       } else {
         ctx.globalAlpha = Math.max(0, s.alpha);
         ctx.strokeStyle = this.T.correct; ctx.lineWidth = 5 * this.scale;
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2); 
+        ctx.stroke();
       }
     }
     ctx.globalAlpha = 1;
@@ -1520,10 +1600,14 @@ fingerSmoothing: 0.25,
     r = Math.min(r, w / 2, h / 2);
     ctx.beginPath();
     ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);   ctx.quadraticCurveTo(x + w, y,     x + w, y + r);
-    ctx.lineTo(x + w, y + h - r); ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);   ctx.quadraticCurveTo(x,     y + h, x,     y + h - r);
-    ctx.lineTo(x, y + r);       ctx.quadraticCurveTo(x,     y,     x + r, y);
+    ctx.lineTo(x + w - r, y);   
+    ctx.quadraticCurveTo(x + w, y,     x + w, y + r);
+    ctx.lineTo(x + w, y + h - r); 
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);   
+    ctx.quadraticCurveTo(x,     y + h, x,     y + h - r);
+    ctx.lineTo(x, y + r);       
+    ctx.quadraticCurveTo(x,     y,     x + r, y);
     ctx.closePath();
   },
 
