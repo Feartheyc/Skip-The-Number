@@ -85,14 +85,10 @@ fingerSmoothing: 0.25,
   mode1GameOver: false,
   mode1SuctionActive: false, 
   mode1SuctionData: null,
-  mode1MergeActive: false,  
-   mode1MergeData:   null,
+  mode1MergeActive: false,   
+  mode1MergeData:   null,
   mode1BreakActive: false,   
   mode1BreakData:   null,
-  wrongEffect: null,   // null | { phase, ... }
-  screenShakeX: 0, 
-  screenShakeY: 0, 
-  screenShakePower: 0,
   mode1MaxMatches: 3, 
   mode1MinMatches: 1,
 
@@ -102,7 +98,7 @@ fingerSmoothing: 0.25,
   numberRange: 10,
 
   /* Hearts */
-  hearts: 3, 
+  hearts: 3,
   maxHearts: 3, 
   heartShakeTime: 0,
 
@@ -146,14 +142,13 @@ fingerSmoothing: 0.25,
   portalFrames: [], 
   portalFrameIndex: 0,
   portalFrameTimer: 0, 
-  portalFrameSpeed: 80, 
-  portalSize: 200,
+  portalFrameSpeed: 80, portalSize: 200,
 
   /* Mascot sprites */
   mascotImages: { idle: [], happy: [], confused: [] },
   mascotFrame: 0, 
   mascotFrameTimer: 0, 
-  mascotFrameSpeed: 120, 
+  mascotFrameSpeed: 120,
   mascotState: "idle",
 
   /* Per-number proximity glow */
@@ -184,7 +179,7 @@ fingerSmoothing: 0.25,
     this.blackHoleActive = false;
     this.bigBangActive = false; 
     this.bigBangFlash = 0;
-    this.particles = []; 
+    this.particles = [];
     this.sparkBursts = []; 
     this.floatNumbers = [];
     this.shootingStars = [];
@@ -263,7 +258,8 @@ fingerSmoothing: 0.25,
      SPAWN NUMBERS
   ============================================================ */
   spawnMode1Numbers() {
-    this.mode1Numbers = []; this.proximityGlow = [];
+    this.mode1Numbers = []; 
+    this.proximityGlow = [];
     this.mode1SuctionActive = false; 
     this.mode1SuctionData = null;
     this.mode1MergeActive   = false; 
@@ -307,13 +303,9 @@ fingerSmoothing: 0.25,
       }
 
       this.mode1Numbers.push({
-        number: num, x, y, baseX: x, baseY: y,
-        /*
-         * Float is pure time-based sine offset in PIXELS — no angular speed needed.
-         * floatAmp: max pixel deviation (kept small so it's subtle)
-         * floatPeriod: full cycle in ms (2500–4000ms = very gentle)
-         * floatOffset: phase offset so each number bobs independently
-         */
+        number: num, x, y, 
+        baseX: x, 
+        baseY: y,
         floatAmp:    6 * this.scale,
         floatPeriod: 2500 + Math.random() * 1500,
         floatOffset: Math.random() * Math.PI * 2,
@@ -324,12 +316,7 @@ fingerSmoothing: 0.25,
     }
   },
 
-  /* ============================================================
-     MAIN UPDATE
-     main.js calls: game.update(ctx, fingerPositions, deltaSeconds)
-     deltaSeconds is in seconds from main.js (divide of ms/1000).
-     We convert to ms and clamp.
-  ============================================================ */
+
   update(ctx, _fp, dtArg) {
     if (!this.running) return;
 
@@ -397,14 +384,7 @@ fingerSmoothing: 0.25,
     this.drawGameOver(ctx);
   },
 
-  /* ============================================================
-     FINGER POSITION
-     
-     FIX: We read window.fingerPositions every frame unconditionally.
-     If empty → fingerX/Y = null (mascot glides to a stop via friction).
-     The old code had a "return" that prevented any update after the
-     first frame in some call paths — now it's a simple read-and-assign.
-  ============================================================ */
+
   updateFingerPosition() {
 
   if (
@@ -501,12 +481,21 @@ fingerSmoothing: 0.25,
      SPRITE LOADING
   ============================================================ */
   loadMascotSprites() {
-    for (let i = 0; i <= 4; i++) { const img = new Image(); 
-      img.src = `MID-I/0${i}_MID-I.png`; this.mascotImages.idle.push(img); }
-    for (let i = 0; i <= 3; i++) { const img = new Image(); 
-      img.src = `MID-H/0${i}_MID-H.png`; this.mascotImages.happy.push(img); }
-    for (let i = 0; i <= 2; i++) { const img = new Image(); 
-      img.src = `MID-C/0${i}_MID-C.png`; this.mascotImages.confused.push(img); }
+    for (let i = 0; i <= 4; i++) { 
+      const img = new Image(); 
+      img.src = `MID-I/0${i}_MID-I.png`; 
+      this.mascotImages.idle.push(img); 
+    }
+    for (let i = 0; i <= 3; i++) { 
+      const img = new Image(); 
+      img.src = `MID-H/0${i}_MID-H.png`; 
+      this.mascotImages.happy.push(img); 
+    }
+    for (let i = 0; i <= 2; i++) { 
+      const img = new Image(); 
+      img.src = `MID-C/0${i}_MID-C.png`; 
+      this.mascotImages.confused.push(img); 
+    }
   },
 
   loadPortalSprites() {
@@ -514,7 +503,8 @@ fingerSmoothing: 0.25,
     for (let i = 0; i <= 8; i++) { 
       const img = new Image(); 
       img.src = `D-1/0${i}_D-1.png`; 
-      this.portalFrames.push(img); }
+      this.portalFrames.push(img); 
+    }
   },
 
   updatePortalAnimation(delta) {
@@ -529,9 +519,7 @@ fingerSmoothing: 0.25,
      BACKGROUND
   ============================================================ */
   drawBackground(ctx) {
-    const T = this.T, 
-    W = this.cssWidth, 
-    H = this.cssHeight;
+    const T = this.T, W = this.cssWidth, H = this.cssHeight;
     const g = ctx.createLinearGradient(0, 0, 0, H);
     if (this.theme === "space") {
       g.addColorStop(0, T.bg1);
@@ -541,19 +529,17 @@ fingerSmoothing: 0.25,
       g.addColorStop(0, T.bg1); 
       g.addColorStop(1, T.bg2);
     }
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = g; 
+    ctx.fillRect(0, 0, W, H);
 
     const r = ctx.createRadialGradient(this.CENTER_X, this.CENTER_Y * 0.7, 0, this.CENTER_X, this.CENTER_Y * 0.7, W * 0.55);
     r.addColorStop(0, this.theme === "space" ? "rgba(124,58,237,0.12)" : "rgba(99,102,241,0.07)");
     r.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = r; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = r; 
+    ctx.fillRect(0, 0, W, H);
   },
 
-  /* ============================================================
-     STARFIELD
-     FIX: star.speed was multiplied by 0.001 making it near-zero.
-     Now it's a direct px/ms value that's actually visible.
-  ============================================================ */
+
   initStarfield() {
     this.stars = [];
     for (let i = 0; i < 120; i++) {
@@ -564,7 +550,8 @@ fingerSmoothing: 0.25,
         speed:      0.008 + Math.random() * 0.025,   // px/ms — gentle drift downward
         twinkle:    Math.random() * Math.PI * 2,
         twinkleSpd: 0.002 + Math.random() * 0.003,   // rad/ms
-        vx: 0, vy: 0
+        vx: 0, 
+        vy: 0
       });
     }
   },
@@ -663,7 +650,8 @@ fingerSmoothing: 0.25,
 
   updateDustMotes(delta) {
     for (let d of this.dustMotes) {
-      d.x += d.vx * delta; d.y += d.vy * delta;
+      d.x += d.vx * delta; 
+      d.y += d.vy * delta;
       if (d.y < -10)               { d.y = this.cssHeight + 10; d.x = Math.random() * this.cssWidth; }
       if (d.x < -10)               { d.x = this.cssWidth + 10; }
       if (d.x > this.cssWidth + 10){ d.x = -10; }
@@ -675,7 +663,8 @@ fingerSmoothing: 0.25,
       ctx.globalAlpha = d.alpha;
       ctx.beginPath(); 
       ctx.arc(d.x, d.y, d.r * this.scale, 0, Math.PI * 2);
-      ctx.fillStyle = this.T.accent; ctx.fill();
+      ctx.fillStyle = this.T.accent; 
+      ctx.fill();
     }
     ctx.globalAlpha = 1;
   },
@@ -703,7 +692,8 @@ fingerSmoothing: 0.25,
     halo.addColorStop(0, T.accentGlow); 
     halo.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = halo;
-    ctx.beginPath(); ctx.arc(0, 0, sz * 0.75, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); 
+    ctx.arc(0, 0, sz * 0.75, 0, Math.PI * 2); ctx.fill();
 
     /* Portal sprite with fallback */
     const frame = this.portalFrames[this.portalFrameIndex];
@@ -722,8 +712,7 @@ fingerSmoothing: 0.25,
     ctx.shadowColor = T.accentGlow; ctx.shadowBlur = 20;
     ctx.fillStyle   = "#ffffff";
     ctx.font        = `bold ${Math.round(52 * this.scale)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign = "center"; 
-    ctx.textBaseline = "middle";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
     ctx.shadowBlur = 0;
 
@@ -767,7 +756,6 @@ fingerSmoothing: 0.25,
     }
   },
 
-
   drawMode1Numbers(ctx) {
     const T   = this.T;
     const now = performance.now();
@@ -778,12 +766,8 @@ fingerSmoothing: 0.25,
 
       const glow = this.proximityGlow[i] || 0;
 
-      /*
-       * Float: pure pixel offset using time / period for a clean sine.
-       * floatAmp is in pixels (scaled), floatPeriod is in ms.
-       * Result: a gentle 6–10px bob over 2.5–4 seconds — very calm.
-       */
       const fY  = Math.sin((now / n.floatPeriod) * Math.PI * 2 + n.floatOffset) * n.floatAmp;
+
 
       const sc  = (n.renderScale || 1) * (1 + glow * 0.12);
       const isC = this.getSuffix(n.number) === this.mode1TargetSuffix;
@@ -804,7 +788,8 @@ fingerSmoothing: 0.25,
       ctx.strokeStyle = glow > 0.1 ? (isC ? T.correct : T.wrong) : T.cardBorder;
       ctx.lineWidth   = (2 + glow * 3) * this.scale;
       this._rrect(ctx, -cr, -cr * 0.72, cr * 2, cr * 1.44, 16 * this.scale);
-      ctx.fill(); ctx.stroke();
+      ctx.fill(); 
+      ctx.stroke();
 
       ctx.shadowColor  = T.numberGlow; ctx.shadowBlur = 12 + glow * 18;
       ctx.fillStyle    = T.numberColor;
@@ -843,9 +828,12 @@ fingerSmoothing: 0.25,
     this.mode1SuctionActive = true;
     this.mode1SuctionData   = {
       index,
-      startX: n.x, startY: n.y,
-      targetX: this.mascot.x, targetY: this.mascot.y,
-      time: 0, duration: 420
+      startX: n.x, 
+      startY: n.y,
+      targetX: this.mascot.x, 
+      targetY: this.mascot.y,
+      time: 0, 
+      duration: 420
     };
   },
 
@@ -932,7 +920,8 @@ fingerSmoothing: 0.25,
 
   drawFloatNumbers(ctx) {
     for (let f of this.floatNumbers) {
-      ctx.save(); ctx.globalAlpha = f.alpha;
+      ctx.save(); 
+      ctx.globalAlpha = f.alpha;
       ctx.fillStyle    = this.T.wrong;
       ctx.font         = `bold ${Math.round(38 * this.scale)}px 'Comic Sans MS', cursive`;
       ctx.textAlign    = "center"; ctx.textBaseline = "middle";
@@ -987,15 +976,11 @@ fingerSmoothing: 0.25,
     const m = this.mode1MergeData;
     const x = this.mascot.x + Math.cos(m.angle) * m.radius;
     const y = this.mascot.y + Math.sin(m.angle) * m.radius;
-    ctx.save(); 
-    ctx.translate(x, y); 
-    ctx.scale(m.scale, m.scale);
-    ctx.shadowColor = this.T.correct; 
-    ctx.shadowBlur = 28;
+    ctx.save(); ctx.translate(x, y); ctx.scale(m.scale, m.scale);
+    ctx.shadowColor = this.T.correct; ctx.shadowBlur = 28;
     ctx.fillStyle   = "#ffffff";
     ctx.font        = `bold ${Math.round(60 * this.scale)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign   = "center"; 
-    ctx.textBaseline = "middle";
+    ctx.textAlign   = "center"; ctx.textBaseline = "middle";
     ctx.fillText(`${m.number}${m.suffix}`, 0, 0);
     ctx.restore();
   },
@@ -1103,8 +1088,9 @@ fingerSmoothing: 0.25,
     const b = this.mode1BreakData;
     b.time += delta;
     for (let p of b.pieces) {
-      p.x   += p.vx * delta; p.y  += p.vy * delta;
-      p.vx  *= Math.pow(0.996, delta); 
+      p.x   += p.vx * delta; 
+      p.y  += p.vy * delta;
+      p.vx  *= Math.pow(0.996, delta);
       p.vy *= Math.pow(0.996, delta);
       p.rot += p.vr * delta;
       p.alpha = Math.max(0, 1 - b.time / 700);
@@ -1119,8 +1105,7 @@ fingerSmoothing: 0.25,
       ctx.translate(p.x, p.y); ctx.rotate(p.rot);
       ctx.fillStyle    = this.T.wrong;
       ctx.font         = `bold ${Math.round(40 * this.scale)}px 'Comic Sans MS', cursive`;
-      ctx.textAlign    = "center"; 
-      ctx.textBaseline = "middle";
+      ctx.textAlign    = "center"; ctx.textBaseline = "middle";
       ctx.fillText(this.mode1BreakData.number, 0, 0);
       ctx.restore();
     }
@@ -1173,9 +1158,7 @@ fingerSmoothing: 0.25,
     const px = this.mascot.x, py = this.mascot.y;
     const r  = (100 + Math.sin(performance.now() * 0.018) * 18) * this.scale;
 
-    ctx.save(); 
-    ctx.translate(px, py); 
-    ctx.rotate(this.accretionAngle);
+    ctx.save(); ctx.translate(px, py); ctx.rotate(this.accretionAngle);
     const disk = ctx.createRadialGradient(0, 0, r*0.28, 0, 0, r*1.15);
     disk.addColorStop(0,    "rgba(0,0,0,0)");
     disk.addColorStop(0.38, "rgba(255,180,60,0.55)");
@@ -1188,10 +1171,11 @@ fingerSmoothing: 0.25,
     ctx.restore();
 
     const core = ctx.createRadialGradient(px, py, 8, px, py, r);
-    core.addColorStop(0, "#000");
+    core.addColorStop(0, "#000"); 
     core.addColorStop(0.5, "#050505"); 
     core.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = core; ctx.beginPath(); 
+    ctx.fillStyle = core; 
+    ctx.beginPath(); 
     ctx.arc(px, py, r, 0, Math.PI*2); 
     ctx.fill();
 
@@ -1223,10 +1207,8 @@ fingerSmoothing: 0.25,
     const p = this.bigBangTime / this.bigBangDuration;
     for (let s of this.stars) {
       if (s.vx !== undefined) {
-        s.x += s.vx * delta; 
-        s.y += s.vy * delta;
-        s.vx *= Math.pow(0.998, delta); 
-        s.vy *= Math.pow(0.998, delta);
+        s.x += s.vx * delta; s.y += s.vy * delta;
+        s.vx *= Math.pow(0.998, delta); s.vy *= Math.pow(0.998, delta);
       }
     }
     this.bigBangFlash = Math.max(0, 1 - p * 2.2);
@@ -1245,7 +1227,8 @@ fingerSmoothing: 0.25,
   drawGameOver(ctx) {
     if (!this.mode1GameOver) return;
     const W = this.cssWidth, H = this.cssHeight, s = this.scale;
-    ctx.fillStyle = "rgba(0,0,0,0.78)"; ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "rgba(0,0,0,0.78)"; 
+    ctx.fillRect(0, 0, W, H);
 
     const cw = Math.min(Math.max(W * 0.52, 320 * s), 620 * s);
     const ch = 290 * s;
@@ -1286,7 +1269,6 @@ fingerSmoothing: 0.25,
     this.roundsCompleted = 0;
     this.particles = []; 
     this.sparkBursts = []; 
-    
     this.floatNumbers = [];
     this.shootingStars = [];
     this.heartShakeTime = 0; 
@@ -1340,21 +1322,24 @@ fingerSmoothing: 0.25,
     if (this.streak >= 2) {
       const ps = 1 + this.streakPulse * 0.3;
       ctx.save();
-      ctx.translate(W / 2, 34 * s); ctx.scale(ps, ps);
+      ctx.translate(W / 2, 34 * s); 
+      ctx.scale(ps, ps);
       ctx.globalAlpha  = 0.88 + this.streakPulse * 0.12;
       ctx.fillStyle    = T.streakColor;
       ctx.font         = `bold ${Math.round(24 * s)}px 'Comic Sans MS', cursive`;
       ctx.textAlign    = "center"; ctx.textBaseline = "middle";
       ctx.shadowColor  = T.streakColor; ctx.shadowBlur = 10;
       ctx.fillText(`🔥 ${this.streak} in a row!`, 0, 0);
-      ctx.shadowBlur = 0; ctx.restore();
+      ctx.shadowBlur = 0; 
+      ctx.restore();
     }
 
     /* Level badge */
     const lw = 200 * s, lh = 40 * s;
     const lx = W / 2 - lw / 2, ly = H - 58 * s;
     ctx.fillStyle = T.scoreBg;
-    this._rrect(ctx, lx, ly, lw, lh, 13 * s); ctx.fill();
+    this._rrect(ctx, lx, ly, lw, lh, 13 * s); 
+    ctx.fill();
     ctx.fillStyle    = T.textAccent;
     ctx.font         = `bold ${Math.round(18 * s)}px 'Comic Sans MS', cursive`;
     ctx.textAlign    = "center"; ctx.textBaseline = "middle";
@@ -1418,8 +1403,10 @@ fingerSmoothing: 0.25,
     ctx.save(); ctx.globalAlpha = this.toast.alpha;
     ctx.fillStyle    = this.toast.color;
     ctx.font         = `bold ${Math.round(36 * this.scale)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign    = "center"; ctx.textBaseline = "middle";
-    ctx.shadowColor  = this.toast.color; ctx.shadowBlur = 14;
+    ctx.textAlign    = "center"; 
+    ctx.textBaseline = "middle";
+    ctx.shadowColor  = this.toast.color; 
+    ctx.shadowBlur = 14;
     ctx.fillText(this.toast.text, this.CENTER_X, this.toast.y);
     ctx.restore();
   },
@@ -1467,11 +1454,7 @@ fingerSmoothing: 0.25,
     ctx.restore();
   },
 
-  /* ============================================================
-     PARTICLES
-     FIX: Capped at MAX_PARTICLES to prevent unbounded growth.
-     Old particles are dropped (LIFO) when cap is reached.
-  ============================================================ */
+
   spawnCorrectParticles(x, y) {
     const cols = ["#34d399","#fbbf24","#a78bfa","#ffffff"];
     for (let i = 0; i < 20; i++) {
@@ -1479,10 +1462,15 @@ fingerSmoothing: 0.25,
       const a = Math.random() * Math.PI * 2;
       const v = (Math.random() * 6 + 3) * 0.055;
       this.particles.push({
-        x, y, vx: Math.cos(a)*v, vy: Math.sin(a)*v,
+        x, 
+        y, 
+        vx: Math.cos(a)*v, 
+        vy: Math.sin(a)*v,
         color: cols[i % cols.length],
         size: (Math.random()*5+3) * this.scale,
-        life: 700, maxLife: 700, type: "star"
+        life: 700, 
+        maxLife: 700, 
+        type: "star"
       });
     }
   },
@@ -1493,10 +1481,15 @@ fingerSmoothing: 0.25,
       const a = Math.random() * Math.PI * 2;
       const v = (Math.random()*4+2) * 0.055;
       this.particles.push({
-        x, y, vx: Math.cos(a)*v, vy: Math.sin(a)*v,
+        x, 
+        y, 
+        vx: Math.cos(a)*v, 
+        vy: Math.sin(a)*v,
         color: "#f87171",
         size: (Math.random()*4+2) * this.scale,
-        life: 500, maxLife: 500, type: "circle"
+        life: 500, 
+        maxLife: 500, 
+        type: "circle"
       });
     }
   },
@@ -1508,7 +1501,8 @@ fingerSmoothing: 0.25,
       p.y  += p.vy * delta;
       /* Use multiply-assign instead of Math.pow each frame for perf */
       const fric = 1 - (1 - 0.994) * delta / 16;  // approx Math.pow(0.994, delta)
-      p.vx *= fric; p.vy *= fric;
+      p.vx *= fric; 
+      p.vy *= fric;
       p.vy += 0.00007 * delta;
       p.life -= delta;
       if (p.life <= 0) this.particles.splice(i, 1);
@@ -1520,31 +1514,37 @@ fingerSmoothing: 0.25,
       ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
       ctx.fillStyle   = p.color;
       if (p.type === "star") this._star(ctx, p.x, p.y, p.size, 5);
-      else { ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); ctx.fill(); }
+      else { ctx.beginPath(); 
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI*2); 
+        ctx.fill(); }
     }
     ctx.globalAlpha = 1;
   },
 
   _star(ctx, x, y, r, pts) {
-    ctx.save(); ctx.translate(x, y); ctx.beginPath();
+    ctx.save(); ctx.translate(x, y); 
+    ctx.beginPath();
     for (let i = 0; i < pts * 2; i++) {
       const a  = (Math.PI / pts) * i - Math.PI / 2;
       const rr = i % 2 === 0 ? r : r * 0.44;
       i === 0 ? ctx.moveTo(Math.cos(a)*rr, Math.sin(a)*rr)
               : ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr);
     }
-    ctx.closePath(); ctx.fill(); ctx.restore();
+    ctx.closePath(); 
+    ctx.fill(); 
+    ctx.restore();
   },
 
-  /* ============================================================
-     SPARK BURSTS
-     FIX: Capped at MAX_SPARKS.
-  ============================================================ */
   spawnSparkBurst(x, y) {
     if (this.sparkBursts.length < this.MAX_SPARKS) {
       this.sparkBursts.push({
-        x, y, radius: 0, maxRadius: 130 * this.scale,
-        alpha: 1, life: 550, maxLife: 550
+        x, 
+        y, 
+        radius: 0, 
+        maxRadius: 130 * this.scale,
+        alpha: 1, 
+        life: 550, 
+        maxLife: 550
       });
     }
     for (let i = 0; i < 16; i++) {
@@ -1552,9 +1552,14 @@ fingerSmoothing: 0.25,
       const a = Math.random() * Math.PI * 2;
       const v = (Math.random()*9+3) * 0.055;
       this.sparkBursts.push({
-        x, y, vx: Math.cos(a)*v, vy: Math.sin(a)*v,
+        x, 
+        y, 
+        vx: Math.cos(a)*v, 
+        vy: Math.sin(a)*v,
         size: (Math.random()*4+2) * this.scale,
-        life: 480, maxLife: 480, type: "p"
+        life: 480, 
+        maxLife: 480,
+        type: "p"
       });
     }
   },
@@ -1580,13 +1585,13 @@ fingerSmoothing: 0.25,
       if (s.type === "p") {
         ctx.globalAlpha = Math.max(0, s.life / s.maxLife);
         ctx.fillStyle   = this.T.correct;
-        ctx.beginPath(); 
-        ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); 
+        ctx.beginPath(); ctx.arc(s.x, s.y, s.size, 0, Math.PI*2); 
         ctx.fill();
       } else {
         ctx.globalAlpha = Math.max(0, s.alpha);
         ctx.strokeStyle = this.T.correct; ctx.lineWidth = 5 * this.scale;
-        ctx.beginPath(); ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2); 
+        ctx.beginPath(); 
+        ctx.arc(s.x, s.y, s.radius, 0, Math.PI*2); 
         ctx.stroke();
       }
     }
