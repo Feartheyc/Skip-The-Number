@@ -28,6 +28,25 @@ const Game11 = {
   fingerX: null,
   fingerY: null,
 
+  /* ============================================================
+     THEME SYSTEM
+  ============================================================ */
+  theme: "space",
+
+  themes: {
+    space: {
+      bg1: "rgba(10, 14, 39, 0.9)", bg2: "rgba(26, 16, 64, 0.9)", bg3: "rgba(13, 31, 60, 0.9)",
+      accent: "#7c3aed", accentGlow: "rgba(124,58,237,0.4)",
+      textPrimary: "#e2e8f0", textAccent: "#a78bfa",
+      correct: "#34d399", wrong: "#f87171",
+      numberColor: "#fbbf24", numberGlow: "rgba(251,191,36,0.6)",
+      cardBg: "rgba(255,255,255,0.07)", cardBorder: "rgba(255,255,255,0.15)",
+      scoreBg: "rgba(124,58,237,0.3)", heartColor: "#f472b6", streakColor: "#fbbf24",
+    }
+  },
+
+  get T() { return this.themes[this.theme]; },
+
   running: false,
   lastTime: 0,
 
@@ -63,6 +82,7 @@ const Game11 = {
 
   /* ===== FINGERS SYSTEM ===== */
   fingerImages: [],
+  meteorImages: [],
 
   /* ===== PORTAL SPRITE SYSTEM ===== */
 
@@ -82,39 +102,11 @@ const Game11 = {
 
 
 
-  /* ===== STARFIELD SYSTEM ===== */
-
-  starsFar: [],
-  starsMid: [],
-  starsNear: [],
-
-  starCountFar: 80,
-  starCountMid: 50,
-  starCountNear: 30,
-
-  /* ===== COSMIC DUST SYSTEM ===== */
-
-  cosmicDust: [],
-  dustCount: 120,
-  dustDriftAngle: 0.0003,
-  dustGlobalTime: 0,
-
-
-  /* ===== NEBULA SYSTEM ===== */
-
-  nebulaTime: 0,
-  nebulaSpeed: 0.0002,
-
-
-  /* ===== SHOOTING STAR SYSTEM ===== */
-
+  /* ===== STARFIELD SYSTEM (Sync with ordinal2.js) ===== */
+  stars: [],
   shootingStars: [],
-  shootingStarSpawnTimer: 0,
-  shootingStarSpawnInterval: 2000, // average spawn time (ms)
-
-  /* ===== SHOOTING STAR BURST SYSTEM ===== */
-
-  shootingStarBursts: [],
+  shootingStarTimer: 0,
+  shootingStarInterval: 3000,
 
 
   /* ===== GAME MODE SYSTEM ===== */
@@ -155,6 +147,8 @@ const Game11 = {
   blackHoleRadius: 0,
   blackHoleX: 0,
   blackHoleY: 0,
+  blackHoleSuctionParticles: [],
+  blackHoleGrowthPhase: 0,
 
 
   // 🎁 Sticker System
@@ -185,7 +179,8 @@ const Game11 = {
     this.loadMascotSprites();
     this.loadPortalSprites();
     this.loadFingerImages();
-    this.initStarfield();      // NEW
+    this.loadMeteorImages();
+    this.initStarfield();
 
     this.setupDoors();
 
@@ -207,11 +202,17 @@ const Game11 = {
         this.score = 0;
         this.mode1CorrectCollected = 0;
         this.mode1GameOver = false;
+        this.level = 1;
+        this.nextLevelScore = 50;
+        this.stickers = [];
+        this.nextStickerScore = 30;
 
         // 2️⃣ Clear Active Effects
         this.sparkBursts = [];
         this.floatingTexts = [];
         this.confettiParticles = [];
+        this.shootingStars = [];
+        this.blackHoleSuctionParticles = [];
 
         // 3️⃣ Reset Mascot
         this.mascot.x = this.CENTER_X;
@@ -269,7 +270,12 @@ const Game11 = {
     this.galaxyCollapsed = false;
     this.blackHoleDelayTimer = 0;
     this.blackHoleActive = false;
+    this.blackHoleSuctionParticles = [];
     this.blackHoleRadius = 0;
+    this.blackHoleGrowthPhase = 0;
+
+    // ── CLEAR MODE 1 NUMBERS ──────────────────────────────────────
+    this.mode1Numbers = [];
 
     // Determine suffix based on finger states
     this.updateMode1TargetSuffix();
@@ -345,7 +351,11 @@ const Game11 = {
     const delta = now - this.lastTime;
     this.lastTime = now;
 
-    this.drawDreamBackground(ctx);
+    this.drawBackground(ctx);
+    this.updateStars(delta);
+    this.drawStars(ctx);
+    this.updateShootingStars(delta);
+    this.drawShootingStars(ctx);
 
     // 💥 Global Screen Shake
     ctx.save();
@@ -353,26 +363,6 @@ const Game11 = {
       const shake = Math.min(20 * this.scale, this.blackHoleRadius * 0.02);
       ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
     }
-
-
-
-    // 🌌 STARFIELD
-    this.updateStarLayer(this.starsFar, delta);
-    this.updateStarLayer(this.starsMid, delta);
-    this.updateStarLayer(this.starsNear, delta);
-    this.ensureMinimumStars();
-
-    this.drawStarLayer(ctx, this.starsFar);
-    this.drawStarLayer(ctx, this.starsMid);
-    this.drawStarLayer(ctx, this.starsNear);
-
-
-    // 🌠 SHOOTING STARS
-    this.updateShootingStars(delta);
-    this.drawShootingStars(ctx);
-
-    this.updateStarBursts(delta);
-    this.drawStarBursts(ctx);
 
     // 🎮 GAME LOGIC
     this.updateFingerPosition();
@@ -911,6 +901,16 @@ const Game11 = {
     }
   },
 
+  loadMeteorImages() {
+    this.meteorImages = [];
+    const files = ["Meteors/meteors1.png", "Meteors/meteors2.png"];
+    for (let f of files) {
+      const img = new Image();
+      img.src = f;
+      this.meteorImages.push(img);
+    }
+  },
+
 
   updatePortalAnimation(delta) {
 
@@ -927,225 +927,114 @@ const Game11 = {
     }
   },
 
-
+  /* ============================================================
+     BACKGROUND (Ported from ordinal2.js)
+  ============================================================ */
+  drawBackground(ctx) {
+    const T = this.T, W = this.cssWidth, H = this.cssHeight;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, T.bg1);
+    g.addColorStop(0.5, T.bg2);
+    g.addColorStop(1, T.bg3);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    const r = ctx.createRadialGradient(this.CENTER_X, this.CENTER_Y * 0.7, 0, this.CENTER_X, this.CENTER_Y * 0.7, W * 0.55);
+    r.addColorStop(0, "rgba(124,58,237,0.2)");
+    r.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = r;
+    ctx.fillRect(0, 0, W, H);
+  },
   initStarfield() {
-
-    this.starsFar = [];
-    this.starsMid = [];
-    this.starsNear = [];
-
-    // Ensure minimum 5 stars total
-    const totalStars = Math.max(5, this.starCountFar + this.starCountMid + this.starCountNear);
-
-    // Distribute stars across layers, ensuring minimum coverage
-    const farCount = Math.max(2, Math.floor(totalStars * 0.4));
-    const midCount = Math.max(2, Math.floor(totalStars * 0.35));
-    const nearCount = Math.max(1, totalStars - farCount - midCount);
-
-    for (let i = 0; i < farCount; i++) {
-      this.starsFar.push(this.createStar(0.2));
-    }
-
-    for (let i = 0; i < midCount; i++) {
-      this.starsMid.push(this.createStar(0.5));
-    }
-
-    for (let i = 0; i < nearCount; i++) {
-      this.starsNear.push(this.createStar(1));
-    }
-  },
-
-  createStar(speedFactor) {
-
-    return {
-      x: Math.random() * this.cssWidth,
-      y: Math.random() * this.cssHeight,
-      size: Math.random() * 3 + 1,
-      speed: speedFactor
-    };
-  },
-
-  updateStarLayer(layer, delta) {
-
-    for (let star of layer) {
-
-      star.y += star.speed * delta * 0.02;
-
-      if (this.galaxyCollapsed) {
-        const dx = this.blackHoleX - star.x;
-        const dy = this.blackHoleY - star.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const pull = 0.02; // Reduced slightly for smoothness
-
-        star.x += dx * pull;
-        star.y += dy * pull;
-
-        // swirl
-        star.x += -dy * 0.01;
-        star.y += dx * 0.01;
-      }
-
-      if (star.y > this.cssHeight) {
-        star.y = 0;
-        star.x = Math.random() * this.cssWidth;
-      }
-    }
-  },
-
-  ensureMinimumStars() {
-
-    const totalStars = this.starsFar.length + this.starsMid.length + this.starsNear.length;
-
-    if (totalStars < 5) {
-      const starsNeeded = 5 - totalStars;
-
-      // Add stars to the near layer (most visible)
-      for (let i = 0; i < starsNeeded; i++) {
-        this.starsNear.push(this.createStar(1));
-      }
-    }
-  },
-
-  drawStarLayer(ctx, layer) {
-
-    for (let star of layer) {
-
-      ctx.beginPath();
-      ctx.arc(star.x, star.y, star.size * this.scale, 0, Math.PI * 2);
-      ctx.fillStyle = "white";
-      ctx.fill();
-    }
-  },
-
-
-  createShootingStar() {
-
-    const startFromLeft = Math.random() < 0.5;
-
-    const star = {
-      x: startFromLeft ? -50 : this.cssWidth + 50,
-      y: Math.random() * this.cssHeight * 0.5,
-      length: Math.random() * 120 + 80,
-      speedX: startFromLeft ? Math.random() * 6 + 4 : -(Math.random() * 6 + 4),
-      speedY: Math.random() * 2 + 1,
-      life: 0,
-      maxLife: 1000,
-      opacity: 1
-    };
-
-    this.shootingStars.push(star);
-  },
-
-  updateShootingStars(delta) {
-
-    this.shootingStarSpawnTimer += delta;
-
-    if (this.shootingStarSpawnTimer > this.shootingStarSpawnInterval) {
-
-      this.createShootingStar();
-      this.shootingStarSpawnTimer = 0;
-
-      this.shootingStarSpawnInterval = 1500 + Math.random() * 3000;
-    }
-
-    for (let i = this.shootingStars.length - 1; i >= 0; i--) {
-
-      const star = this.shootingStars[i];
-
-      star.x += star.speedX;
-      star.y += star.speedY;
-
-      star.life += delta;
-      star.opacity = 1 - (star.life / star.maxLife);
-
-      if (star.life > star.maxLife) {
-
-        // 🌟 CREATE BURST AT END
-        this.createStarBurst(star.x, star.y);
-
-        this.shootingStars.splice(i, 1);
-      }
-    }
-  },
-
-  drawShootingStars(ctx) {
-
-    for (let star of this.shootingStars) {
-
-      const gradient = ctx.createLinearGradient(
-        star.x,
-        star.y,
-        star.x - star.speedX * 10,
-        star.y - star.speedY * 10
-      );
-
-      gradient.addColorStop(0, `rgba(255,255,255,${star.opacity})`);
-      gradient.addColorStop(1, `rgba(255,255,255,0)`);
-
-      ctx.strokeStyle = gradient;
-      ctx.lineWidth = 3 * this.scale;
-
-      ctx.beginPath();
-      ctx.moveTo(star.x, star.y);
-      ctx.lineTo(
-        star.x - star.speedX * star.length * 0.05,
-        star.y - star.speedY * star.length * 0.05
-      );
-      ctx.stroke();
-    }
-  },
-
-  createStarBurst(x, y) {
-
-    const particleCount = 15;
-
-    for (let i = 0; i < particleCount; i++) {
-
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 3 + 2;
-
-      this.shootingStarBursts.push({
-        x: x,
-        y: y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        life: 0,
-        maxLife: 600,
-        size: Math.random() * 3 + 1
+    this.stars = [];
+    for (let i = 0; i < 120; i++) {
+      this.stars.push({
+        x: Math.random() * this.cssWidth,
+        y: Math.random() * this.cssHeight,
+        r: Math.random() * 1.8 + 0.3,
+        speed: 0.008 + Math.random() * 0.025,
+        twinkle: Math.random() * Math.PI * 2,
+        twinkleSpd: 0.002 + Math.random() * 0.003
       });
     }
   },
 
-  updateStarBursts(delta) {
-
-    for (let i = this.shootingStarBursts.length - 1; i >= 0; i--) {
-
-      const p = this.shootingStarBursts[i];
-
-      p.x += p.vx;
-      p.y += p.vy;
-
-      p.life += delta;
-
-      if (p.life > p.maxLife) {
-        this.shootingStarBursts.splice(i, 1);
-      }
+  updateStars(delta) {
+    for (let s of this.stars) {
+      s.y += s.speed * delta;
+      s.twinkle += s.twinkleSpd * delta;
+      if (s.y > this.cssHeight) { s.y = 0; s.x = Math.random() * this.cssWidth; }
     }
   },
 
-  drawStarBursts(ctx) {
-
-    for (let p of this.shootingStarBursts) {
-
-      const opacity = 1 - (p.life / p.maxLife);
-
+  drawStars(ctx) {
+    for (let s of this.stars) {
+      ctx.globalAlpha = Math.max(0, 0.35 + Math.sin(s.twinkle) * 0.3);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.size * this.scale, 0, Math.PI * 2);
+      ctx.arc(s.x, s.y, s.r * this.scale, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffffff"; ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  },
 
-      ctx.fillStyle = `rgba(255, 255, 200, ${opacity})`;
-      ctx.fill();
+
+  initShootingStarTimer() {
+    this.shootingStarTimer = 0;
+    this.shootingStarInterval = 2500 + Math.random() * 3000;
+  },
+
+
+
+  updateShootingStars(delta) {
+    this.shootingStarTimer += delta;
+
+    if (
+      this.shootingStarTimer >= this.shootingStarInterval &&
+      this.shootingStars.length < 4
+    ) {
+      this.shootingStarTimer = 0;
+      this.shootingStarInterval = 2500 + Math.random() * 3000;
+
+      const fl = Math.random() < 0.5;
+      const spd = (7 + Math.random() * 5) * 0.055;
+      this.shootingStars.push({
+        x: fl ? -60 : this.cssWidth + 60,
+        y: Math.random() * this.cssHeight * 0.5,
+        vx: fl ? spd : -spd,
+        vy: (1.5 + Math.random() * 1.5) * 0.055,
+        life: 0,
+        maxLife: 900
+      });
+    }
+
+    for (let i = this.shootingStars.length - 1; i >= 0; i--) {
+      const s = this.shootingStars[i];
+      s.x += s.vx * delta;
+      s.y += s.vy * delta;
+      s.life += delta;
+      if (s.life > s.maxLife) this.shootingStars.splice(i, 1);
     }
   },
+
+  drawShootingStars(ctx) {
+    for (let s of this.shootingStars) {
+      const alpha = Math.max(0, 1 - s.life / s.maxLife);
+      const tailLen = 160;
+      const absVx = Math.abs(s.vx) || 0.01;
+      const tx = s.x - s.vx * tailLen / absVx;
+      const ty = s.y - s.vy * tailLen / absVx;
+
+      const grd = ctx.createLinearGradient(s.x, s.y, tx, ty);
+      grd.addColorStop(0, `rgba(255,255,255,${alpha})`);
+      grd.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.strokeStyle = grd;
+      ctx.lineWidth = 2 * this.scale;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+    }
+  },
+
 
   spawnMode1Numbers() {
 
@@ -1169,6 +1058,8 @@ const Game11 = {
         y = minY + Math.random() * (maxY - minY);
 
         let overlapping = false;
+
+        // 1️⃣ Check against other numbers
         for (let other of this.mode1Numbers) {
           const dx = x - other.x;
           const dy = y - other.y;
@@ -1177,6 +1068,15 @@ const Game11 = {
             overlapping = true;
             break;
           }
+        }
+
+        // 2️⃣ Check against Mascot (Portal) position
+        const dxM = x - this.mascot.x;
+        const dyM = y - this.mascot.y;
+        const distM = Math.sqrt(dxM * dxM + dyM * dyM);
+        const minPortalDist = 250 * this.scale; // Fair distance from the portal
+        if (distM < minPortalDist) {
+          overlapping = true;
         }
 
         if (!overlapping) {
@@ -1194,9 +1094,10 @@ const Game11 = {
           y: y,
           size: 60 * this.scale,
 
-          starSize: 80 * this.scale,
+          starSize: 70 * this.scale,
           starRotation: Math.random() * Math.PI * 2,
-          starOpacity: 1
+          starOpacity: 1,
+          meteorIndex: Math.floor(Math.random() * this.meteorImages.length)
         });
       } else {
         // Could not find a spot, wait for next attempt or lower count
@@ -1253,43 +1154,47 @@ const Game11 = {
       const scale = n.renderScale || 1;
       const rotation = n.renderRotation || 0;
 
-      // Draw star effect
+      // Draw meteor image
       ctx.save();
       ctx.translate(n.x, n.y);
-      ctx.rotate(n.starRotation);
+      ctx.rotate(n.starRotation + rotation);
+      ctx.scale(scale, scale);
+      ctx.globalAlpha = n.starOpacity || 1;
 
-      // Draw star shape
-      ctx.beginPath();
-      const spikes = 5;
-      const outerRadius = n.starSize / 2;
-      const innerRadius = outerRadius * 0.45;
-
-      for (let i = 0; i < spikes * 2; i++) {
-        const radius = i % 2 === 0 ? outerRadius : innerRadius;
-        const angle = (i * Math.PI) / spikes - Math.PI / 2; // Offset rotation to point up
-        const x = Math.cos(angle) * radius;
-        const y = Math.sin(angle) * radius;
-
-        if (i === 0) ctx.moveTo(x, y);
-        else ctx.lineTo(x, y);
+      const meteorImg = this.meteorImages[n.meteorIndex];
+      if (meteorImg && meteorImg.complete) {
+        ctx.drawImage(
+          meteorImg,
+          -n.starSize / 2,
+          -n.starSize / 2,
+          n.starSize,
+          n.starSize
+        );
+      } else {
+        // Fallback: star
+        ctx.beginPath();
+        const spikes = 5;
+        const outerRadius = n.starSize / 2;
+        const innerRadius = outerRadius * 0.45;
+        for (let i = 0; i < spikes * 2; i++) {
+          const radius = i % 2 === 0 ? outerRadius : innerRadius;
+          const angle = (i * Math.PI) / spikes - Math.PI / 2;
+          const x = Math.cos(angle) * radius;
+          const y = Math.sin(angle) * radius;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, outerRadius);
+        grad.addColorStop(0, `rgba(255, 255, 200, ${n.starOpacity})`);
+        grad.addColorStop(0.3, `rgba(255, 200, 0, ${n.starOpacity})`);
+        grad.addColorStop(1, `rgba(255, 120, 0, 0)`);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.strokeStyle = `rgba(255, 230, 0, ${n.starOpacity * 0.9})`;
+        ctx.lineWidth = 2 * this.scale;
+        ctx.stroke();
       }
-      ctx.closePath();
-
-      const grad = ctx.createRadialGradient(0, 0, 0, 0, 0, outerRadius);
-      grad.addColorStop(0, `rgba(255, 255, 200, ${n.starOpacity})`);
-      grad.addColorStop(0.3, `rgba(255, 200, 0, ${n.starOpacity})`);
-      grad.addColorStop(1, `rgba(255, 120, 0, 0)`);
-
-      ctx.fillStyle = grad;
-      ctx.fill();
-
-      ctx.shadowColor = "rgba(255, 200, 0, 1)";
-      ctx.shadowBlur = 15;
-
-      ctx.strokeStyle = `rgba(255, 230, 0, ${n.starOpacity * 0.9})`;
-      ctx.lineWidth = 2 * this.scale;
-      ctx.stroke();
-
       ctx.restore();
 
       // Draw number
@@ -1303,7 +1208,7 @@ const Game11 = {
       ctx.lineWidth = 5 * this.scale;
       ctx.shadowColor = "rgba(0,0,0,0.5)";
       ctx.shadowBlur = 8;
-      ctx.font = `bold ${50 * this.scale}px Arial`;
+      ctx.font = `bold ${30 * this.scale}px Arial`;
 
       ctx.strokeText(n.number, 0, 0);
       ctx.fillText(n.number, 0, 0);
@@ -1554,7 +1459,8 @@ const Game11 = {
         this.galaxyLife = this.galaxyMaxLife;
 
       this.spawnSparkBurst(this.mascot.x, this.mascot.y);
-      this.spawnFloatingText(this.mascot.x, this.mascot.y - 100 * this.scale, "+3 Secs!", "#00FFAA");
+      const ordinalNum = n.number + this.getSuffix(n.number);
+      this.spawnFloatingText(this.mascot.x, this.mascot.y - 100 * this.scale, `${ordinalNum}! +3s`, "#00FFAA");
 
       this.mode1Numbers.splice(s.index, 1);
 
@@ -1564,7 +1470,8 @@ const Game11 = {
     } else {
 
       this.score -= 5;
-      this.spawnFloatingText(this.mascot.x, this.mascot.y - 100 * this.scale, "-Oops!", "#FF4444");
+      const ordinalNum = n.number + this.getSuffix(n.number);
+      this.spawnFloatingText(this.mascot.x, this.mascot.y - 100 * this.scale, `${ordinalNum}? Oops!`, "#FF4444");
 
       // Remove wrong number and spawn new one (game continues)
       this.mode1Numbers.splice(s.index, 1);
@@ -1577,88 +1484,166 @@ const Game11 = {
   },
 
   drawBlackHole(ctx, delta) {
-
     if (!this.galaxyCollapsed) return;
 
-    // Countdown freeze delay
+    // ── Phase 0: Freeze delay ──────────────────────────────────────
     this.blackHoleDelayTimer += delta;
-
-    if (this.blackHoleDelayTimer >= this.blackHoleDelay) {
-      this.blackHoleActive = true;
+    if (this.blackHoleDelayTimer < this.blackHoleDelay) {
+      // During delay: draw a tiny seed point with a shockwave ring
+      const progress = this.blackHoleDelayTimer / this.blackHoleDelay;
+      ctx.save();
+      ctx.globalAlpha = progress;
+      ctx.beginPath();
+      ctx.arc(this.blackHoleX, this.blackHoleY, 12 * this.scale, 0, Math.PI * 2);
+      ctx.fillStyle = "black";
+      ctx.shadowColor = "white";
+      ctx.shadowBlur = 30 * progress;
+      ctx.fill();
+      // shockwave ring expanding outward
+      const shockR = progress * 80 * this.scale;
+      ctx.beginPath();
+      ctx.arc(this.blackHoleX, this.blackHoleY, shockR, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(255,255,255,${(1 - progress) * 0.8})`;
+      ctx.lineWidth = 4 * this.scale;
+      ctx.stroke();
+      ctx.restore();
+      return;
     }
 
-    // Only expand after delay passes
-    if (this.blackHoleActive) {
-      // 📈 4. Accelerating growth curve
-      this.blackHoleRadius += delta * (0.4 + this.blackHoleRadius * 0.002);
+    // ── Phase 1: Black hole active ─────────────────────────────────
+    this.blackHoleActive = true;
 
-      // 🌪️ 6. Suction particles
-      for (let i = 0; i < 6; i++) {
-        const px = Math.random() * this.cssWidth;
-        const py = Math.random() * this.cssHeight;
-        this.sparkBursts.push({
-          x: px,
-          y: py,
-          vx: (this.blackHoleX - px) * 0.05,
-          vy: (this.blackHoleY - py) * 0.05,
-          size: (Math.random() * 3 + 1) * this.scale,
-          life: 800,
-          type: "particle"
-        });
+    // Growth: slow S-curve start, then accelerate
+    const growthRate = 0.15 + this.blackHoleRadius * 0.0018;
+    this.blackHoleRadius += delta * growthRate;
+
+    const bx = this.blackHoleX;
+    const by = this.blackHoleY;
+    const br = this.blackHoleRadius;
+
+    // ── SUCK BACKGROUND STARS toward black hole ───────────────────
+    for (let s of this.stars) {
+      const dx = bx - s.x;
+      const dy = by - s.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const pull = Math.min(800 / dist, 25);  // stronger when closer
+      s.x += (dx / dist) * pull * (delta / 16);
+      s.y += (dy / dist) * pull * (delta / 16);
+      // respawn star on other side if swallowed
+      if (dist < br * 0.9) {
+        s.x = Math.random() * this.cssWidth;
+        s.y = Math.random() * this.cssHeight;
       }
     }
 
-    // 1️⃣ ACCRETION DISK
-    const diskRadius = this.blackHoleRadius * 1.4;
-    const gradient = ctx.createRadialGradient(
-      this.blackHoleX,
-      this.blackHoleY,
-      this.blackHoleRadius * 0.6,
-      this.blackHoleX,
-      this.blackHoleY,
-      diskRadius
-    );
+    // ── SUCK NUMBER STARS toward black hole ───────────────────────
+    for (let n of this.mode1Numbers) {
+      const dx = bx - n.x;
+      const dy = by - n.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const pull = Math.min(600 / dist, 18);
+      n.x += (dx / dist) * pull * (delta / 16);
+      n.y += (dy / dist) * pull * (delta / 16);
+      n.starRotation += 0.08;   // spin faster as they're pulled
+      // shrink as they enter
+      if (dist < br * 1.2) {
+        n.renderScale = Math.max(0, (dist - br) / (br * 0.2));
+      }
+    }
 
-    gradient.addColorStop(0, "rgba(255,200,50,0.8)");
-    gradient.addColorStop(0.3, "rgba(255,120,0,0.6)");
-    gradient.addColorStop(0.6, "rgba(255,50,0,0.3)");
+    // ── SPAWN SUCTION RIBBON PARTICLES ───────────────────────────
+    for (let i = 0; i < 5; i++) {
+      const angle = Math.random() * Math.PI * 2;
+      const spawnR = br * (1.5 + Math.random() * 3);
+      this.blackHoleSuctionParticles.push({
+        x: bx + Math.cos(angle) * spawnR,
+        y: by + Math.sin(angle) * spawnR,
+        life: 600 + Math.random() * 400,
+        maxLife: 1000,
+        size: (Math.random() * 2.5 + 0.5) * this.scale,
+        color: Math.random() < 0.5
+          ? `rgba(255,${Math.floor(100 + Math.random() * 155)},50,`
+          : `rgba(200,200,255,`
+      });
+    }
+
+    // Update & draw suction particles
+    for (let i = this.blackHoleSuctionParticles.length - 1; i >= 0; i--) {
+      const p = this.blackHoleSuctionParticles[i];
+      const dx = bx - p.x;
+      const dy = by - p.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const pull = Math.min(1200 / dist, 30);
+      p.x += (dx / dist) * pull * (delta / 16);
+      p.y += (dy / dist) * pull * (delta / 16);
+      p.life -= delta;
+      if (p.life <= 0 || dist < br * 0.95) {
+        this.blackHoleSuctionParticles.splice(i, 1);
+        continue;
+      }
+      const alpha = (p.life / p.maxLife) * 0.9;
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.color + alpha + ")";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // ── OUTER GRAVITATIONAL LENS RINGS ────────────────────────────
+    const lensTime = performance.now();
+    for (let ring = 0; ring < 3; ring++) {
+      const ringR = br * (1.08 + ring * 0.18);
+      const pulse = Math.sin(lensTime * 0.003 + ring * 1.2) * 0.5 + 0.5;
+      ctx.save();
+      ctx.shadowColor = "white";
+      ctx.shadowBlur = (20 + pulse * 20) * this.scale;
+      ctx.strokeStyle = `rgba(255,255,255,${0.06 + pulse * 0.08})`;
+      ctx.lineWidth = (3 - ring) * this.scale;
+      ctx.beginPath();
+      ctx.arc(bx, by, ringR, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // ── ACCRETION DISK ────────────────────────────────────────────
+    const diskRadius = br * 1.5;
+    const gradient = ctx.createRadialGradient(bx, by, br * 0.55, bx, by, diskRadius);
+    gradient.addColorStop(0, "rgba(255,220,80,0.95)");
+    gradient.addColorStop(0.2, "rgba(255,130,0,0.75)");
+    gradient.addColorStop(0.5, "rgba(200,40,10,0.4)");
     gradient.addColorStop(1, "rgba(0,0,0,0)");
-
     ctx.fillStyle = gradient;
     ctx.beginPath();
-    ctx.arc(this.blackHoleX, this.blackHoleY, diskRadius, 0, Math.PI * 2);
+    ctx.arc(bx, by, diskRadius, 0, Math.PI * 2);
     ctx.fill();
 
-    // 3️⃣ Gravitational Lens
-    ctx.save();
-    ctx.shadowColor = "white";
-    ctx.shadowBlur = 40 * this.scale;
-    ctx.strokeStyle = "rgba(255,255,255,0.15)";
-    ctx.lineWidth = 6 * this.scale;
+    // ── CORE BLACK CIRCLE ─────────────────────────────────────────
+    ctx.fillStyle = "black";
     ctx.beginPath();
-    ctx.arc(
-      this.blackHoleX,
-      this.blackHoleY,
-      this.blackHoleRadius * 1.05,
-      0,
-      Math.PI * 2
-    );
+    ctx.arc(bx, by, br, 0, Math.PI * 2);
+    ctx.fill();
+
+    // ── EVENT HORIZON SHIMMER ─────────────────────────────────────
+    const shimmerAngle = (lensTime * 0.001) % (Math.PI * 2);
+    const shimGrad = ctx.createConicalGradient
+      ? null  // not supported in most browsers; skip
+      : null;
+    // Simple rotating arc highlights instead:
+    ctx.save();
+    ctx.globalAlpha = 0.25;
+    ctx.strokeStyle = "rgba(255,255,180,1)";
+    ctx.lineWidth = 4 * this.scale;
+    ctx.beginPath();
+    ctx.arc(bx, by, br * 1.02, shimmerAngle, shimmerAngle + 1.2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(bx, by, br * 1.02, shimmerAngle + Math.PI, shimmerAngle + Math.PI + 0.8);
     ctx.stroke();
     ctx.restore();
 
-    // The core black circle
-    ctx.fillStyle = "black";
-    ctx.beginPath();
-    ctx.arc(
-      this.blackHoleX,
-      this.blackHoleY,
-      this.blackHoleRadius,
-      0,
-      Math.PI * 2
-    );
-    ctx.fill();
-
-    if (this.blackHoleRadius > this.cssWidth * 1.5) {
+    // ── TRIGGER GAME OVER ─────────────────────────────────────────
+    if (br > this.cssWidth * 1.5) {
       if (!this.mode1GameOver) {
         this.gameOverStartTime = performance.now();
       }
@@ -1667,35 +1652,6 @@ const Game11 = {
   },
 
 
-  drawDreamBackground(ctx) {
-    const gradient = ctx.createLinearGradient(
-      0, 0,
-      0, this.cssHeight
-    );
-
-    gradient.addColorStop(0, "rgba(96,165,250,0.6)");
-    gradient.addColorStop(0.5, "rgba(167,139,250,0.6)");
-    gradient.addColorStop(1, "rgba(244,114,182,0.6)");
-
-    ctx.fillStyle = gradient;
-    ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
-
-    // soft radial glow center
-    const glow = ctx.createRadialGradient(
-      this.CENTER_X,
-      this.CENTER_Y,
-      0,
-      this.CENTER_X,
-      this.CENTER_Y,
-      this.cssWidth * 0.8
-    );
-
-    glow.addColorStop(0, "rgba(255,255,255,0.15)");
-    glow.addColorStop(1, "rgba(255,255,255,0)");
-
-    ctx.fillStyle = glow;
-    ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
-  },
 
   spawnFloatingText(x, y, text, color) {
     this.floatingTexts.push({
