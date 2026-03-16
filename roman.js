@@ -62,7 +62,6 @@ const Game5 = {
   // --- ADDITIVE: Model Loading logic ---
   async loadModel() {
       try {
-          // Pointing to your specific folder structure from the screenshot
           this.tfModel = await tf.loadLayersModel('./tfjs_model/model.json');
           console.log("Custom Roman Numeral Model loaded successfully!");
       } catch (error) {
@@ -101,7 +100,7 @@ const Game5 = {
     this.isDrawing = false;
     this.particles = [];
     this.cursorColor = "white"; 
-    this.isEvaluating = false; // --- ADDITIVE ---
+    this.isEvaluating = false; 
   },
 
   getPoint(sx, sy, w, h) {
@@ -152,7 +151,7 @@ const Game5 = {
             this.tracePoints = []; 
             this.cursorColor = "white"; 
         } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
-            this.submitTimer = 100; 
+            this.submitTimer = 100; // Starts the evaluation countdown
         }
     };
 
@@ -299,7 +298,6 @@ const Game5 = {
     }
   },
 
-  // --- ADDITIVE: Update to check isEvaluating and call TFJS ---
   handleFreehand(baseUnit) {
       if (!this.isDrawing && this.freehandStrokes.length > 0) {
           if (this.submitTimer > 0) {
@@ -312,9 +310,7 @@ const Game5 = {
       }
   },
 
-  // --- ADDITIVE: The Core TFJS Integration ---
   async evaluateWithTFJS(baseUnit) {
-      // Fallback to original vector logic if the model hasn't loaded
       if (!this.tfModel) {
           console.warn("TFJS model not loaded, falling back to vector check.");
           this.evaluateShapeVector(baseUnit);
@@ -322,8 +318,8 @@ const Game5 = {
           return;
       }
 
-      // 1. Create a 28x28 offscreen canvas (Adjust if your model expects 64x64 or 128x128!)
-      const MODEL_IMG_SIZE = 28; 
+      // 1. Match your Python image_size=(64, 64)
+      const MODEL_IMG_SIZE = 64; 
       const offCanvas = document.createElement('canvas');
       offCanvas.width = MODEL_IMG_SIZE;
       offCanvas.height = MODEL_IMG_SIZE;
@@ -332,7 +328,6 @@ const Game5 = {
       offCtx.fillStyle = "black";
       offCtx.fillRect(0, 0, MODEL_IMG_SIZE, MODEL_IMG_SIZE);
 
-      // 2. Find bounding box to center and scale the user's drawing
       let allPts = [];
       this.freehandStrokes.forEach(s => allPts.push(...s));
       let minX = Math.min(...allPts.map(p => p.x));
@@ -342,16 +337,18 @@ const Game5 = {
       
       let drawWidth = Math.max(maxX - minX, 1);
       let drawHeight = Math.max(maxY - minY, 1);
-      let padding = 4;
+      let padding = 8; // Slightly more padding for a 64x64 canvas
+      
       let scale = (MODEL_IMG_SIZE - padding * 2) / Math.max(drawWidth, drawHeight);
+      let drawOffsetX = (MODEL_IMG_SIZE - (drawWidth * scale)) / 2;
+      let drawOffsetY = (MODEL_IMG_SIZE - (drawHeight * scale)) / 2;
 
-      // 3. Draw strokes to the tiny canvas
       offCtx.save();
-      offCtx.translate(MODEL_IMG_SIZE / 2, MODEL_IMG_SIZE / 2);
+      offCtx.translate(drawOffsetX, drawOffsetY);
       offCtx.scale(scale, scale);
-      offCtx.translate(-(minX + drawWidth / 2), -(minY + drawHeight / 2));
+      offCtx.translate(-minX, -minY);
 
-      offCtx.lineWidth = 2 / scale; // Keep lines visible to the model
+      offCtx.lineWidth = Math.max(3 / scale, 2); // Thicker line for larger canvas
       offCtx.strokeStyle = "white";
       offCtx.lineCap = "round";
       offCtx.lineJoin = "round";
@@ -365,40 +362,55 @@ const Game5 = {
       });
       offCtx.restore();
 
-      // 4. Extract data and run through the model
+      // Debug view
+      let debugImg = document.getElementById('debug_model_view');
+      if (!debugImg) {
+          debugImg = document.createElement('img');
+          debugImg.id = 'debug_model_view';
+          debugImg.style.position = 'absolute';
+          debugImg.style.top = '10px';
+          debugImg.style.left = '10px';
+          debugImg.style.width = '128px'; // Make it visible
+          debugImg.style.height = '128px';
+          debugImg.style.border = '2px solid red';
+          debugImg.style.zIndex = '9999';
+          debugImg.style.backgroundColor = 'black';
+          document.body.appendChild(debugImg);
+      }
+      debugImg.src = offCanvas.toDataURL(); 
+
       try {
           const imageData = offCtx.getImageData(0, 0, MODEL_IMG_SIZE, MODEL_IMG_SIZE);
           
-          // Tidy cleans up memory automatically after execution
           const predictionData = tf.tidy(() => {
-              // Convert to 1 channel (grayscale), normalize 0-1, add batch dimension
+              // 2. We DO NOT divide by 255 here, because your Python model has layers.Rescaling(1./255)
               const tensor = tf.browser.fromPixels(imageData, 1)
                                        .toFloat()
-                                       .div(tf.scalar(255))
                                        .expandDims();
               
               return this.tfModel.predict(tensor).dataSync(); 
           });
 
-          // Find the class with the highest probability
           const predictedIndex = predictionData.indexOf(Math.max(...predictionData));
           
-          // ==========================================
-          // IMPORTANT: MAPPING LOGIC
-          // I don't know exactly how romantraining.py categorized classes.
-          // Assuming classes 0-99 correspond to numbers 1-100:
-          // ==========================================
-          const level = this.levels[this.currentLevel];
-          const targetNumber = parseInt(level.number);
+          // 3. Mapping the output. Python's image_dataset_from_directory sorts folders ALPHABETICALLY by default.
+          // If your folders were named C, I, L, V, X, the model learned them in this exact order:
+          const classNames = ["C", "I", "L", "V", "X"]; 
+          const predictedSymbol = classNames[predictedIndex];
           
-          const isCorrect = (predictedIndex + 1 === targetNumber);
+          const level = this.levels[this.currentLevel];
+          const targetSymbol = level.symbol; // e.g., "V" or "X"
+          
+          // 4. Compare the model's guessed letter against the expected letter
+          const isCorrect = (predictedSymbol === targetSymbol);
 
           if (isCorrect) {
               this.levelCompleteTimer = 1;
               this.score += 20;
               this.cursorColor = "#00FFCC";
+              console.log(`Success! Guessed: ${predictedSymbol}`);
           } else {
-              console.log(`TFJS Guessed Index: ${predictedIndex}, Expected Number: ${targetNumber}`);
+              console.log(`Wrong! Model guessed: ${predictedSymbol}, but we needed: ${targetSymbol}`);
               this.triggerFail();
           }
 
@@ -410,9 +422,6 @@ const Game5 = {
       this.isEvaluating = false; 
   },
 
-  // -------------------------------------------------------------
-  // YOUR EXISTING VECTOR LOGIC (Untouched, used as fallback)
-  // -------------------------------------------------------------
   splitStrokeAtCorners(stroke) {
     if (stroke.length < 10) return [stroke];
     let segments = [];
