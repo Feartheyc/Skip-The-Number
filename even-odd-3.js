@@ -111,60 +111,60 @@ const Game8 = {
     };
   },
 
- onPoseResults(results) {
-  if (!results.poseLandmarks) return;
-  const lm = results.poseLandmarks;
+  onPoseResults(results) {
+    if (!results.poseLandmarks) return;
+    const lm = results.poseLandmarks;
 
-  const mapPoint = (p) => ({
-    x: (1 - p.x) * this.cssWidth,
-    y: p.y * this.cssHeight
-  });
+    const mapPoint = (p) => ({
+      x: (1 - p.x) * this.cssWidth,
+      y: p.y * this.cssHeight
+    });
 
-  const smooth = (oldP, newP) => {
-    if (!oldP) return newP;
-    return {
-      x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
-      y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
+    const smooth = (oldP, newP) => {
+      if (!oldP) return newP;
+      return {
+        x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
+        y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
+      };
     };
-  };
 
-  // NEW: wrist -> index finger instead of shoulder -> wrist
-  const updateArm = (side, wristLm, indexLm) => {
-    if (!wristLm || !indexLm) return;
-    if (wristLm.visibility < 0.4 || indexLm.visibility < 0.4) return;
+    // NEW: wrist -> index finger instead of shoulder -> wrist
+    const updateArm = (side, wristLm, indexLm) => {
+      if (!wristLm || !indexLm) return;
+      if (wristLm.visibility < 0.4 || indexLm.visibility < 0.4) return;
 
-    let wrist = mapPoint(wristLm);   // base
-    let index = mapPoint(indexLm);   // tip
+      let wrist = mapPoint(wristLm);   // base
+      let index = mapPoint(indexLm);   // tip
 
-    const prev = this.armData[side];
-    wrist = smooth(prev?.shoulder, wrist); // reuse shoulder slot as base
-    index = smooth(prev?.wrist, index);    // reuse wrist slot as tip
+      const prev = this.armData[side];
+      wrist = smooth(prev?.shoulder, wrist); // reuse shoulder slot as base
+      index = smooth(prev?.wrist, index);    // reuse wrist slot as tip
 
-    const dx = index.x - wrist.x;
-    const dy = index.y - wrist.y;
-    if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
+      const dx = index.x - wrist.x;
+      const dy = index.y - wrist.y;
+      if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
 
-    const vel = this.armVelocity[side];
-    if (vel.last) {
-      vel.vx = vel.vx * 0.5 + (index.x - vel.last.x) * 0.5;
-      vel.vy = vel.vy * 0.5 + (index.y - vel.last.y) * 0.5;
-    }
-    vel.last = { x: index.x, y: index.y };
+      const vel = this.armVelocity[side];
+      if (vel.last) {
+        vel.vx = vel.vx * 0.5 + (index.x - vel.last.x) * 0.5;
+        vel.vy = vel.vy * 0.5 + (index.y - vel.last.y) * 0.5;
+      }
+      vel.last = { x: index.x, y: index.y };
 
-    // IMPORTANT:
-    // keep same property names so rest of code works
-    this.armData[side] = {
-      shoulder: wrist, // now base = wrist
-      wrist: index     // now tip = index finger
+      // IMPORTANT:
+      // keep same property names so rest of code works
+      this.armData[side] = {
+        shoulder: wrist, // now base = wrist
+        wrist: index     // now tip = index finger
+      };
     };
-  };
 
-  // Mediapipe Pose indices:
-  // Right wrist = 16, Right index = 20
-  // Left wrist  = 15, Left index  = 19
-  updateArm("right", lm[14], lm[16]);
-  updateArm("left", lm[15], lm[19]);
-},
+    // Mediapipe Pose indices:
+    // Right wrist = 16, Right index = 20
+    // Left wrist  = 15, Left index  = 19
+    updateArm("right", lm[14], lm[16]);
+    updateArm("left", lm[15], lm[19]);
+  },
 
   resize() {
     // adopt the full viewport CSS dimensions for consistent scaling
@@ -302,81 +302,81 @@ const Game8 = {
     this.balls = this.balls.filter(b => !b.remove);
   },
 
- checkPhysics() {
-  const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
-  const arm = this.armData.right;
-  if (!arm?.wrist || !arm?.shoulder) return;
+  checkPhysics() {
+    const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
+    const arm = this.armData.right;
+    if (!arm?.wrist || !arm?.shoulder) return;
 
-  const angle = Math.atan2(
-    arm.wrist.y - arm.shoulder.y,
-    arm.wrist.x - arm.shoulder.x
-  );
+    const angle = Math.atan2(
+      arm.wrist.y - arm.shoulder.y,
+      arm.wrist.x - arm.shoulder.x
+    );
 
-  // Two sticks: original + opposite
-  const angles = [angle, angle + Math.PI];
+    // Two sticks: original + opposite
+    const angles = [angle, angle + Math.PI];
 
-  if (!this.lastArmAngle) this.lastArmAngle = angle;
-  let angVel = angle - this.lastArmAngle;
-  this.lastArmAngle = angle;
-  angVel = Math.max(-0.3, Math.min(0.1, angVel));
+    if (!this.lastArmAngle) this.lastArmAngle = angle;
+    let angVel = angle - this.lastArmAngle;
+    this.lastArmAngle = angle;
+    angVel = Math.max(-0.3, Math.min(0.1, angVel));
 
-  const tangentialSpeed = angVel * this.armLength * 0.8;
+    const tangentialSpeed = angVel * this.armLength * 0.8;
 
-  for (let stickAngle of angles) {
-    const tipX = pivot.x + Math.cos(stickAngle) * this.armLength;
-    const tipY = pivot.y + Math.sin(stickAngle) * this.armLength;
+    for (let stickAngle of angles) {
+      const tipX = pivot.x + Math.cos(stickAngle) * this.armLength;
+      const tipY = pivot.y + Math.sin(stickAngle) * this.armLength;
 
-    const armVelX = -Math.sin(stickAngle) * tangentialSpeed;
-    const armVelY = Math.cos(stickAngle) * tangentialSpeed;
+      const armVelX = -Math.sin(stickAngle) * tangentialSpeed;
+      const armVelY = Math.cos(stickAngle) * tangentialSpeed;
 
-    const radius = this.ballRadius + 6;
+      const radius = this.ballRadius + 6;
 
-    for (let b of this.balls) {
-      if (b.hitCooldown > 0 || b.scored) continue;
+      for (let b of this.balls) {
+        if (b.hitCooldown > 0 || b.scored) continue;
 
-      const dx = tipX - pivot.x;
-      const dy = tipY - pivot.y;
-      const lenSq = dx * dx + dy * dy;
+        const dx = tipX - pivot.x;
+        const dy = tipY - pivot.y;
+        const lenSq = dx * dx + dy * dy;
 
-      let t = ((b.x - pivot.x) * dx + (b.y - pivot.y) * dy) / lenSq;
-      t = Math.max(0, Math.min(1, t));
+        let t = ((b.x - pivot.x) * dx + (b.y - pivot.y) * dy) / lenSq;
+        t = Math.max(0, Math.min(1, t));
 
-      const closestX = pivot.x + dx * t;
-      const closestY = pivot.y + dy * t;
+        const closestX = pivot.x + dx * t;
+        const closestY = pivot.y + dy * t;
 
-      const distX = b.x - closestX;
-      const distY = b.y - closestY;
-      const dist = Math.hypot(distX, distY);
+        const distX = b.x - closestX;
+        const distY = b.y - closestY;
+        const dist = Math.hypot(distX, distY);
 
-      if (dist > radius) continue;
+        if (dist > radius) continue;
 
-      let nx = distX / (dist || 1);
-      let ny = distY / (dist || 1);
+        let nx = distX / (dist || 1);
+        let ny = distY / (dist || 1);
 
-      const relVX = b.vx - armVelX;
-      const relVY = b.vy - armVelY;
+        const relVX = b.vx - armVelX;
+        const relVY = b.vy - armVelY;
 
-      const dot = relVX * nx + relVY * ny;
-      if (dot >= 0) continue;
+        const dot = relVX * nx + relVY * ny;
+        if (dot >= 0) continue;
 
-      let rvx = relVX - 2 * dot * nx;
-      let rvy = relVY - 2 * dot * ny;
+        let rvx = relVX - 2 * dot * nx;
+        let rvy = relVY - 2 * dot * ny;
 
-      b.vx = rvx + armVelX;
-      b.vy = rvy + armVelY;
+        b.vx = rvx + armVelX;
+        b.vy = rvy + armVelY;
 
-      const maxSpeed = 18 * this.scale;
-      const sp = Math.hypot(b.vx, b.vy);
-      if (sp > maxSpeed) {
-        b.vx = (b.vx / sp) * maxSpeed;
-        b.vy = (b.vy / sp) * maxSpeed;
+        const maxSpeed = 18 * this.scale;
+        const sp = Math.hypot(b.vx, b.vy);
+        if (sp > maxSpeed) {
+          b.vx = (b.vx / sp) * maxSpeed;
+          b.vy = (b.vy / sp) * maxSpeed;
+        }
+
+        b.hitCooldown = 8 * this.scale;
+        this.spawnExplosion(b.x, b.y, "white", 10);
       }
-
-      b.hitCooldown = 8 * this.scale;
-      this.spawnExplosion(b.x, b.y, "white", 10);
     }
-  }
-},
+  },
 
   checkScoring() {
     const w = this.cssWidth;
@@ -433,32 +433,32 @@ const Game8 = {
   },
 
   checkPivotLock(dt) {
-  const cx = this.CENTER_X;
-  const cy = this.CENTER_Y;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
 
-  const arm = this.armData.right;
-  if (!arm?.shoulder) return; // shoulder now stores wrist position
+    const arm = this.armData.right;
+    if (!arm?.shoulder) return; // shoulder now stores wrist position
 
-  const dist = Math.hypot(arm.shoulder.x - cx, arm.shoulder.y - cy);
+    const dist = Math.hypot(arm.shoulder.x - cx, arm.shoulder.y - cy);
 
-  if (dist < 120 * this.scale) {
-    this.pivotLockTimer.right += dt;
-    this.lockProgress = Math.min(
-      this.pivotLockTimer.right / this.LOCK_TIME,
-      1
-    );
+    if (dist < 120 * this.scale) {
+      this.pivotLockTimer.right += dt;
+      this.lockProgress = Math.min(
+        this.pivotLockTimer.right / this.LOCK_TIME,
+        1
+      );
 
-    if (this.pivotLockTimer.right > this.LOCK_TIME) {
-      this.gameStarted = true;
-      const video = document.getElementById("input_video");
-      if (video) video.style.opacity = "0.2";
-      this.spawnFloatingText(cx, cy, "START!", "white");
+      if (this.pivotLockTimer.right > this.LOCK_TIME) {
+        this.gameStarted = true;
+        const video = document.getElementById("input_video");
+        if (video) video.style.opacity = "0.2";
+        this.spawnFloatingText(cx, cy, "START!", "white");
+      }
+    } else {
+      this.pivotLockTimer.right = 0;
+      this.lockProgress = 0;
     }
-  } else {
-    this.pivotLockTimer.right = 0;
-    this.lockProgress = 0;
-  }
-},
+  },
   /* ==============================
      VISUAL EFFECTS
   ============================= */
@@ -591,51 +591,51 @@ const Game8 = {
     }
   },
 
-drawArms(ctx) {
-  const arm = this.armData.right;
-  if (!arm?.shoulder) return;
+  drawArms(ctx) {
+    const arm = this.armData.right;
+    if (!arm?.shoulder) return;
 
-  const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
+    const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
 
-  const baseAngle = Math.atan2(
-    arm.wrist.y - arm.shoulder.y,
-    arm.wrist.x - arm.shoulder.x
-  );
+    const baseAngle = Math.atan2(
+      arm.wrist.y - arm.shoulder.y,
+      arm.wrist.x - arm.shoulder.x
+    );
 
-  const angles = [baseAngle, baseAngle + Math.PI];
+    const angles = [baseAngle, baseAngle + Math.PI];
 
-  for (let angle of angles) {
-    const tipX = pivot.x + Math.cos(angle) * this.armLength;
-    const tipY = pivot.y + Math.sin(angle) * this.armLength;
+    for (let angle of angles) {
+      const tipX = pivot.x + Math.cos(angle) * this.armLength;
+      const tipY = pivot.y + Math.sin(angle) * this.armLength;
 
-    // Stick
+      // Stick
+      ctx.beginPath();
+      ctx.moveTo(pivot.x, pivot.y);
+      ctx.lineTo(tipX, tipY);
+      ctx.strokeStyle = "#ac2fffff";
+      ctx.lineWidth = 10 * this.scale;
+      ctx.shadowBlur = 20;
+      ctx.shadowColor = "#f36affff";
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      // Tip
+      ctx.beginPath();
+      ctx.arc(tipX, tipY, 8 * this.scale, 0, Math.PI * 2);
+      ctx.fillStyle = "#b906b9ff";
+      ctx.fill();
+    }
+
+    // Wrist highlight
     ctx.beginPath();
-    ctx.moveTo(pivot.x, pivot.y);
-    ctx.lineTo(tipX, tipY);
-    ctx.strokeStyle = "#88FFAA";
-    ctx.lineWidth = 10 * this.scale;
-    ctx.shadowBlur = 20;
-    ctx.shadowColor = "#88FFAA";
+    ctx.arc(arm.shoulder.x, arm.shoulder.y, 18 * this.scale, 0, Math.PI * 2);
+    ctx.strokeStyle = "#BB66FF";
+    ctx.lineWidth = 4 * this.scale;
+    ctx.shadowBlur = 15;
+    ctx.shadowColor = "#BB66FF";
     ctx.stroke();
     ctx.shadowBlur = 0;
-
-    // Tip
-    ctx.beginPath();
-    ctx.arc(tipX, tipY, 8 * this.scale, 0, Math.PI * 2);
-    ctx.fillStyle = "#FFCC00";
-    ctx.fill();
-  }
-
-  // Wrist highlight
-  ctx.beginPath();
-  ctx.arc(arm.shoulder.x, arm.shoulder.y, 18 * this.scale, 0, Math.PI * 2);
-  ctx.strokeStyle = "#BB66FF";
-  ctx.lineWidth = 4 * this.scale;
-  ctx.shadowBlur = 15;
-  ctx.shadowColor = "#BB66FF";
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-},
+  },
 
   drawPivots(ctx) {
     const x = this.CENTER_X;
@@ -645,7 +645,7 @@ drawArms(ctx) {
     // Base pivot
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = this.gameStarted ? "#00FF00" : "#444";
+    ctx.fillStyle = this.gameStarted ? "#ff2491ff" : "#444";
     ctx.fill();
 
     // Loading progress ring (before start)
@@ -682,42 +682,42 @@ drawArms(ctx) {
     ctx.globalAlpha = 1;
   },
 
- drawUI(ctx) {
-  if (!this.gameStarted) {
-    ctx.fillStyle = "white";
-    ctx.font = `bold ${30 * this.scale}px Arial`;
+  drawUI(ctx) {
+    if (!this.gameStarted) {
+      ctx.fillStyle = "white";
+      ctx.font = `bold ${30 * this.scale}px Arial`;
+      ctx.textAlign = "center";
+      ctx.shadowBlur = 10 * this.scale;
+      ctx.shadowColor = "black";
+      ctx.fillText(
+        "HOLD ELBOW ON DOTS TO START",
+        this.CENTER_X,
+        this.CENTER_Y - 50 * this.scale
+      );
+      ctx.shadowBlur = 0;
+    }
+
+    // ===== SCORE =====
     ctx.textAlign = "center";
-    ctx.shadowBlur = 10 * this.scale;
-    ctx.shadowColor = "black";
-    ctx.fillText(
-      "HOLD ELBOW ON DOTS TO START",
-      this.CENTER_X,
-      this.CENTER_Y - 50 * this.scale
-    );
-    ctx.shadowBlur = 0;
-  }
+    const fontSize = 24 * this.scoreScale * this.scale;
+    ctx.font = `bold ${fontSize}px Arial`;
+    ctx.fillStyle = this.scoreColor;
+    ctx.fillText(this.score, this.CENTER_X, 40 * this.scale);
 
-  // ===== SCORE =====
-  ctx.textAlign = "center";
-  const fontSize = 24 * this.scoreScale * this.scale;
-  ctx.font = `bold ${fontSize}px Arial`;
-  ctx.fillStyle = this.scoreColor;
-  ctx.fillText(this.score, this.CENTER_X, 40 * this.scale);
+    // ===== LEGEND (Responsive Positions) =====
+    const w = this.cssWidth;
 
-  // ===== LEGEND (Responsive Positions) =====
-  const w = this.cssWidth;
+    ctx.font = `bold ${32 * this.scale}px Arial`;
+    ctx.textAlign = "center";
 
-  ctx.font = `bold ${32 * this.scale}px Arial`;
-  ctx.textAlign = "center";
+    // Left = 25% of screen width
+    ctx.fillStyle = "#FF4444";
+    ctx.fillText("Even (Red)", w * 0.25, 100 * this.scale);
 
-  // Left = 25% of screen width
-  ctx.fillStyle = "#FF4444";
-  ctx.fillText("Even (Red)", w * 0.25, 100 * this.scale);
-
-  // Right = 75% of screen width
-  ctx.fillStyle = "#00FFFF";
-  ctx.fillText("Odd (Blue)", w * 0.75, 100 * this.scale);
-},
+    // Right = 75% of screen width
+    ctx.fillStyle = "#00FFFF";
+    ctx.fillText("Odd (Blue)", w * 0.75, 100 * this.scale);
+  },
 
   pointToLineDistance(px, py, x1, y1, x2, y2) {
     const A = px - x1; const B = py - y1;
