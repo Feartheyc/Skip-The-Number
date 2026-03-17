@@ -91,7 +91,7 @@ html, body {
 .tile-1, .tile-10 { background: #FF3D6E; } 
 .tile-2, .tile-9 { background: #00D2FF; } 
 .tile-3, .tile-6 { background: #e2c102; color: #333; } 
-.tile-4, .tile-7 { background: #A033FF; } 
+.tile-4, .tile-11 { background: #A033FF; } 
 .tile-5, .tile-8 { background: #2DFF8E; color: #111; }
 
 #menu button:hover { transform: translateY(-5px) scale(1.02); }
