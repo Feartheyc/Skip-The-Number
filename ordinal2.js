@@ -744,6 +744,12 @@ fingerSmoothing: 0.25,
      PROXIMITY GLOW
   ============================================================ */
   updateProximityGlow(delta) {
+    if (this.level > 1) {
+    for (let i = 0; i < this.proximityGlow.length; i++) {
+      this.proximityGlow[i] = 0;
+    }
+    return;
+  }
     const px = this.mascot.x, py = this.mascot.y;
     const maxD = 270 * this.scale;
     /* Lerp coefficient: approach ~15% closer per 16ms frame at 60fps */
@@ -764,7 +770,7 @@ fingerSmoothing: 0.25,
       const n    = this.mode1Numbers[i];
       if (n.spawnAlpha <= 0.01) continue;
 
-      const glow = this.proximityGlow[i] || 0;
+      const glow = this.level === 1 ? (this.proximityGlow[i] || 0) : 0;
 
       const fY  = Math.sin((now / n.floatPeriod) * Math.PI * 2 + n.floatOffset) * n.floatAmp;
 
