@@ -44,19 +44,61 @@ const Game3 = {
   symbolHue: 0,
   cameraStarted: false,
 
+  showTutorial: true,
+  tutorialHoldTime: 0,
+  
+  // ⭐ NEW: Variables for click handling and Help button
+  eventsBound: false,
+  helpBtn: null,
+
   init() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.onResize(w, h);
     this.score = 0;
     this.running = true;
+    this.showTutorial = true; 
+    this.tutorialHoldTime = 0;
 
-    window.addEventListener('keydown', (e) => {
-      if (e.key === '1') this.setDifficulty(1);
-      if (e.key === '2') this.setDifficulty(2);
-      if (e.key === '3') this.setDifficulty(3);
-      if (e.key === '4') this.setDifficulty(4);
-    });
+    // ⭐ NEW: Prevent stacking event listeners if init() runs multiple times
+    if (!this.eventsBound) {
+      this.eventsBound = true;
+
+      window.addEventListener('keydown', (e) => {
+        if (e.key === '1') this.setDifficulty(1);
+        if (e.key === '2') this.setDifficulty(2);
+        if (e.key === '3') this.setDifficulty(3);
+        if (e.key === '4') this.setDifficulty(4);
+        
+        if (e.key === ' ' && this.showTutorial) {
+            this.showTutorial = false;
+            this.spawnNumbers();
+        }
+      });
+
+      // ⭐ NEW: Canvas click listener for the Help button
+      const canvas = document.getElementById("game_canvas") || document.querySelector("canvas");
+      if (canvas) {
+        canvas.addEventListener('pointerdown', (e) => {
+          if (this.helpBtn) {
+            const rect = canvas.getBoundingClientRect();
+            const mouseX = e.clientX - rect.left;
+            const mouseY = e.clientY - rect.top;
+            
+            const dx = mouseX - this.helpBtn.x;
+            const dy = mouseY - this.helpBtn.y;
+            
+            // Use slightly larger hit radius (padding of 15) to make tapping easier
+            const hitRadius = this.helpBtn.r + 15; 
+            
+            if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+              this.showTutorial = true;
+              this.tutorialHoldTime = 0;
+            }
+          }
+        });
+      }
+    }
 
     this.spawnNumbers();
 
@@ -76,6 +118,13 @@ const Game3 = {
     const base = Math.min(width, height);
     this.scale = base / 600;
     this.margin = 80 * this.scale;
+
+    // ⭐ NEW: Define the Help Button position (Top Right, beside pause button)
+    this.helpBtn = { 
+      x: width - 100 * this.scale, 
+      y: 40 * this.scale, 
+      r: 20 * this.scale 
+    };
   },
 
   setDifficulty(grade) {
@@ -170,35 +219,111 @@ const Game3 = {
     this.drawPopups(ctx, dt);
     this.drawParticles(ctx, dt);
 
-    if (this.gameState !== "PLAYING") {
-      ctx.restore();
-    }
-    else {
+    const isPlaying = !this.showTutorial && this.gameState === "PLAYING";
+
+    if (this.gameState !== "PLAYING" && !this.showTutorial) {
+      // Just wait for animations if not playing and not in tutorial
+    } else {
       if (!landmarks || landmarks.length < 3) {
-        this.drawFeedback(ctx, "Show One Hand!", "orange");
-      }
-      else {
+        if (isPlaying) {
+          this.drawFeedback(ctx, "Show One Hand!", "orange");
+        } else if (this.showTutorial) {
+          this.tutorialHoldTime = Math.max(0, this.tutorialHoldTime - dt);
+        }
+      } else {
         const indexTip = landmarks[0];
         const thumbTip = landmarks[1];
         const wrist = landmarks[2];
 
-        const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
-
-        if (angle < 20) {
-          this.detectedSymbol = "None";
-          ctx.restore();
-          return;
-        }
-
-        this.checkPose(ctx, indexTip, thumbTip, wrist, dt);
         this.drawArmSymbol(ctx, indexTip, thumbTip, wrist);
+
+        if (this.showTutorial) {
+          this.tutorialHoldTime += dt;
+          if (this.tutorialHoldTime >= 1.5) {
+            this.showTutorial = false;
+            this.spawnNumbers(); 
+          }
+        } else if (isPlaying) {
+          this.checkPose(ctx, indexTip, thumbTip, wrist, dt);
+        }
       }
-      ctx.restore();
     }
+
+    if (this.showTutorial) {
+      this.drawTutorialWindow(ctx);
+    }
+
+    ctx.restore();
 
     if (typeof PauseArea !== 'undefined') {
       PauseArea.drawPauseIcon(ctx);
       if (isPaused) PauseArea.draw();
+    }
+  },
+
+  drawTutorialWindow(ctx) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.fillRect(this.centerX - 5000, this.centerY - 5000, 10000, 10000);
+
+    // ⭐ CHANGED: Increased boxW from 540 to 750 to fit the long text
+    const boxW = 750 * this.scale;
+    const boxH = 400 * this.scale;
+    const boxX = this.centerX - boxW / 2;
+    const boxY = this.centerY - boxH / 2;
+
+    ctx.fillStyle = "#2A2A2A";
+    ctx.beginPath();
+    if (ctx.roundRect) {
+      ctx.roundRect(boxX, boxY, boxW, boxH, 25 * this.scale);
+    } else {
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+    }
+    ctx.fill();
+
+    ctx.lineWidth = 6 * this.scale;
+    ctx.strokeStyle = "#00FFCC";
+    ctx.stroke();
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `bold ${45 * this.scale}px "Comic Sans MS", "Fredoka One", Arial`;
+    ctx.fillText("How to Play!", this.centerX, boxY + 60 * this.scale);
+
+    ctx.font = `bold ${24 * this.scale}px Arial`;
+    ctx.fillStyle = "#DDDDDD";
+    ctx.fillText("1. Look at the two numbers.", this.centerX, boxY + 130 * this.scale);
+    ctx.fillText("2. Make a shape with your thumb & index finger.", this.centerX, boxY + 175 * this.scale);
+    ctx.fillText("3. Point at the BIGGER number!", this.centerX, boxY + 220 * this.scale);
+
+    ctx.font = `bold ${60 * this.scale}px Arial`;
+    ctx.fillStyle = "#00AAFF";
+    ctx.fillText("<", this.centerX - 120 * this.scale, boxY + 280 * this.scale);
+    ctx.fillStyle = "#FFFF00";
+    ctx.fillText(">", this.centerX + 120 * this.scale, boxY + 280 * this.scale);
+
+    const progressY = boxY + 350 * this.scale;
+    if (this.tutorialHoldTime > 0) {
+      let progress = Math.min(1, this.tutorialHoldTime / 1.5);
+      
+      ctx.fillStyle = "#00FFCC";
+      ctx.font = `bold ${26 * this.scale}px Arial`;
+      ctx.fillText("Starting Game...", this.centerX, progressY - 20 * this.scale);
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+      ctx.fillRect(this.centerX - 150 * this.scale, progressY + 10 * this.scale, 300 * this.scale, 15 * this.scale);
+      
+      ctx.fillStyle = "#00FFCC";
+      ctx.fillRect(this.centerX - 150 * this.scale, progressY + 10 * this.scale, 300 * this.scale * progress, 15 * this.scale);
+    } else {
+      ctx.fillStyle = "#FFD700";
+      ctx.font = `bold ${26 * this.scale}px Arial`;
+      ctx.fillText("Hold your hand up to Start!", this.centerX, progressY);
+      
+      ctx.fillStyle = "#888888";
+      ctx.font = `italic ${18 * this.scale}px Arial`;
+      ctx.fillText("(or press Spacebar to skip)", this.centerX, progressY + 30 * this.scale);
     }
   },
 
@@ -368,7 +493,6 @@ const Game3 = {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    // --- 1. Draw The Math Cards ---
     const offsetX = 280 * this.scale;
     const leftX = this.centerX - offsetX;
     const rightX = this.centerX + offsetX;
@@ -382,7 +506,6 @@ const Game3 = {
     const drawCard = (x, color, text) => {
       const radius = 25 * this.scale;
 
-      // Card Background Shadow
       ctx.shadowColor = "rgba(0,0,0,0.4)";
       ctx.shadowBlur = 25 * this.scale;
       ctx.shadowOffsetY = 10 * this.scale;
@@ -402,7 +525,6 @@ const Game3 = {
       ctx.closePath();
       ctx.fill();
 
-      // Text Shadow for the numbers
       ctx.shadowColor = "rgba(0,0,0,0.6)";
       ctx.shadowBlur = 8 * this.scale;
       ctx.shadowOffsetY = 5 * this.scale;
@@ -416,7 +538,6 @@ const Game3 = {
       ctx.fillStyle = "white";
       ctx.fillText(text, x, y);
 
-      // Reset shadows completely so they don't leak
       ctx.shadowBlur = 0;
       ctx.shadowOffsetY = 0;
     };
@@ -426,9 +547,7 @@ const Game3 = {
 
     ctx.globalAlpha = 1;
 
-    // --- 2. VS indicator ---
     ctx.font = `bold ${70 * this.scale}px Arial`;
-    
     ctx.lineWidth = 6 * this.scale;
     ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
     ctx.strokeText("?", this.centerX, this.centerY);
@@ -436,7 +555,6 @@ const Game3 = {
     ctx.fillStyle = "#FFFFFF";
     ctx.fillText("?", this.centerX, this.centerY);
 
-    // --- 3. UI Badges ---
     const drawBadge = (text, centerX, centerY, bgColor, textColor) => {
       ctx.font = `bold ${36 * this.scale}px "Comic Sans MS", "Fredoka One", Arial, sans-serif`; 
       
@@ -473,7 +591,6 @@ const Game3 = {
     drawBadge(`Grade: ${this.currentGrade}`, 120 * this.scale, 60 * this.scale, "rgba(0, 0, 0, 0.5)", "#00FFCC");
     drawBadge(`Score: ${this.score}`, this.centerX, 60 * this.scale, "rgba(0, 0, 0, 0.5)", "#FFD700");
 
-    // --- 4. Combo Text ---
     if (this.combo >= 2) {
       ctx.textAlign = "center";
       ctx.font = `bold ${28 * this.scale}px Arial`;
@@ -484,6 +601,32 @@ const Game3 = {
       ctx.fillStyle = "#FF6600";
       ctx.fillText(`Combo x${this.combo}`, this.centerX, 120 * this.scale);
     }
+
+    // ⭐ NEW: Call the new function to draw the Help Button
+    this.drawHelpButton(ctx);
+  },
+
+  // ⭐ NEW: Function to draw the "?" Help Button
+  drawHelpButton(ctx) {
+    if (!this.helpBtn) return;
+    
+    ctx.shadowColor = "rgba(0,0,0,0.4)";
+    ctx.shadowBlur = 10 * this.scale;
+    ctx.shadowOffsetY = 4 * this.scale;
+
+    ctx.beginPath();
+    ctx.arc(this.helpBtn.x, this.helpBtn.y, this.helpBtn.r, 0, Math.PI * 2);
+    ctx.fillStyle = "#000000"; 
+    ctx.fill();
+    
+    ctx.shadowBlur = 0;
+    ctx.shadowOffsetY = 0;
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `bold ${24 * this.scale}px Arial`;
+    ctx.fillText("?", this.helpBtn.x, this.helpBtn.y + 2 * this.scale);
   },
 
   drawFeedback(ctx, text, color) {
