@@ -1,6 +1,6 @@
 /* ================================================================
-   GAME 1 — SKIP COUNTING  (complete visual & system y Planetarium — warm navy · soft gold · mint greenmakeover)
-   Theme: Coz
+   GAME 1 — SKIP COUNTING  (complete visual & system makeover)
+   Theme: Cozy Planetarium — warm navy · soft gold · mint green
    HUD:   Corners-only on Default/Pattern, thin top bar on launchers
    Level: XP ring fills → pops → tier up (Sprout→Star→Champ→Legend)
 ================================================================ */
@@ -100,23 +100,9 @@ const Game1 = {
   levelUpDuration: 1400,
   levelUpParticles: [],
   xpPopFlash: 0,
-  hintState: "full",
-  noiseTime: 0,
 
   /* ── Background ─────────────────────────────────────────── */
   bgStars: [],
-
-
-  /* ── Hinits ─────────────────────────────────────────── */
-  _hintChangeMessages: {
-  subtle: "👀 Look carefully — hints are fading!",
-  none:   "🧠 No more hints — use your brain!",
-  decoy:  "😈 Watch out — fake signals ahead!",
-  chaos:  "🌀 CHAOS MODE — trust nothing!",
-  },
-
-  _hintChangeTimer:   0,
-  _hintChangeMessage: "",
 
   /* ============================================================
      INIT
@@ -125,26 +111,13 @@ const Game1 = {
     const rect = document.getElementById("container").getBoundingClientRect();
     this.onResize(rect.width, rect.height);
 
-    this.notes = []; 
-    this.popEffects = []; 
-    this.explosions = [];
-    this.missQueue = []; 
-    this.levelUpParticles = []; 
-    this.chargeParticles = [];
+    this.notes = []; this.popEffects = []; this.explosions = [];
+    this.missQueue = []; this.levelUpParticles = []; this.chargeParticles = [];
 
-    this.score = 0; 
-    this.combo = 0; 
-    this.multiplier = 1;
-    this.hitTextTimer = 1; 
-    this.currentNumber = 1;
-    this.xp = 0; 
-    this.xpToNext = 8; 
-    this.level = 1; 
-    this.tier = 0;
-    this.levelUpActive = false; 
-    this.xpPopFlash = 0;
-    this.hintState = "full"; 
-    this.noiseTime = 0;
+    this.score = 0; this.combo = 0; this.multiplier = 1;
+    this.hitTextTimer = 1; this.currentNumber = 1;
+    this.xp = 0; this.xpToNext = 8; this.level = 1; this.tier = 0;
+    this.levelUpActive = false; this.xpPopFlash = 0;
     this.spawnInterval = 1200;
 
     this.mode = "default";
@@ -244,46 +217,14 @@ const Game1 = {
       this.xpToNext = Math.min(8 + this.level * 2, 25);
       this.xpPopFlash = 1;
       for (let t = this.tierThresholds.length - 1; t >= 0; t--) {
-        if (this.level >= this.tierThresholds[t]) { 
-          this.tier = Math.max(this.tier, t); 
-          break; 
-        }
+        if (this.level >= this.tierThresholds[t]) { this.tier = Math.max(this.tier, t); break; }
       }
-      this._updateHintState();
       if (this.level % 3 === 0) {
         this.spawnInterval = Math.max(650, this.spawnInterval - 60);
         this._restartSpawnTimer();
       }
       this._triggerLevelUpBurst();
     }
-  },
-
-  _updateHintState() {
-    const lv  = this.level;
-    const prev = this.hintState;
-    if      (lv <= 3)  this.hintState = "full";
-    else if (lv <= 5)  this.hintState = "subtle";
-    else if (lv <= 8)  this.hintState = "none";
-    else if (lv <= 11) this.hintState = "decoy";
-    else               this.hintState = "chaos";
-
-    if (this.hintState !== prev) {
-      this._hintChangeTimer    = 2800;   // ms to show announcement
-      this._hintChangeMessage  = this._hintChangeMessages[this.hintState] || "";
-    }
-  },
-
-
-  _noteVisual(isCorrect, noteId) {
-    const h  = this.hintState;
-    const t  = this.noiseTime + noteId * 137.5;   // unique phase per note
-    const sh = Math.abs(Math.sin(t * 0.7));        // 0–1 shimmer
-
-    if (h === "full")   return { showCorrect: isCorrect,  showWrong: !isCorrect, shimmerAmt: 0 };
-    if (h === "subtle") return { showCorrect: isCorrect,  showWrong: false,       shimmerAmt: 0 };
-    if (h === "none")   return { showCorrect: false,       showWrong: false,       shimmerAmt: 0 };
-    if (h === "decoy")  return { showCorrect: !isCorrect,  showWrong: isCorrect,   shimmerAmt: 0 };
-    /* chaos */         return { showCorrect: sh > 0.6,    showWrong: sh < 0.25,   shimmerAmt: sh };
   },
 
   _triggerLevelUpBurst() {
@@ -295,10 +236,8 @@ const Game1 = {
       const a = Math.random() * Math.PI * 2;
       const v = 180 + Math.random() * 220;
       this.levelUpParticles.push({
-        x: this.centerX,
-        y: this.centerY,
-        vx: Math.cos(a) * v, 
-        vy: Math.sin(a) * v,
+        x: this.centerX, y: this.centerY,
+        vx: Math.cos(a) * v, vy: Math.sin(a) * v,
         r: 3 + Math.random() * 5,
         color: cols[i % cols.length],
         life: 1,
@@ -311,10 +250,8 @@ const Game1 = {
     this.levelUpTimer -= dt * 1000;
     if (this.xpPopFlash > 0) this.xpPopFlash = Math.max(0, this.xpPopFlash - dt * 3);
     for (const p of this.levelUpParticles) {
-      p.x += p.vx * dt; 
-      p.y += p.vy * dt;
-      p.vx *= 0.94; 
-      p.vy *= 0.94;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vx *= 0.94; p.vy *= 0.94;
       p.vy += 120 * dt;
       p.life -= dt * 1.1;
     }
@@ -329,14 +266,10 @@ const Game1 = {
     for (const p of this.levelUpParticles) {
       ctx.globalAlpha = Math.max(0, p.life) * 0.9;
       ctx.fillStyle   = p.color;
-      ctx.shadowColor = p.color; 
-      ctx.shadowBlur = 12;
-      ctx.beginPath(); 
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.shadowColor = p.color; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
     }
-    ctx.shadowBlur = 0; 
-    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
 
     if (prog > 0.05 && prog < 0.8) {
       const alpha = Math.sin(prog / 0.8 * Math.PI);
@@ -344,8 +277,7 @@ const Game1 = {
       ctx.globalAlpha = alpha;
       ctx.translate(this.centerX, this.centerY - 110);
       ctx.scale(0.8 + alpha * 0.3, 0.8 + alpha * 0.3);
-      ctx.textAlign = "center"; 
-      ctx.textBaseline = "middle";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.font      = "bold 44px 'Trebuchet MS', sans-serif";
       ctx.shadowColor = this.C.gold; ctx.shadowBlur = 28;
       ctx.fillStyle   = this.C.gold;
@@ -358,94 +290,28 @@ const Game1 = {
     }
   },
 
-  _drawHintChangeAnnouncement(ctx, dt) {
-    if (this._hintChangeTimer <= 0 || !this._hintChangeMessage) return;
-
-    this._hintChangeTimer -= dt * 1000;
-
-    const total    = 2800;
-    const progress = 1 - this._hintChangeTimer / total;
-
-    let alpha;
-    if      (progress < 0.14) alpha = progress / 0.14;
-    else if (progress < 0.72) alpha = 1;
-    else                       alpha = 1 - (progress - 0.72) / 0.28;
-    alpha = Math.max(0, Math.min(1, alpha));
-
-
-    const colors = {
-      subtle: "#f5c842",
-      none:   "#8ecae6",
-      decoy:  "#e87c6d",
-      chaos:  "#c084fc",
-    };
-    const col = colors[this.hintState] || "#ffffff";
-
-    const W = this.centerX * 2;
-    const bannerY = this.centerY * 0.38;
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-
-    // Backdrop pill
-    const msg     = this._hintChangeMessage;
-    ctx.font      = "bold 30px 'Trebuchet MS', sans-serif";
-    const tw      = ctx.measureText(msg).width;
-    const bw      = tw + 56, bh = 56;
-    const bx      = W / 2 - bw / 2, by = bannerY - bh / 2;
-    const br      = bh / 2;
-
-    ctx.beginPath();
-    ctx.moveTo(bx + br, by);
-    ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
-    ctx.arcTo(bx + bw, by + bh, bx, by + bh, br);
-    ctx.arcTo(bx, by + bh, bx, by, br);
-    ctx.arcTo(bx, by, bx + bw, by, br);
-    ctx.closePath();
-    ctx.fillStyle   = "rgba(8,14,28,0.88)";
-    ctx.fill();
-    ctx.strokeStyle = col; 
-    ctx.lineWidth = 2;
-    ctx.shadowColor = col; 
-    ctx.shadowBlur = 16;
-    ctx.stroke(); 
-    ctx.shadowBlur = 0;
-
-    // Text
-    ctx.fillStyle    = col;
-    ctx.textAlign    = "center"; ctx.textBaseline = "middle";
-    ctx.shadowColor  = col; ctx.shadowBlur = 10;
-    ctx.fillText(msg, W / 2, bannerY);
-
-    ctx.restore();
-  },
-
   _drawXPRing(ctx, cx, cy, radius) {
     const fill      = this.level >= this.maxLevel ? 1 : this.xp / this.xpToNext;
     const tierColor = this.tierColors[this.tier];
     const start     = -Math.PI / 2;
 
     // Track
-    ctx.beginPath(); 
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.strokeStyle = this.C.xpTrack; ctx.lineWidth = 6; ctx.stroke();
 
     // Fill
     if (fill > 0.01) {
-      ctx.beginPath(); 
-      ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
+      ctx.beginPath(); ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
       ctx.strokeStyle = tierColor; ctx.lineWidth = 6;
       ctx.shadowColor = tierColor; ctx.shadowBlur = 12 + this.xpPopFlash * 20;
-      ctx.stroke(); 
-      ctx.shadowBlur = 0;
+      ctx.stroke(); ctx.shadowBlur = 0;
     }
 
+    // Pop flash
     if (this.xpPopFlash > 0) {
-      ctx.beginPath(); 
-      ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash * 0.55})`;
-      ctx.lineWidth   = 5 * this.xpPopFlash;
-      ctx.stroke();
+      ctx.lineWidth   = 5 * this.xpPopFlash; ctx.stroke();
     }
   },
 
@@ -466,120 +332,68 @@ const Game1 = {
     ctx.strokeStyle = this.C.hudBorder; ctx.lineWidth = 1; ctx.stroke();
   },
 
-_drawHUD(ctx, isLauncher, dt) {
-  const W = this.centerX * 2, H = this.centerY * 2;
-  const f = "bold 20px 'Trebuchet MS', sans-serif";
+  _drawHUD(ctx, isLauncher, dt) {
+    const W = this.centerX * 2, H = this.centerY * 2;
+    const f = "bold 20px 'Trebuchet MS', sans-serif";
 
-  if (isLauncher) {
-    /* ── Thin top bar ── */
-    ctx.fillStyle = this.C.hudBg; 
-    ctx.fillRect(0, 0, W, 50);
+    if (isLauncher) {
+      /* ── Thin top bar ── */
+      ctx.fillStyle = this.C.hudBg; ctx.fillRect(0, 0, W, 50);
+      ctx.strokeStyle = this.C.hudBorder; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, 50); ctx.lineTo(W, 50); ctx.stroke();
 
-    ctx.strokeStyle = this.C.hudBorder; 
-    ctx.lineWidth = 1;
-    ctx.beginPath(); 
-    ctx.moveTo(0, 50); 
-    ctx.lineTo(W, 50); 
-    ctx.stroke();
+      ctx.font = f; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#e8f4ff"; ctx.textAlign = "left";
+      ctx.fillText("⭐ " + this.score, 16, 25);
 
-    ctx.font = f; 
-    ctx.textBaseline = "middle";
+      ctx.fillStyle = this.C.gold; ctx.textAlign = "center";
+      ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
+      ctx.fillText(this.gameTitle, W / 2, 25);
 
-    ctx.fillStyle = "#e8f4ff"; 
-    ctx.textAlign = "left";
-    ctx.fillText("⭐ " + this.score, 16, 25);
+      ctx.textAlign = "right";
+      ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
+      ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
+      ctx.fillText("x" + this.combo + " combo", W - 16, 25);
 
-    ctx.fillStyle = this.C.gold; 
-    ctx.textAlign = "center";
-    ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
-    ctx.fillText(this.gameTitle, W / 2, 25);
+    } else {
+      /* ── Corner pills ── */
+      this._pill(ctx, 14, 14, 155, 42);
+      ctx.font = f; ctx.fillStyle = "#e8f4ff";
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText("⭐ " + this.score, 28, 35);
 
-    ctx.textAlign = "right";
-    ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
-    ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
-    ctx.fillText("x" + this.combo + " combo", W - 16, 25);
+      this._pill(ctx, W - 174, 14, 160, 42);
+      ctx.textAlign = "right";
+      ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
+      ctx.fillText("🔥 " + this.combo + "  x" + this.multiplier, W - 28, 35);
 
-  } else {
+      /* Title */
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = this.C.gold;
+      ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
+      ctx.shadowColor = "rgba(245,200,66,0.4)"; ctx.shadowBlur = 14;
+      ctx.fillText(this.gameTitle, W / 2, 34);
+      ctx.shadowBlur = 0;
 
-    /* ── Score Pill ── */
-    this._pill(ctx, 14, 14, 155, 42);
+      /* XP ring + level label bottom center */
+      const ringCX = W / 2, ringCY = H - 48, ringR = 26;
+      this._drawXPRing(ctx, ringCX, ringCY, ringR);
+      ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = this.tierColors[this.tier];
+      ctx.shadowColor = this.tierColors[this.tier]; ctx.shadowBlur = 8;
+      ctx.fillText("Lv." + this.level, ringCX, ringCY);
+      ctx.shadowBlur = 0;
+    }
 
-    ctx.font = f; 
-    ctx.fillStyle = "#e8f4ff";
-    ctx.textAlign = "left"; 
-    ctx.textBaseline = "middle";
-    ctx.fillText("⭐ " + this.score, 28, 35);
-
-    /* ── Combo Pill ── */
-    this._pill(ctx, W - 174, 14, 160, 42);
-
-    ctx.textAlign = "right";
-    ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
-    ctx.fillText("🔥 " + this.combo + "  x" + this.multiplier, W - 28, 35);
-
-    /* ── Title ── */
-    ctx.textAlign = "center"; 
-    ctx.textBaseline = "middle";
-
-    ctx.fillStyle = this.C.gold;
-    ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
-
-    ctx.shadowColor = "rgba(245,200,66,0.4)"; 
-    ctx.shadowBlur = 14;
-
-    ctx.fillText(this.gameTitle, W / 2, 34);
-
-    ctx.shadowBlur = 0;
-  }
-
-  /* ── XP Ring + Level Label (ALWAYS VISIBLE) ── */
-
-  const ringCX = W / 2;
-  const ringCY = isLauncher ? H - 60 : H - 48;
-  const ringR  = 26;
-
-  this._drawXPRing(ctx, ringCX, ringCY, ringR);
-
-  ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
-  ctx.textAlign = "center"; 
-  ctx.textBaseline = "middle";
-
-  ctx.fillStyle = this.tierColors[this.tier];
-
-  ctx.shadowColor = this.tierColors[this.tier];
-  ctx.shadowBlur = 8;
-
-  ctx.fillText("Lv." + this.level, ringCX, ringCY);
-
-  ctx.shadowBlur = 0;
-
-  /* ── Tier Label + Difficulty Badge ── */
-
-  const diffLabels = {
-    full:   "🟢 Training",
-    subtle: "🟡 Subtle",
-    none:   "🔵 Blind",
-    decoy:  "🔴 Decoy",
-    chaos:  "🟣 Chaos",
-  };
-
-  const diffLabel = diffLabels[this.hintState] || "";
-
-  ctx.textAlign = "right"; 
-  ctx.textBaseline = "bottom";
-
-  ctx.font = "13px 'Trebuchet MS', sans-serif";
-
-  ctx.globalAlpha = 0.7;
-
-  ctx.fillStyle = this.tierColors[this.tier];
-  ctx.fillText(this.tierNames[this.tier], W - 12, H - 8);
-
-  ctx.fillStyle = "#c8dff0";
-  ctx.fillText(diffLabel, W - 12, H - 26);
-
-  ctx.globalAlpha = 1;
-},
+    /* Tier label — tiny bottom-right always */
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
+    ctx.font = "13px 'Trebuchet MS', sans-serif";
+    ctx.fillStyle = this.tierColors[this.tier];
+    ctx.globalAlpha = 0.7;
+    ctx.fillText(this.tierNames[this.tier], W - 12, H - 8);
+    ctx.globalAlpha = 1;
+  },
 
   /* ============================================================
      MAIN UPDATE
@@ -588,7 +402,6 @@ _drawHUD(ctx, isLauncher, dt) {
     this._drawBg(ctx);
     this._drawBgStars(ctx, dt);
     this._updateLevelUp(dt);
-    this.noiseTime += dt * 1.8;   // drives chaos shimmer — advances ~108°/s
 
     const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
 
@@ -613,7 +426,6 @@ _drawHUD(ctx, isLauncher, dt) {
       this.drawTripleCannons(ctx, dt);
       this.drawExplosions(ctx);
       this.drawLauncherZone(ctx);
-      
     } else {
       this.drawNotes(ctx, dt);
     }
@@ -633,11 +445,10 @@ _drawHUD(ctx, isLauncher, dt) {
 
     this._drawHUD(ctx, isLauncher, dt);
     this._drawLevelUpBurst(ctx);
-    this._drawHintChangeAnnouncement(ctx, dt);
     this.drawHitText(ctx);
   },
 
-
+  /* ── Legacy stubs kept for external calls ── */
   drawTitle(ctx) {},
   drawScore(ctx) {},
   drawCombo(ctx)  {},
@@ -674,29 +485,16 @@ _drawHUD(ctx, isLauncher, dt) {
     ctx.translate(this.centerX, this.centerY);
 
     // Outer — warm gold
-    ctx.beginPath(); 
-    ctx.arc(0, 0, this.currentOuterRadius, 0, Math.PI * 2);
-    ctx.shadowColor = this.C.ring1Glow; 
-    ctx.shadowBlur = 48;
-    ctx.strokeStyle = this.C.ring1; 
-    ctx.lineWidth = 10; 
-    ctx.stroke();
-    ctx.shadowBlur  = 20; 
-    ctx.strokeStyle = "#e8b84a"; 
-    ctx.lineWidth = 6; 
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, this.currentOuterRadius, 0, Math.PI * 2);
+    ctx.shadowColor = this.C.ring1Glow; ctx.shadowBlur = 48;
+    ctx.strokeStyle = this.C.ring1; ctx.lineWidth = 10; ctx.stroke();
+    ctx.shadowBlur  = 20; ctx.strokeStyle = "#e8b84a"; ctx.lineWidth = 6; ctx.stroke();
 
     // Inner — soft mint
-    ctx.beginPath(); 
-    ctx.arc(0, 0, this.currentInnerRadius, 0, Math.PI * 2);
-    ctx.shadowColor = this.C.ring2Glow; 
-    ctx.shadowBlur = 38;
-    ctx.strokeStyle = this.C.ring2; 
-    ctx.lineWidth = 7; ctx.stroke();
-    ctx.shadowBlur  = 16; 
-    ctx.strokeStyle = "#9cdfc7"; 
-    ctx.lineWidth = 4; 
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(0, 0, this.currentInnerRadius, 0, Math.PI * 2);
+    ctx.shadowColor = this.C.ring2Glow; ctx.shadowBlur = 38;
+    ctx.strokeStyle = this.C.ring2; ctx.lineWidth = 7; ctx.stroke();
+    ctx.shadowBlur  = 16; ctx.strokeStyle = "#9cdfc7"; ctx.lineWidth = 4; ctx.stroke();
 
     ctx.restore();
   },
@@ -716,7 +514,6 @@ _drawHUD(ctx, isLauncher, dt) {
       y: this.centerY + Math.sin(angle) * spawnR,
       radius: this.baseOuterRadius * 0.12,
       value: num,
-      id: num,
     });
   },
 
@@ -733,90 +530,34 @@ _drawHUD(ctx, isLauncher, dt) {
 
   _drawNoteCircle(ctx, note) {
     ctx.save();
-    const r     = note.radius;
-    const isC   = this.mode === "cannon" || this.mode === "orb" || this.mode === "triple"
-                  ? this.shouldCollectCannon(note.value)
-                  : this.shouldCollect(note.value);
+    const r   = note.radius;
+    const isC = this.mode === "cannon" || this.mode === "orb" || this.mode === "triple"
+                ? this.shouldCollectCannon(note.value)
+                : this.shouldCollect(note.value);
 
-    const vis   = this._noteVisual(isC, note.id || note.value);
-    const h     = this.hintState;
+    // Soft halo
+    const grd = ctx.createRadialGradient(note.x, note.y, r * 0.2, note.x, note.y, r * 1.4);
+    grd.addColorStop(0, isC ? "rgba(109,232,180,0.16)" : "rgba(232,124,109,0.10)");
+    grd.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = grd;
+    ctx.beginPath(); ctx.arc(note.x, note.y, r * 1.4, 0, Math.PI * 2); ctx.fill();
 
-    const isVisC = vis.showCorrect;
-    const isVisW = vis.showWrong;
-
-    // ── Halo (only drawn when there's a visual signal) ──────
-    if (isVisC || isVisW || vis.shimmerAmt > 0) {
-      let haloAlpha = isVisC ? 0.16 : isVisW ? 0.11 : vis.shimmerAmt * 0.12;
-      if (h === "subtle" && isVisC) haloAlpha = 0.07;   // barely there
-
-      const haloColor = isVisC
-        ? `rgba(109,232,180,${haloAlpha})`
-        : isVisW
-          ? `rgba(232,124,109,${haloAlpha})`
-          : `rgba(140,180,220,${haloAlpha})`;
-
-      const grd = ctx.createRadialGradient(note.x, note.y, r * 0.2, note.x, note.y, r * 1.4);
-      grd.addColorStop(0, haloColor);
-      grd.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = grd;
-      ctx.beginPath(); 
-      ctx.arc(note.x, note.y, r * 1.4, 0, Math.PI * 2); 
-      ctx.fill();
-    }
-
-    // ── Body ────────────────────────────────────────────────
+    // Body
     ctx.beginPath(); ctx.arc(note.x, note.y, r, 0, Math.PI * 2);
+    ctx.shadowColor = isC ? "rgba(109,232,180,0.45)" : "rgba(90,150,200,0.4)";
+    ctx.shadowBlur  = 20;
+    ctx.fillStyle   = isC ? "#0e3028" : "#102140"; ctx.fill();
+    ctx.strokeStyle = isC ? this.C.correct : this.C.accent;
+    ctx.lineWidth   = 2.5; ctx.stroke(); ctx.shadowBlur = 0;
 
-    let bodyFill, rimColor, shadowCol;
-    if (isVisC && h !== "subtle") {
-      bodyFill  = "#0e3028";
-      rimColor  = this.C.correct;
-      shadowCol = "rgba(109,232,180,0.45)";
-    } else if (isVisW) {
-      bodyFill  = "#2a1010";
-      rimColor  = this.C.wrong;
-      shadowCol = "rgba(232,124,109,0.4)";
-    } else {
-      // neutral — all look the same (none/subtle/chaos fallback)
-      const shimBase = 20 + vis.shimmerAmt * 18;
-      bodyFill  = "#102140";
-      rimColor  = `rgba(${Math.round(100 + vis.shimmerAmt*80)},${Math.round(160 + vis.shimmerAmt*40)},${Math.round(200 + vis.shimmerAmt*30)},${0.55 + vis.shimmerAmt*0.35})`;
-      shadowCol = `rgba(90,150,200,${0.25 + vis.shimmerAmt*0.2})`;
-    }
+    // Shine
+    ctx.beginPath(); ctx.arc(note.x - r * 0.27, note.y - r * 0.27, r * 0.20, 0, Math.PI * 2);
+    ctx.fillStyle = isC ? "rgba(200,255,230,0.32)" : "rgba(200,230,255,0.28)"; ctx.fill();
 
-    ctx.shadowColor = shadowCol; 
-    ctx.shadowBlur = 20;
-    ctx.fillStyle   = bodyFill; 
-    ctx.fill();
-    ctx.strokeStyle = rimColor; 
-    ctx.lineWidth = 2.5; 
-    ctx.stroke();
-    ctx.shadowBlur  = 0;
-
-    // ── Shine dot ───────────────────────────────────────────
-    ctx.beginPath(); 
-    ctx.arc(note.x - r * 0.27, note.y - r * 0.27, r * 0.20, 0, Math.PI * 2);
-    ctx.fillStyle = isVisC && h !== "subtle"
-      ? "rgba(200,255,230,0.30)"
-      : "rgba(200,230,255,0.22)";
-    ctx.fill();
-
-    // ── Hint overlay text for "subtle" — tiny suffix hint ───
-    // At subtle level show a very faint "?" on non-obvious notes
-    if (h === "subtle" && !isC) {
-      ctx.globalAlpha = 0.18;
-      ctx.fillStyle   = "#aac8e0";
-      ctx.font        = `bold ${Math.round(r * 0.42)}px 'Trebuchet MS', sans-serif`;
-      ctx.textAlign   = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("?", note.x, note.y - r * 0.55);
-      ctx.globalAlpha = 1;
-    }
-
-    // ── Number ──────────────────────────────────────────────
+    // Number
     ctx.fillStyle    = this.C.noteText;
     ctx.font         = `bold ${Math.round(r * 0.72)}px 'Trebuchet MS', sans-serif`;
-    ctx.textAlign    = "center"; 
-    ctx.textBaseline = "middle";
+    ctx.textAlign    = "center"; ctx.textBaseline = "middle";
     ctx.fillText(note.value, note.x, note.y);
     ctx.restore();
   },
@@ -851,10 +592,8 @@ _drawHUD(ctx, isLauncher, dt) {
           this._gainXP(1);
           this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.correct });
         } else {
-          this.combo = 0; 
-          this.multiplier = 1;
-          this.score -= 5; 
-          this.lastHitType = "WRONG";
+          this.combo = 0; this.multiplier = 1;
+          this.score -= 5; this.lastHitType = "WRONG";
           this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.wrong });
         }
         this.hitTextTimer = 30;
@@ -894,14 +633,10 @@ _drawHUD(ctx, isLauncher, dt) {
       const scale = 1 + ease * 0.5;
       ctx.save();
       ctx.globalAlpha = 1 - ease;
-      ctx.translate(p.x, p.y); 
-      ctx.scale(scale, scale);
+      ctx.translate(p.x, p.y); ctx.scale(scale, scale);
       ctx.fillStyle   = p.color;
-      ctx.shadowColor = p.color; 
-      ctx.shadowBlur = 16;
-      ctx.beginPath(); 
-      ctx.arc(0, 0, 32, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.shadowColor = p.color; ctx.shadowBlur = 16;
+      ctx.beginPath(); ctx.arc(0, 0, 32, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
       if (p.life >= 1) this.popEffects.splice(i, 1);
     }
@@ -950,18 +685,14 @@ _drawHUD(ctx, isLauncher, dt) {
   },
 
   activateOrbMode() {
-    this.mode = "orb"; 
-    this._resetLauncherState();
-    this.orbAngle = 0; 
-    this.orbTargetAngle = 0;
+    this.mode = "orb"; this._resetLauncherState();
+    this.orbAngle = 0; this.orbTargetAngle = 0;
     this.gameTitle = "ORB SKIP " + this.skipAmount;
   },
 
   activateTripleCannonMode() {
-    this.mode = "triple"; 
-    this._resetLauncherState();
-    this.tripleBaseAngle = 0; 
-    this.tripleTargetAngle = 0;
+    this.mode = "triple"; this._resetLauncherState();
+    this.tripleBaseAngle = 0; this.tripleTargetAngle = 0;
     this.tripleCannons = [];
     const sp = (Math.PI * 2) / this.tripleCount;
     for (let i = 0; i < this.tripleCount; i++) this.tripleCannons.push({ offset: i * sp });
@@ -969,16 +700,11 @@ _drawHUD(ctx, isLauncher, dt) {
   },
 
   _resetLauncherState() {
-    this.notes = []; 
-    this.explosions = [];
-    this.combo = 0; 
-    this.multiplier = 1;
-    this.cannonAngle = 0; 
-    this.cannonTargetAngle = 0;
-    this.pendingShot = null; 
-    this.lastCannonNote = null;
-    this.previewCannons = []; 
-    this.previewTimer = 0;
+    this.notes = []; this.explosions = [];
+    this.combo = 0; this.multiplier = 1;
+    this.cannonAngle = 0; this.cannonTargetAngle = 0;
+    this.pendingShot = null; this.lastCannonNote = null;
+    this.previewCannons = []; this.previewTimer = 0;
     this.skipAmount = this.getRandomSkip();
   },
 
@@ -990,7 +716,7 @@ _drawHUD(ctx, isLauncher, dt) {
     const angle = Math.random() * Math.PI * 2;
     const num   = this.currentNumber++;
     if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
-    this.pendingShot = { angle, speed: this.baseOuterRadius * 0.9, value: num, id: num };
+    this.pendingShot = { angle, speed: this.baseOuterRadius * 0.9, value: num };
     this.cannonTargetAngle = angle + Math.PI / 2;
     this.startCharging();
   },
@@ -998,16 +724,14 @@ _drawHUD(ctx, isLauncher, dt) {
   updateCannonNotes(ctx, dt) {
     for (let i = this.notes.length - 1; i >= 0; i--) {
       const note = this.notes[i];
-      note.x += note.vx * dt; 
-      note.y += note.vy * dt;
+      note.x += note.vx * dt; note.y += note.vy * dt;
       this.updateLauncherProtection(note);
       this._drawNoteCircle(ctx, note);
       const m = 120;
       const off = note.x < -m || note.x > this.centerX*2+m || note.y < -m || note.y > this.centerY*2+m;
       if (off) {
         if (this.shouldCollectCannon(note.value)) {
-          this.score -= 10; this.combo = 0; 
-          this.multiplier = 1;
+          this.score -= 10; this.combo = 0; this.multiplier = 1;
           this.missQueue.push(note.value);
           this.createExplosion(note.x, note.y, "#e8a06d");
         }
@@ -1030,15 +754,11 @@ _drawHUD(ctx, isLauncher, dt) {
 
     // Base
     const bg = ctx.createRadialGradient(0, 0, size*0.1, 0, 0, size*0.6);
-    bg.addColorStop(0, "#2a4a6e"); 
-    bg.addColorStop(1, "#152035");
-    ctx.beginPath(); 
-    ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+    bg.addColorStop(0, "#2a4a6e"); bg.addColorStop(1, "#152035");
+    ctx.beginPath(); ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
     ctx.fillStyle = bg;
-    ctx.shadowColor = this.C.accent; 
-    ctx.shadowBlur = 18;
-    ctx.fill(); 
-    ctx.shadowBlur = 0;
+    ctx.shadowColor = this.C.accent; ctx.shadowBlur = 18;
+    ctx.fill(); ctx.shadowBlur = 0;
 
     // Barrel
     ctx.fillStyle = "#3a6080";
@@ -1051,31 +771,23 @@ _drawHUD(ctx, isLauncher, dt) {
     ctx.lineTo(bx, by + bh);
     ctx.lineTo(bx, by + 6);
     ctx.quadraticCurveTo(bx, by, bx + 6, by);
-    ctx.closePath(); 
-    ctx.fill();
-    ctx.strokeStyle = this.C.accent; 
-    ctx.lineWidth = 1.5; 
-    ctx.stroke();
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = this.C.accent; ctx.lineWidth = 1.5; ctx.stroke();
 
     ctx.restore();
   },
 
   fireCannon() {
     if (!this.pendingShot) return;
-    const { angle, speed, value, id } = this.pendingShot;
+    const { angle, speed, value } = this.pendingShot;
     this.notes.push({
-      x: this.centerX, 
-      y: this.centerY,
-      radius: this.baseOuterRadius * 0.12, value, 
-      id: id || value,
-      vx: Math.cos(angle) * speed, 
-      vy: Math.sin(angle) * speed,
+      x: this.centerX, y: this.centerY,
+      radius: this.baseOuterRadius * 0.12, value,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
       spawnProtected: true,
     });
-    this.pendingShot = null; 
-    this.isCharging = false;
-    this.charge = 0; 
-    this.chargeParticles = [];
+    this.pendingShot = null; this.isCharging = false;
+    this.charge = 0; this.chargeParticles = [];
   },
 
   /* ============================================================
@@ -1088,11 +800,8 @@ _drawHUD(ctx, isLauncher, dt) {
     if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
     setTimeout(() => {
       this.notes.push({
-        x: this.centerX, 
-        y: this.centerY,
-        radius: this.baseOuterRadius * 0.12, 
-        value: num, 
-        id: num,
+        x: this.centerX, y: this.centerY,
+        radius: this.baseOuterRadius * 0.12, value: num,
         vx: Math.cos(angle) * this.baseOuterRadius * 0.9,
         vy: Math.sin(angle) * this.baseOuterRadius * 0.9,
         spawnProtected: true,
@@ -1117,14 +826,10 @@ _drawHUD(ctx, isLauncher, dt) {
       ctx.drawImage(img, -img.width*sc/2, -img.height*sc/2, img.width*sc, img.height*sc);
     } else {
       const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz / 2);
-      g.addColorStop(0, "#8ecae6"); 
-      g.addColorStop(0.55, "#1a3a5c"); 
-      g.addColorStop(1, "rgba(14,30,50,0)");
+      g.addColorStop(0, "#8ecae6"); g.addColorStop(0.55, "#1a3a5c"); g.addColorStop(1, "rgba(14,30,50,0)");
       ctx.fillStyle = g;
       ctx.shadowColor = this.C.accent; ctx.shadowBlur = 28;
-      ctx.beginPath(); 
-      ctx.arc(0, 0, sz / 2, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(0, 0, sz / 2, 0, Math.PI * 2); ctx.fill();
       ctx.shadowBlur = 0;
     }
     ctx.restore();
@@ -1165,9 +870,7 @@ _drawHUD(ctx, isLauncher, dt) {
         const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz/2);
         g.addColorStop(0, "#8ecae6"); g.addColorStop(1, "rgba(14,30,50,0)");
         ctx.fillStyle = g;
-        ctx.beginPath();
-        ctx.arc(0, 0, sz * 0.8, 0, Math.PI * 2 * 0.8); 
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(0, 0, sz * 0.8, 0, Math.PI * 2 * 0.8); ctx.fill();
       }
 
       // Preview glow
@@ -1182,9 +885,7 @@ _drawHUD(ctx, isLauncher, dt) {
         g2.addColorStop(0.4, "rgba(245,200,66,0.55)");
         g2.addColorStop(1, "rgba(245,200,66,0)");
         ctx.fillStyle = g2;
-        ctx.beginPath(); 
-        ctx.arc(0, offY, miniR * pulse, 0, Math.PI * 2); 
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(0, offY, miniR * pulse, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
       }
       ctx.restore();
@@ -1211,20 +912,14 @@ _drawHUD(ctx, isLauncher, dt) {
       const value = this.currentNumber++;
       if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
       this.notes.push({
-        x: this.centerX, 
-        y: this.centerY,
-        radius: this.baseOuterRadius * 0.12, value, 
-        id: value,
-        vx: Math.cos(angle) * speed, 
-        vy: Math.sin(angle) * speed,
+        x: this.centerX, y: this.centerY,
+        radius: this.baseOuterRadius * 0.12, value,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
         spawnProtected: true,
       });
     }
-    this.previewCannons = []; 
-    this.pendingShot = null;
-    this.isCharging = false; 
-    this.charge = 0; 
-    this.chargeParticles = [];
+    this.previewCannons = []; this.pendingShot = null;
+    this.isCharging = false; this.charge = 0; this.chargeParticles = [];
   },
 
   /* ============================================================
@@ -1238,18 +933,14 @@ _drawHUD(ctx, isLauncher, dt) {
   drawLauncherZone(ctx) {
     ctx.save();
     ctx.setLineDash([6, 9]);
-    ctx.strokeStyle = "rgba(140,180,220,0.18)"; 
-    ctx.lineWidth = 2;
-    ctx.beginPath(); 
-    ctx.arc(this.centerX, this.centerY, this.launcherSafeRadius, 0, Math.PI * 2);
-    ctx.stroke(); 
-    ctx.setLineDash([]);
+    ctx.strokeStyle = "rgba(140,180,220,0.18)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(this.centerX, this.centerY, this.launcherSafeRadius, 0, Math.PI * 2);
+    ctx.stroke(); ctx.setLineDash([]);
     ctx.restore();
   },
 
   startCharging() {
-    this.charge = 0; this.isCharging = true; 
-    this.chargeParticles = [];
+    this.charge = 0; this.isCharging = true; this.chargeParticles = [];
   },
 
   updateCharging(dt) {
@@ -1279,11 +970,8 @@ _drawHUD(ctx, isLauncher, dt) {
     for (const p of this.chargeParticles) {
       ctx.globalAlpha = p.life * 0.7;
       ctx.fillStyle   = this.C.gold;
-      ctx.shadowColor = this.C.gold; 
-      ctx.shadowBlur = 12;
-      ctx.beginPath(); 
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.shadowColor = this.C.gold; ctx.shadowBlur = 12;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
     // Glow
@@ -1292,8 +980,7 @@ _drawHUD(ctx, isLauncher, dt) {
     g.addColorStop(0, `rgba(245,200,66,${0.65 * this.charge})`);
     g.addColorStop(1, "rgba(245,200,66,0)");
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(this.centerX, this.centerY, gr, 0, Math.PI * 2); 
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(this.centerX, this.centerY, gr, 0, Math.PI * 2); ctx.fill();
   },
 
   /* ============================================================
@@ -1309,17 +996,12 @@ _drawHUD(ctx, isLauncher, dt) {
   drawExplosions(ctx) {
     for (let i = this.explosions.length - 1; i >= 0; i--) {
       const p = this.explosions[i];
-      p.life += 0.03; 
-      p.x += p.vx * 0.016; 
-      p.y += p.vy * 0.016;
+      p.life += 0.03; p.x += p.vx * 0.016; p.y += p.vy * 0.016;
       ctx.save();
       ctx.globalAlpha = 1 - p.life;
       ctx.fillStyle   = p.color;
-      ctx.shadowColor = p.color; 
-      ctx.shadowBlur = 10;
-      ctx.beginPath(); 
-      ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.shadowColor = p.color; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
       if (p.life >= 1) this.explosions.splice(i, 1);
     }
