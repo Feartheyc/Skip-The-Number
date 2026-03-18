@@ -51,8 +51,6 @@ const Game3 = {
     this.score = 0;
     this.running = true;
 
-    // this.createConfetti();
-
     window.addEventListener('keydown', (e) => {
       if (e.key === '1') this.setDifficulty(1);
       if (e.key === '2') this.setDifficulty(2);
@@ -79,21 +77,6 @@ const Game3 = {
     this.scale = base / 600;
     this.margin = 80 * this.scale;
   },
-
-  // createConfetti(){
-  //   const symbols = ["+", "-", "×", "÷", "<", ">", "="];
-  //   this.confetti = [];
-  //   for(let i=0;i<5;i++){
-  //     this.confetti.push({
-  //       x: Math.random()*window.innerWidth,
-  //       y: Math.random()*window.innerHeight,
-  //       symbol: symbols[Math.floor(Math.random()*symbols.length)],
-  //       size: (60 + Math.random()*40),
-  //       speed: 20 + Math.random()*10,
-  //       color: this.getBrightColor()
-  //     });
-  //   }
-  // },
 
   setDifficulty(grade) {
     this.currentGrade = grade;
@@ -170,13 +153,10 @@ const Game3 = {
   },
 
   update(ctx, landmarks, dt = 1 / 60) {
-
     const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
     if (isPaused) dt = 0;
 
     ctx.save();
-
-    // this.drawConfetti(ctx, dt); 
 
     if (this.shakeTime > 0) {
       this.shakeTime -= dt;
@@ -194,21 +174,16 @@ const Game3 = {
       ctx.restore();
     }
     else {
-
       if (!landmarks || landmarks.length < 3) {
-
         this.drawFeedback(ctx, "Show One Hand!", "orange");
-
       }
       else {
-
         const indexTip = landmarks[0];
         const thumbTip = landmarks[1];
         const wrist = landmarks[2];
 
         const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
 
-        // ⭐ Ignore hand if angle too small
         if (angle < 20) {
           this.detectedSymbol = "None";
           ctx.restore();
@@ -218,7 +193,6 @@ const Game3 = {
         this.checkPose(ctx, indexTip, thumbTip, wrist, dt);
         this.drawArmSymbol(ctx, indexTip, thumbTip, wrist);
       }
-
       ctx.restore();
     }
 
@@ -228,25 +202,7 @@ const Game3 = {
     }
   },
 
-  // drawConfetti(ctx,dt){
-  //   ctx.textAlign="center";
-  //   ctx.textBaseline="middle";
-  //   this.confetti.forEach(c=>{
-  //     c.y += c.speed * dt;
-  //     if(c.y > window.innerHeight + 50){
-  //       c.y = -50;
-  //       c.x = Math.random()*window.innerWidth;
-  //     }
-  //     ctx.globalAlpha = 0.8;
-  //     ctx.fillStyle = c.color;
-  //     ctx.font = `bold ${c.size*this.scale}px Arial`;
-  //     ctx.fillText(c.symbol, c.x, c.y);
-  //   });
-  //   ctx.globalAlpha=1;
-  // },
-
   checkPose(ctx, indexTip, thumbTip, wrist, dt) {
-
     const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
 
     if (angle < 20) {
@@ -258,7 +214,6 @@ const Game3 = {
 
     const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
 
-    // ⭐ require 50% hand inside zone
     if (overlap < 0.5) {
       this.detectedSymbol = "None";
       this.winHoldTime = Math.max(0, this.winHoldTime - dt);
@@ -282,34 +237,26 @@ const Game3 = {
     const wrongRelation = this.currentRelation === ">" ? "<" : ">";
 
     if (this.detectedSymbol === this.currentRelation) {
-
       this.winHoldTime += dt;
       this.failHoldTime = 0;
-
       this.drawProgressBar(ctx, this.winHoldTime / this.winHoldThreshold, "#00FFCC");
 
       if (this.winHoldTime >= this.winHoldThreshold) {
         this.handleSuccess();
       }
-
     }
     else if (this.detectedSymbol === wrongRelation) {
-
       this.failHoldTime += dt;
       this.winHoldTime = 0;
-
       this.drawProgressBar(ctx, this.failHoldTime / this.failHoldThreshold, "#FF0000");
 
       if (this.failHoldTime >= this.failHoldThreshold) {
         this.handleFail();
       }
-
     }
     else {
-
       this.winHoldTime = Math.max(0, this.winHoldTime - dt);
       this.failHoldTime = Math.max(0, this.failHoldTime - dt);
-
     }
   },
 
@@ -364,8 +311,14 @@ const Game3 = {
       p.y += p.vy * dt;
       p.life -= dt;
       ctx.globalAlpha = Math.max(0, p.life);
+      ctx.textAlign = "center";
+      ctx.font = `bold ${50 * this.scale}px Arial`;
+      
+      ctx.lineWidth = 6 * this.scale;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.strokeText(p.text, p.x, p.y);
+      
       ctx.fillStyle = p.color;
-      ctx.font = `bold ${40 * this.scale}px Arial`;
       ctx.fillText(p.text, p.x, p.y);
     });
     ctx.globalAlpha = 1;
@@ -373,12 +326,10 @@ const Game3 = {
   },
 
   drawArmSymbol(ctx, indexTip, thumbTip, wrist) {
-
     const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
     if (angle < 20) return;
 
     const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
-
     if (overlap < 0.5) return;
 
     ctx.lineWidth = 12 * this.scale;
@@ -387,7 +338,6 @@ const Game3 = {
     ctx.shadowBlur = 15 * this.scale;
 
     let color = "#00FFCC";
-
     if (this.detectedSymbol === ">") {
       color = "#FFFF00";
     }
@@ -405,7 +355,6 @@ const Game3 = {
     ctx.stroke();
 
     ctx.shadowBlur = 0;
-
     ctx.fillStyle = "white";
 
     [indexTip, thumbTip, wrist].forEach(point => {
@@ -415,335 +364,137 @@ const Game3 = {
     });
   },
 
-  // drawUI(ctx){
-  //   ctx.textAlign="center";
-  //   ctx.textBaseline="middle";
-
-  //   const numberSize=110*this.scale*this.popScale;
-  //   ctx.font=`bold ${numberSize}px Arial`;
-  //   ctx.globalAlpha=this.fadeAlpha;
-
-  //   const offsetX=180*this.scale;
-  //   const leftX=this.centerX-offsetX;
-  //   const rightX=this.centerX+offsetX;
-  //   const y=this.centerY;
-
-  //   ctx.lineWidth=10*this.scale;
-  //   ctx.strokeStyle="black";
-  //   ctx.strokeText(this.leftText,leftX,y);
-  //   ctx.strokeText(this.rightText,rightX,y);
-
-  //   ctx.fillStyle=this.leftColor;
-  //   ctx.fillText(this.leftText,leftX,y);
-
-  //   ctx.fillStyle=this.rightColor;
-  //   ctx.fillText(this.rightText,rightX,y);
-
-  //   ctx.globalAlpha=1;
-
-  //   ctx.font=`bold ${36*this.scale}px Arial`;
-  //   ctx.fillStyle="white";
-  //   ctx.fillText(`Score: ${this.score}`,this.centerX,60*this.scale);
-
-  //   if(this.combo>=2){
-  //     ctx.fillStyle="#FFD700";
-  //     ctx.fillText(`Combo x${this.combo}`,this.centerX,100*this.scale);
-  //   }
-
-  //   ctx.textAlign="left";
-  //   ctx.font=`bold ${32*this.scale}px Arial`;
-  //   ctx.fillStyle="#FFFFFF";
-  //   ctx.fillText(`Grade: ${this.currentGrade}`,30*this.scale,40*this.scale);
-  //   ctx.textAlign="center";
-  // },
-
-
-  //   drawUI(ctx){
-
-  //   ctx.textAlign="center";
-  //   ctx.textBaseline="middle";
-
-  //   const offsetX = 280 * this.scale;
-  //   const leftX = this.centerX - offsetX;
-  //   const rightX = this.centerX + offsetX;
-  //   const y = this.centerY;
-
-  //   const cardW = 200 * this.scale * this.popScale;
-  //   const cardH = 180 * this.scale * this.popScale;
-
-  //   ctx.globalAlpha = this.fadeAlpha;
-
-  //   const drawCard = (x, color, text) => {
-
-  //     const radius = 25 * this.scale;
-
-  //     ctx.shadowColor = "rgba(0,0,0,0.4)";
-  //     ctx.shadowBlur = 25 * this.scale;
-  //     ctx.shadowOffsetY = 10 * this.scale;
-
-  //     ctx.fillStyle = color;
-
-  //     ctx.beginPath();
-  //     ctx.moveTo(x-cardW/2+radius,y-cardH/2);
-  //     ctx.lineTo(x+cardW/2-radius,y-cardH/2);
-  //     ctx.quadraticCurveTo(x+cardW/2,y-cardH/2,x+cardW/2,y-cardH/2+radius);
-  //     ctx.lineTo(x+cardW/2,y+cardH/2-radius);
-  //     ctx.quadraticCurveTo(x+cardW/2,y+cardH/2,x+cardW/2-radius,y+cardH/2);
-  //     ctx.lineTo(x-cardW/2+radius,y+cardH/2);
-  //     ctx.quadraticCurveTo(x-cardW/2,y+cardH/2,x-cardW/2,y+cardH/2-radius);
-  //     ctx.lineTo(x-cardW/2,y-cardH/2+radius);
-  //     ctx.quadraticCurveTo(x-cardW/2,y-cardH/2,x-cardW/2+radius,y-cardH/2);
-  //     ctx.closePath();
-  //     ctx.fill();
-
-  //     ctx.shadowBlur = 0;
-
-  //     ctx.fillStyle = "white";
-  //     ctx.font = `bold ${90*this.scale*this.popScale}px Arial`;
-  //     ctx.fillText(text,x,y);
-
-  //   };
-
-  //   drawCard(leftX,this.leftColor,this.leftText);
-  //   drawCard(rightX,this.rightColor,this.rightText);
-
-  //   ctx.globalAlpha = 1;
-
-  //   // VS indicator
-  //   ctx.font = `bold ${70*this.scale}px Arial`;
-  //   ctx.fillStyle = "#FFFFFF";
-  //   ctx.fillText("?",this.centerX,this.centerY);
-
-  //   // Score
-  //   ctx.font=`bold ${36*this.scale}px Arial`;
-  //   ctx.fillText(`Score: ${this.score}`,this.centerX,60*this.scale);
-
-  //   // Combo
-  //   if(this.combo>=2){
-  //     ctx.fillStyle="#FFD700";
-  //     ctx.fillText(`Combo x${this.combo}`,this.centerX,100*this.scale);
-  //   }
-
-  //   // Grade
-  //   ctx.textAlign="left";
-  //   ctx.fillStyle="#FFFFFF";
-  //   ctx.fillText(`Grade: ${this.currentGrade}`,30*this.scale,40*this.scale);
-  //   ctx.textAlign="center";
-  // },
-
-
-
-  // drawUI(ctx){
-
-  //   ctx.textAlign="center";
-  //   ctx.textBaseline="middle";
-
-  //   const offsetX = 220 * this.scale;
-  //   const leftX = this.centerX - offsetX;
-  //   const rightX = this.centerX + offsetX;
-  //   const y = this.centerY;
-
-  //   const stageW = 600 * this.scale;
-  //   const stageH = 290 * this.scale;
-
-  //   // =========================
-  //   // BACKDROP PANEL
-  //   // =========================
-
-  //   const grad = ctx.createLinearGradient(
-  //     this.centerX,
-  //     this.centerY - stageH/2,
-  //     this.centerX,
-  //     this.centerY + stageH/2
-  //   );
-
-  //   grad.addColorStop(0,"rgba(0,0,0,0.5)");
-  //   grad.addColorStop(1,"rgba(0,0,0,0.2)");
-
-  //   ctx.fillStyle = grad;
-  //   ctx.beginPath();
-  //   ctx.roundRect(
-  //     this.centerX - stageW/2,
-  //     this.centerY - stageH/2,
-  //     stageW,
-  //     stageH,
-  //     40 * this.scale
-  //   );
-  //   ctx.fill();
-
-  //   // =========================
-  //   // SPOTLIGHT CIRCLES
-  //   // =========================
-
-  //   const drawSpot = (x,color)=>{
-
-  //     const radius = 90 * this.scale * this.popScale;
-
-  //     const g = ctx.createRadialGradient(
-  //       x,y,10,
-  //       x,y,radius
-  //     );
-
-  //     g.addColorStop(0,color);
-  //     g.addColorStop(1,"rgba(0,0,0,0)");
-
-  //     ctx.fillStyle = g;
-
-  //     ctx.beginPath();
-  //     ctx.arc(x,y,radius,0,Math.PI*2);
-  //     ctx.fill();
-  //   };
-
-  //   drawSpot(leftX,this.leftColor);
-  //   drawSpot(rightX,this.rightColor);
-
-  //   // =========================
-  //   // NUMBERS
-  //   // =========================
-
-  //   ctx.globalAlpha = this.fadeAlpha;
-
-  //   ctx.font = `bold ${100*this.scale*this.popScale}px Arial`;
-
-  //   ctx.lineWidth = 10 * this.scale;
-  //   ctx.strokeStyle = "black";
-
-  //   ctx.strokeText(this.leftText,leftX,y);
-  //   ctx.strokeText(this.rightText,rightX,y);
-
-  //   ctx.fillStyle = "white";
-  //   ctx.fillText(this.leftText,leftX,y);
-  //   ctx.fillText(this.rightText,rightX,y);
-
-  //   ctx.globalAlpha = 1;
-
-  //   // =========================
-  //   // CENTER QUESTION
-  //   // =========================
-
-  //   ctx.font = `bold ${80*this.scale}px Arial`;
-  //   ctx.fillStyle = "#FFFFFF";
-  //   ctx.fillText("?",this.centerX,this.centerY);
-
-  //   // =========================
-  //   // SCORE
-  //   // =========================
-
-  //   ctx.font=`bold ${36*this.scale}px Arial`;
-  //   ctx.fillStyle="white";
-  //   ctx.fillText(`Score: ${this.score}`,this.centerX,60*this.scale);
-
-  //   if(this.combo>=2){
-  //     ctx.fillStyle="#FFD700";
-  //     ctx.fillText(`Combo x${this.combo}`,this.centerX,100*this.scale);
-  //   }
-
-  //   // =========================
-  //   // GRADE
-  //   // =========================
-
-  //   ctx.textAlign="left";
-  //   ctx.fillStyle="#FFFFFF";
-  //   ctx.fillText(`Grade: ${this.currentGrade}`,30*this.scale,40*this.scale);
-  //   ctx.textAlign="center";
-  // },
-
-
   drawUI(ctx) {
-
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
-    const offsetX = 220 * this.scale;
+    // --- 1. Draw The Math Cards ---
+    const offsetX = 280 * this.scale;
     const leftX = this.centerX - offsetX;
     const rightX = this.centerX + offsetX;
+    const y = this.centerY;
 
-    const float = Math.sin(performance.now() * 0.002) * 8 * this.scale;
-    const y = this.centerY + float;
+    const cardW = 200 * this.scale * this.popScale;
+    const cardH = 180 * this.scale * this.popScale;
 
-    const bubbleRadius = 110 * this.scale * this.popScale;
+    ctx.globalAlpha = this.fadeAlpha;
 
-    const drawBubble = (x, color, text) => {
+    const drawCard = (x, color, text) => {
+      const radius = 25 * this.scale;
 
-      // glow
-      ctx.shadowColor = color;
-      ctx.shadowBlur = 30 * this.scale;
+      // Card Background Shadow
+      ctx.shadowColor = "rgba(0,0,0,0.4)";
+      ctx.shadowBlur = 25 * this.scale;
+      ctx.shadowOffsetY = 10 * this.scale;
 
-      const grad = ctx.createRadialGradient(
-        x - bubbleRadius * 0.3,
-        y - bubbleRadius * 0.3,
-        10,
-        x,
-        y,
-        bubbleRadius
-      );
-
-      grad.addColorStop(0, "white");
-      grad.addColorStop(0.2, color);
-      grad.addColorStop(1, "rgba(0,0,0,0.3)");
-
-      ctx.fillStyle = grad;
+      ctx.fillStyle = color;
 
       ctx.beginPath();
-      ctx.arc(x, y, bubbleRadius, 0, Math.PI * 2);
+      ctx.moveTo(x - cardW / 2 + radius, y - cardH / 2);
+      ctx.lineTo(x + cardW / 2 - radius, y - cardH / 2);
+      ctx.quadraticCurveTo(x + cardW / 2, y - cardH / 2, x + cardW / 2, y - cardH / 2 + radius);
+      ctx.lineTo(x + cardW / 2, y + cardH / 2 - radius);
+      ctx.quadraticCurveTo(x + cardW / 2, y + cardH / 2, x + cardW / 2 - radius, y + cardH / 2);
+      ctx.lineTo(x - cardW / 2 + radius, y + cardH / 2);
+      ctx.quadraticCurveTo(x - cardW / 2, y + cardH / 2, x - cardW / 2, y + cardH / 2 - radius);
+      ctx.lineTo(x - cardW / 2, y - cardH / 2 + radius);
+      ctx.quadraticCurveTo(x - cardW / 2, y - cardH / 2, x - cardW / 2 + radius, y - cardH / 2);
+      ctx.closePath();
       ctx.fill();
 
-      ctx.shadowBlur = 0;
+      // Text Shadow for the numbers
+      ctx.shadowColor = "rgba(0,0,0,0.6)";
+      ctx.shadowBlur = 8 * this.scale;
+      ctx.shadowOffsetY = 5 * this.scale;
 
-      // bubble shine
-      ctx.fillStyle = "rgba(255,255,255,0.4)";
-      ctx.beginPath();
-      ctx.arc(
-        x - bubbleRadius * 0.35,
-        y - bubbleRadius * 0.35,
-        bubbleRadius * 0.25,
-        0,
-        Math.PI * 2
-      );
-      ctx.fill();
-
-      // number
-      ctx.globalAlpha = this.fadeAlpha;
-
-      ctx.lineWidth = 8 * this.scale;
-      ctx.strokeStyle = "black";
       ctx.font = `bold ${90 * this.scale * this.popScale}px Arial`;
-
+      
+      ctx.lineWidth = 4 * this.scale;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
       ctx.strokeText(text, x, y);
+      
       ctx.fillStyle = "white";
       ctx.fillText(text, x, y);
 
-      ctx.globalAlpha = 1;
+      // Reset shadows completely so they don't leak
+      ctx.shadowBlur = 0;
+      ctx.shadowOffsetY = 0;
     };
 
-    drawBubble(leftX, this.leftColor, this.leftText);
-    drawBubble(rightX, this.rightColor, this.rightText);
+    drawCard(leftX, this.leftColor, this.leftText);
+    drawCard(rightX, this.rightColor, this.rightText);
 
-    // center symbol
+    ctx.globalAlpha = 1;
+
+    // --- 2. VS indicator ---
     ctx.font = `bold ${70 * this.scale}px Arial`;
+    
+    ctx.lineWidth = 6 * this.scale;
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
+    ctx.strokeText("?", this.centerX, this.centerY);
+    
     ctx.fillStyle = "#FFFFFF";
     ctx.fillText("?", this.centerX, this.centerY);
 
-    // score
-    ctx.font = `bold ${36 * this.scale}px Arial`;
-    ctx.fillText(`Score: ${this.score}`, this.centerX, 60 * this.scale);
+    // --- 3. UI Badges ---
+    const drawBadge = (text, centerX, centerY, bgColor, textColor) => {
+      ctx.font = `bold ${36 * this.scale}px "Comic Sans MS", "Fredoka One", Arial, sans-serif`; 
+      
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      
+      const textWidth = ctx.measureText(text).width;
+      const paddingX = 25 * this.scale;
+      
+      const pillWidth = textWidth + (paddingX * 2);
+      const pillHeight = 56 * this.scale; 
+      const radius = 20 * this.scale;
 
+      ctx.fillStyle = bgColor;
+      ctx.beginPath();
+      if (ctx.roundRect) {
+        ctx.roundRect(centerX - (pillWidth / 2), centerY - (pillHeight / 2), pillWidth, pillHeight, radius);
+      } else {
+         ctx.fillRect(centerX - (pillWidth / 2), centerY - (pillHeight / 2), pillWidth, pillHeight);
+      }
+      ctx.fill();
+
+      const textDrawY = centerY + (2 * this.scale);
+      
+      ctx.lineWidth = 6 * this.scale;
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
+      ctx.lineJoin = "round";
+      ctx.strokeText(text, centerX, textDrawY);
+
+      ctx.fillStyle = textColor;
+      ctx.fillText(text, centerX, textDrawY);
+    };
+
+    drawBadge(`Grade: ${this.currentGrade}`, 120 * this.scale, 60 * this.scale, "rgba(0, 0, 0, 0.5)", "#00FFCC");
+    drawBadge(`Score: ${this.score}`, this.centerX, 60 * this.scale, "rgba(0, 0, 0, 0.5)", "#FFD700");
+
+    // --- 4. Combo Text ---
     if (this.combo >= 2) {
-      ctx.fillStyle = "#FFD700";
-      ctx.fillText(`Combo x${this.combo}`, this.centerX, 100 * this.scale);
+      ctx.textAlign = "center";
+      ctx.font = `bold ${28 * this.scale}px Arial`;
+      ctx.lineWidth = 4 * this.scale;
+      ctx.strokeStyle = "#000000";
+      ctx.strokeText(`Combo x${this.combo}`, this.centerX, 120 * this.scale);
+      
+      ctx.fillStyle = "#FF6600";
+      ctx.fillText(`Combo x${this.combo}`, this.centerX, 120 * this.scale);
     }
-
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillText(`Grade: ${this.currentGrade}`, 30 * this.scale, 40 * this.scale);
-    ctx.textAlign = "center";
   },
 
-
-
   drawFeedback(ctx, text, color) {
-    ctx.fillStyle = color;
+    ctx.textAlign = "center";
     ctx.font = `bold ${30 * this.scale}px Arial`;
+    
+    ctx.lineWidth = 5 * this.scale;
+    ctx.strokeStyle = "rgba(0,0,0,0.8)";
+    ctx.strokeText(text, this.centerX, this.centerY + 150 * this.scale);
+    
+    ctx.fillStyle = color;
     ctx.fillText(text, this.centerX, this.centerY + 150 * this.scale);
   },
 
@@ -759,12 +510,10 @@ const Game3 = {
     ctx.fillRect(this.centerX - width / 2, this.centerY + 70 * this.scale, width * Math.min(1, percentage), height);
   },
 
-  // ⭐ ADDITIVE LOGIC: 100% Native MediaPipe Integration Below Here ⭐
   lastTime: 0,
   gameCtx: null,
 
   startDetection() {
-
     if (this.cameraStarted) return;
     this.cameraStarted = true;
 
@@ -795,7 +544,6 @@ const Game3 = {
       height: 720
     });
 
-    // ⭐ 2-line permanent startup flicker fix
     video.style.opacity = "0";
     video.onplaying = () => video.style.opacity = "1";
 
@@ -803,14 +551,13 @@ const Game3 = {
   },
 
   processHandResults(results) {
-
     const canvas = document.getElementById("game_canvas");
     const rect = canvas.getBoundingClientRect();
 
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
       window.fingerPositions = [];
       this.prevPoints = null;
-      this.skipFrame = true; // reset jitter filter
+      this.skipFrame = true;
       return;
     }
 
@@ -819,7 +566,6 @@ const Game3 = {
     const width = rect.width;
     const height = rect.height;
 
-    // mirrored camera
     const rawIndexX = (1 - hand[8].x) * width;
     const rawIndexY = hand[8].y * height;
 
@@ -829,7 +575,6 @@ const Game3 = {
     const rawWristX = (1 - hand[0].x) * width;
     const rawWristY = hand[0].y * height;
 
-    // ⭐ ignore first detection frame (removes jitter)
     if (this.skipFrame) {
       this.skipFrame = false;
       return;
@@ -838,7 +583,6 @@ const Game3 = {
     this.prevPoints = this.prevPoints || {};
 
     const smoothPoint = (name, x, y) => {
-
       const prev = this.prevPoints[name];
 
       if (!prev) {
@@ -871,7 +615,6 @@ const Game3 = {
   },
 
   calculateWristAngle(indexTip, thumbTip, wrist) {
-
     const v1x = indexTip.x - wrist.x;
     const v1y = indexTip.y - wrist.y;
 
@@ -892,9 +635,7 @@ const Game3 = {
   },
 
   getHandOverlapRatio(indexTip, thumbTip, wrist) {
-
     const margin = 60 * this.scale;
-
     const offsetX = 180 * this.scale;
 
     const zoneLeft = this.centerX - offsetX;
