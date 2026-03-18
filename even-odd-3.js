@@ -29,7 +29,12 @@ const Game8 = {
   floaters: [],
 
   spawnTimer: 0,
-  lastTime: 0,
+  spawnRate: 2000,
+  minSpawnRate: 800,
+  maxSpawnRate: 3000,
+  spawnMode: "top-bottom", // "top-bottom", "left-right", "all", "random-one"
+  modeTimer: 0,
+  lastTime: performance.now(),
   shakeTimer: 0,
 
   pivotLockTimer: { left: 0, right: 0 },
@@ -68,6 +73,9 @@ const Game8 = {
     this.particles = [];
     this.floaters = [];
     this.spawnTimer = 0;
+    this.spawnRate = 2000;
+    this.spawnMode = "top-bottom";
+    this.modeTimer = 0;
     this.lastTime = performance.now();
     this.gameStarted = false;
 
@@ -226,9 +234,18 @@ const Game8 = {
 
   handleSpawning(dt) {
     this.spawnTimer += dt;
-    const spawnRate = 2000;
+    this.modeTimer += dt;
 
-    if (this.spawnTimer > spawnRate && this.balls.length < this.MAX_BALLS) {
+    // Rotate spawn mode every 12 seconds
+    if (this.modeTimer > 12000) {
+      const allModes = ["top-bottom", "left-right", "all", "random-one"];
+      const otherModes = allModes.filter(m => m !== this.spawnMode);
+      this.spawnMode = otherModes[Math.floor(Math.random() * otherModes.length)];
+      this.modeTimer = 0;
+      this.spawnFloatingText(this.CENTER_X, this.CENTER_Y - 150 * this.scale, `Spawn Mode: ${this.spawnMode.toUpperCase()}`, "white", 0, -1);
+    }
+
+    if (this.spawnTimer > this.spawnRate && this.balls.length < this.MAX_BALLS) {
       this.spawnBall();
       this.spawnTimer = 0;
     }
@@ -237,27 +254,42 @@ const Game8 = {
   spawnBall() {
     const number = Math.floor(Math.random() * 100) + 1;
     const isOdd = number % 2 !== 0;
-    const side = Math.floor(Math.random() * 2); // 0 = top, 1 = bottom
-    const speed = 1.5 * this.scale;
+    const speed = (1.5 + (2000 - this.spawnRate) / 2000) * this.scale;
 
+    let sides = [];
+    if (this.spawnMode === "top-bottom") sides = [0, 1];
+    else if (this.spawnMode === "left-right") sides = [2, 3];
+    else if (this.spawnMode === "all") sides = [0, 1, 2, 3];
+    else if (this.spawnMode === "random-one") {
+      if (!this._lastRandomSide) this._lastRandomSide = Math.floor(Math.random() * 4);
+      sides = [this._lastRandomSide];
+      if (Math.random() < 0.1) this._lastRandomSide = Math.floor(Math.random() * 4);
+    }
+
+    const side = sides[Math.floor(Math.random() * sides.length)];
     let x, y, vx, vy;
-
-    // spawn slightly outside screen
     const outsideOffset = this.ballRadius * 2;
 
-    // TOP → enter from above screen
-    if (side === 0) {
+    if (side === 0) { // TOP
       x = this.CENTER_X;
-      y = -outsideOffset;                 // 👈 above canvas
+      y = -outsideOffset;
       vx = 0;
       vy = speed;
-    }
-    // BOTTOM → enter from below screen
-    else {
+    } else if (side === 1) { // BOTTOM
       x = this.CENTER_X;
-      y = this.cssHeight + outsideOffset; // 👈 below canvas (CSS units)
+      y = this.cssHeight + outsideOffset;
       vx = 0;
       vy = -speed;
+    } else if (side === 2) { // LEFT
+      x = -outsideOffset;
+      y = this.CENTER_Y;
+      vx = speed;
+      vy = 0;
+    } else if (side === 3) { // RIGHT
+      x = this.cssWidth + outsideOffset;
+      y = this.CENTER_Y;
+      vx = -speed;
+      vy = 0;
     }
 
     this.balls.push({
@@ -284,7 +316,7 @@ const Game8 = {
       b.y += b.vy * dt;
 
       b.trail.push({ x: b.x, y: b.y });
-      if (b.trail.length > 8) b.trail.shift();
+      if (b.trail.length > 9) b.trail.shift();
 
       if (b.hitCooldown > 0) b.hitCooldown -= dt;
 
@@ -384,6 +416,7 @@ const Game8 = {
     const e = this.edgeSize;
     const gap = this.lineGap;
     const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
 
     // FIX: Thin the collision detection (Require ball to go 50% into the zone)
     const triggerEdge = e * 0.5;
@@ -394,31 +427,45 @@ const Game8 = {
 
       let scoreType = null;
 
-      // LEFT ZONE (Red)
+      // LEFT SIDE (Top: Red/Even, Bottom: Blue/Odd)
       if (b.x < cx - gap) {
-        if (b.y < triggerEdge || b.y > h - triggerEdge || b.x < triggerEdge) {
-          if (!b.isOdd) scoreType = "good";
-          else scoreType = "bad";
+        if ((b.y < triggerEdge && b.vy < 0) || (b.y > h - triggerEdge && b.vy > 0) || (b.x < triggerEdge && b.vx < 0)) {
+          const isBottom = b.y > cy;
+          if (!isBottom) { // Top part (Red)
+            scoreType = !b.isOdd ? "good" : "bad";
+          } else { // Bottom part (Blue)
+            scoreType = b.isOdd ? "good" : "bad";
+          }
         }
       }
-      // RIGHT ZONE (Blue)
+      // RIGHT SIDE (Top: Blue/Odd, Bottom: Red/Even)
       else if (b.x > cx + gap) {
-        if (b.y < triggerEdge || b.y > h - triggerEdge || b.x > w - triggerEdge) {
-          if (b.isOdd) scoreType = "good";
-          else scoreType = "bad";
+        if ((b.y < triggerEdge && b.vy < 0) || (b.y > h - triggerEdge && b.vy > 0) || (b.x > w - triggerEdge && b.vx > 0)) {
+          const isBottom = b.y > cy;
+          if (!isBottom) { // Top part (Blue)
+            scoreType = b.isOdd ? "good" : "bad";
+          } else { // Bottom part (Red)
+            scoreType = !b.isOdd ? "good" : "bad";
+          }
         }
       }
 
       if (scoreType) {
+        const dx = this.CENTER_X - b.x;
+        const dy = this.CENTER_Y - b.y;
+        const dist = Math.hypot(dx, dy) || 1;
+        const nx = dx / dist;
+        const ny = dy / dist;
+
         if (scoreType === "good") {
-          this.updateScore(10, true); // +10, Good
-          this.spawnFloatingText(b.x, b.y, "+10", "#00FF00");
-          this.spawnExplosion(b.x, b.y, "#00FF00", 15);
+          this.updateScore(10, true);
+          this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", nx * 4, ny * 4);
+          this.spawnExplosion(b.x, b.y, "#00FF00", 15, nx * 3, ny * 3);
         } else {
-          this.updateScore(-5, false); // -5, Bad
-          this.spawnFloatingText(b.x, b.y, "-5", "#FF0000");
-          this.spawnExplosion(b.x, b.y, "#FF0000", 10);
-          this.shakeTimer = 15;
+          this.updateScore(-5, false);
+          this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", nx * 4, ny * 4);
+          this.spawnExplosion(b.x, b.y, "#FF0000", 10, nx * 3, ny * 3);
+          this.shakeTimer = 25;
         }
         this.balls.splice(i, 1);
       }
@@ -428,8 +475,15 @@ const Game8 = {
   // --- SCORE ANIMATION TRIGGER ---
   updateScore(amount, isGood) {
     this.score += amount;
-    this.scoreScale = 2.0; // Jump scale to 2x
-    this.scoreColor = isGood ? "#00FF00" : "#FF0000"; // Set color
+    this.scoreScale = 2.0;
+    this.scoreColor = isGood ? "#00FF00" : "#FF0000";
+
+    // Difficulty scaling
+    if (isGood) {
+      this.spawnRate = Math.max(this.minSpawnRate, this.spawnRate - 100);
+    } else {
+      this.spawnRate = Math.min(this.maxSpawnRate, this.spawnRate + 200);
+    }
   },
 
   checkPivotLock(dt) {
@@ -462,22 +516,22 @@ const Game8 = {
   /* ==============================
      VISUAL EFFECTS
   ============================= */
-  spawnExplosion(x, y, color, count) {
+  spawnExplosion(x, y, color, count, biasX = 0, biasY = 0) {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 5 + 2;
       this.particles.push({
         x, y,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
+        vx: Math.cos(angle) * speed + biasX,
+        vy: Math.sin(angle) * speed + biasY,
         life: 1.0,
         color: color
       });
     }
   },
 
-  spawnFloatingText(x, y, text, color) {
-    this.floaters.push({ x, y, text, color, life: 1.0, dy: -2 });
+  spawnFloatingText(x, y, text, color, dx = 0, dy = -2) {
+    this.floaters.push({ x, y, text, color, life: 1.0, dx, dy });
   },
 
   updateParticles() {
@@ -492,6 +546,7 @@ const Game8 = {
   updateFloaters() {
     for (let i = this.floaters.length - 1; i >= 0; i--) {
       let f = this.floaters[i];
+      f.x += f.dx || 0;
       f.y += f.dy;
       f.life -= 0.02;
       if (f.life <= 0) this.floaters.splice(i, 1);
@@ -524,23 +579,21 @@ const Game8 = {
     ctx.globalAlpha = 0.85;
     ctx.shadowBlur = 20;
 
-    // LEFT FULL (Red)
-    ctx.fillStyle = "rgba(255, 40, 40, 0.6)";
+    // TOP LEFT & BOTTOM RIGHT (Red - Even)
+    ctx.fillStyle = "rgba(255, 0, 0, 0.6)";
     ctx.shadowColor = "red";
-    ctx.fillRect(0, 0, e, cy);           // left upper vertical
-    ctx.fillRect(0, cy, e, h); // left lower vertical
-    ctx.fillRect(0, 0, cx - gap, e);                 // top strip
-    ctx.fillRect(0, h - e, cx - gap, e);
+    ctx.fillRect(0, 0, e, cy - gap);                  // left upper vertical
+    ctx.fillRect(0, 0, cx - gap, e);                 // top left strip
+    ctx.fillRect(w - e, cy + gap, e, h - (cy + gap)); // right lower vertical
+    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e); // bottom right strip
 
-    // RIGHT FULL (Blue)
-    ctx.fillStyle = "rgba(40, 120, 255, 0.6)";
-    ctx.shadowColor = "blue";
-
-    ctx.fillRect(w - e, 0, e, cy);           // right upper vertical
-    ctx.fillRect(w - e, cy, e, h);           // right lower vertical
-
-    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);       // top strip with gap
-    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);   // bottom strip with gap
+    // BOTTOM LEFT & TOP RIGHT (Blue - Odd)
+    ctx.fillStyle = "rgba(0, 255, 255, 0.6)";
+    ctx.shadowColor = "cyan";
+    ctx.fillRect(0, cy + gap, e, h - (cy + gap));     // left lower vertical
+    ctx.fillRect(0, h - e, cx - gap, e);             // bottom left strip
+    ctx.fillRect(w - e, 0, e, cy - gap);             // right upper vertical
+    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);    // top right strip
 
 
     ctx.shadowBlur = 0;
@@ -551,27 +604,41 @@ const Game8 = {
     ctx.strokeStyle = "rgba(255,255,255,0.2)";
     ctx.lineWidth = 2 * this.scale;
     const gap = this.lineGap;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
+    const w = this.cssWidth;
+    const h = this.cssHeight;
+    const insetV = 200 * this.scale;
+    const insetH = 600 * this.scale;
 
-    ctx.beginPath(); ctx.moveTo(this.CENTER_X - gap, 0); ctx.lineTo(this.CENTER_X - gap, this.cssHeight); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(this.CENTER_X + gap, 0); ctx.lineTo(this.CENTER_X + gap, this.cssHeight); ctx.stroke();
-    const ch = this.cssHeight;
-    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y - gap); ctx.lineTo(this.cssWidth, this.CENTER_Y - gap); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0, this.CENTER_Y + gap); ctx.lineTo(this.cssWidth, this.CENTER_Y + gap); ctx.stroke();
+    ctx.beginPath();
+    // Vertical lines (top and bottom segments)
+    ctx.moveTo(cx - gap, 0); ctx.lineTo(cx - gap, cy - insetV);
+    ctx.moveTo(cx - gap, cy + insetV); ctx.lineTo(cx - gap, h);
+    ctx.moveTo(cx + gap, 0); ctx.lineTo(cx + gap, cy - insetV);
+    ctx.moveTo(cx + gap, cy + insetV); ctx.lineTo(cx + gap, h);
+
+    // Horizontal lines (left and right segments)
+    ctx.moveTo(0, cy - gap); ctx.lineTo(cx - insetH, cy - gap);
+    ctx.moveTo(cx + insetH, cy - gap); ctx.lineTo(w, cy - gap);
+    ctx.moveTo(0, cy + gap); ctx.lineTo(cx - insetH, cy + gap);
+    ctx.moveTo(cx + insetH, cy + gap); ctx.lineTo(w, cy + gap);
+    ctx.stroke();
   },
 
   drawBalls(ctx) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `bold ${30 * this.scale}px Arial`;
+    ctx.font = `bold ${30 * this.scale}px Orbitron`;
 
     for (let b of this.balls) {
       // Trail
       if (b.trail.length > 1) {
         ctx.beginPath();
         ctx.strokeStyle = b.color;
-        ctx.lineWidth = this.ballRadius * 1.2;
+        ctx.lineWidth = this.ballRadius * 1.5; // Increased from 1.2
         ctx.lineCap = "round";
-        ctx.globalAlpha = 0.3;
+        ctx.globalAlpha = 0.25; // Slightly lower alpha for longer trail
         ctx.moveTo(b.trail[0].x, b.trail[0].y);
         for (let t of b.trail) ctx.lineTo(t.x, t.y);
         ctx.stroke();
@@ -672,7 +739,7 @@ const Game8 = {
   },
 
   drawFloaters(ctx) {
-    ctx.font = `bold ${24 * this.scale}px Arial`;
+    ctx.font = `bold ${24 * this.scale}px Orbitron`;
     ctx.textAlign = "center";
     for (let f of this.floaters) {
       ctx.globalAlpha = f.life;
@@ -685,7 +752,7 @@ const Game8 = {
   drawUI(ctx) {
     if (!this.gameStarted) {
       ctx.fillStyle = "white";
-      ctx.font = `bold ${30 * this.scale}px Arial`;
+      ctx.font = `bold ${30 * this.scale}px Orbitron`;
       ctx.textAlign = "center";
       ctx.shadowBlur = 10 * this.scale;
       ctx.shadowColor = "black";
@@ -699,24 +766,35 @@ const Game8 = {
 
     // ===== SCORE =====
     ctx.textAlign = "center";
-    const fontSize = 24 * this.scoreScale * this.scale;
-    ctx.font = `bold ${fontSize}px Arial`;
+    const fontSize = 20 * this.scoreScale * this.scale;
+    ctx.font = `bold ${fontSize}px Orbitron`;
     ctx.fillStyle = this.scoreColor;
-    ctx.fillText(this.score, this.CENTER_X, 40 * this.scale);
+    ctx.fillText(this.score, this.CENTER_X, 100 * this.scale);
 
     // ===== LEGEND (Responsive Positions) =====
     const w = this.cssWidth;
 
-    ctx.font = `bold ${32 * this.scale}px Arial`;
+    ctx.font = `bold ${36 * this.scale}px Orbitron`;
     ctx.textAlign = "center";
 
     // Left = 25% of screen width
-    ctx.fillStyle = "#FF4444";
-    ctx.fillText("Even (Red)", w * 0.25, 100 * this.scale);
+    ctx.fillStyle = "#FF0000";
+    ctx.fillText("Even", w * 0.07, 85 * this.scale); // Top Left
 
     // Right = 75% of screen width
     ctx.fillStyle = "#00FFFF";
-    ctx.fillText("Odd (Blue)", w * 0.75, 100 * this.scale);
+    ctx.fillText("Odd", w * 0.93, 85 * this.scale); // Top Right
+
+    // --- BOTTOM LEGEND ---
+    const bh = this.cssHeight - 65 * this.scale;
+
+    // Bottom Left (Blue/Odd)
+    ctx.fillStyle = "#00FFFF";
+    ctx.fillText("Odd", w * 0.065, bh);
+
+    // Bottom Right (Red/Even)
+    ctx.fillStyle = "#FF0000";
+    ctx.fillText("Even", w * 0.92, bh);
   },
 
   pointToLineDistance(px, py, x1, y1, x2, y2) {
