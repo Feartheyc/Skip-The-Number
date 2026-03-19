@@ -937,7 +937,102 @@ const Game1 = {
     ctx.restore();
   }
 },
+// drawPopEffects(ctx) {
+//   for (let i = this.popEffects.length - 1; i >= 0; i--) {
+//     const p = this.popEffects[i];
 
+//     // init particles once
+//     if (!p.particles) {
+//       p.particles = [];
+//       for (let k = 0; k < 8; k++) {
+//         const a = Math.random() * Math.PI * 2;
+//         const v = 80 + Math.random() * 120;
+//         p.particles.push({
+//           x: p.x,
+//           y: p.y,
+//           vx: Math.cos(a) * v,
+//           vy: Math.sin(a) * v,
+//           life: 1
+//         });
+//       }
+//     }
+
+//     // update life
+//     p.life += 0.03;
+
+//     // remove before drawing
+//     if (p.life >= 1) {
+//       this.popEffects.splice(i, 1);
+//       continue;
+//     }
+
+//     const t = p.life;
+
+//     // smooth fade
+//     const alpha = Math.pow(1 - t, 2);
+
+//     ctx.save();
+//     ctx.globalAlpha = alpha;
+
+//     /* ==============================
+//        1. CORE GLOW
+//     ============================== */
+//     const coreScale = 1 + t * 0.6;
+//     const coreRadius = 28 * coreScale;
+
+//     const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, coreRadius);
+//     coreGrad.addColorStop(0, p.color);
+//     coreGrad.addColorStop(0.4, p.color);
+//     coreGrad.addColorStop(1, "rgba(0,0,0,0)");
+
+//     ctx.translate(p.x, p.y);
+//     ctx.fillStyle = coreGrad;
+//     ctx.beginPath();
+//     ctx.arc(0, 0, coreRadius, 0, Math.PI * 2);
+//     ctx.fill();
+
+//     /* ==============================
+//        2. SHOCKWAVE RING
+//     ============================== */
+//     const ringRadius = 20 + t * 50;
+
+//     ctx.beginPath();
+//     ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
+//     ctx.strokeStyle = p.color;
+//     ctx.lineWidth = 4 * (1 - t);
+//     ctx.globalAlpha = alpha * 0.8;
+//     ctx.stroke();
+
+//     /* ==============================
+//        3. SPARK PARTICLES
+//     ============================== */
+//     for (let j = p.particles.length - 1; j >= 0; j--) {
+//       const sp = p.particles[j];
+
+//       sp.x += sp.vx * 0.016;
+//       sp.y += sp.vy * 0.016;
+//       sp.vx *= 0.92;
+//       sp.vy *= 0.92;
+//       sp.life -= 0.04;
+
+//       if (sp.life <= 0) {
+//         p.particles.splice(j, 1);
+//         continue;
+//       }
+
+//       ctx.globalAlpha = sp.life * alpha;
+//       ctx.fillStyle = p.color;
+//       ctx.shadowColor = p.color;
+//       ctx.shadowBlur = 8;
+
+//       ctx.beginPath();
+//       ctx.arc(sp.x - p.x, sp.y - p.y, 4, 0, Math.PI * 2);
+//       ctx.fill();
+//     }
+
+//     ctx.restore();
+//   }
+// },
 
   /* ============================================================
      HIT TEXT
