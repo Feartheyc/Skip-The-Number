@@ -899,19 +899,44 @@ const Game1 = {
      POP EFFECTS
   ============================================================ */
   drawPopEffects(ctx) {
-    for (let i = this.popEffects.length - 1; i >= 0; i--) {
-      const p = this.popEffects[i];
-      p.life += 0.025;
-      const ease = 1 - Math.pow(1 - p.life, 2);
-      const scale = 1 + ease * 0.5;
-      ctx.save(); ctx.globalAlpha = 1 - ease;
-      ctx.translate(p.x, p.y); ctx.scale(scale, scale);
-      ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 16;
-      ctx.beginPath(); ctx.arc(0, 0, 32, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-      if (p.life >= 1) this.popEffects.splice(i, 1);
+  for (let i = this.popEffects.length - 1; i >= 0; i--) {
+    const p = this.popEffects[i];
+
+    // update life
+    p.life += 0.025;
+
+    // 🔥 remove BEFORE drawing (prevents flicker)
+    if (p.life >= 1) {
+      this.popEffects.splice(i, 1);
+      continue;
     }
-  },
+
+    // smooth easing
+    const ease = 1 - Math.pow(1 - p.life, 2);
+
+    // 🔥 safe alpha (no negative flicker)
+    const alpha = Math.max(0, 1 - ease);
+
+    // scale animation
+    const scale = 1 + ease * 0.5;
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    ctx.translate(p.x, p.y);
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 16;
+
+    ctx.beginPath();
+    ctx.arc(0, 0, 32, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+},
 
 
   /* ============================================================
@@ -1144,7 +1169,7 @@ const Game1 = {
 
   fireTriple() {
     if (!this.pendingShot) return;
-    const pool = [1,1,2,2,2,2,2,3];
+    const pool = [1,1,1,1,1,1,2,2,2,2,2,2,2,3,3];
     const fc   = pool[Math.floor(Math.random() * pool.length)];
     this.previewCannons = [];
     while (this.previewCannons.length < fc) {
@@ -1154,25 +1179,60 @@ const Game1 = {
     this.previewTimer = this.previewDuration;
   },
 
-  executeTripleShot() {
-    if (!this.pendingShot) return;
-    const speed = this.pendingShot.speed;
-    for (const i of this.previewCannons) {
+  // executeTripleShot() {
+  //   if (!this.pendingShot) return;
+  //   const speed = this.pendingShot.speed;
+  //   for (const i of this.previewCannons) {
+  //     const angle = this.tripleBaseAngle + this.tripleCannons[i].offset - Math.PI / 2;
+  //     const value = this.currentNumber++;
+  //     if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
+  //     this.notes.push({
+  //       x: this.centerX, y: this.centerY,
+  //       radius: this.baseOuterRadius * 0.12, value, id: value,
+  //       vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+  //       spawnProtected: true,
+  //     });
+  //   }
+  //   this.previewCannons = []; this.pendingShot = null;
+  //   this.isCharging = false; this.charge = 0; this.chargeParticles = [];
+  // },
+
+executeTripleShot() {
+  if (!this.pendingShot) return;
+
+  const speed = this.pendingShot.speed;
+  const delayBetweenShots = 180; // 🔥 KEY: spacing (ms)
+
+  this.previewCannons.forEach((i, index) => {
+    setTimeout(() => {
       const angle = this.tripleBaseAngle + this.tripleCannons[i].offset - Math.PI / 2;
+
       const value = this.currentNumber++;
       if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
+
       this.notes.push({
-        x: this.centerX, y: this.centerY,
-        radius: this.baseOuterRadius * 0.12, value, id: value,
-        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        x: this.centerX,
+        y: this.centerY,
+        radius: this.baseOuterRadius * 0.12,
+        value,
+        id: value,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
         spawnProtected: true,
       });
-    }
-    this.previewCannons = []; this.pendingShot = null;
-    this.isCharging = false; this.charge = 0; this.chargeParticles = [];
-  },
 
+    }, index * delayBetweenShots); // ⬅️ staggered timing
+  });
 
+  // reset AFTER last shot
+  setTimeout(() => {
+    this.previewCannons = [];
+    this.pendingShot = null;
+    this.isCharging = false;
+    this.charge = 0;
+    this.chargeParticles = [];
+  }, this.previewCannons.length * delayBetweenShots);
+},
   /* ============================================================
      LAUNCHER SHARED
   ============================================================ */
@@ -1239,16 +1299,38 @@ const Game1 = {
   },
 
   drawExplosions(ctx) {
-    for (let i = this.explosions.length - 1; i >= 0; i--) {
-      const p = this.explosions[i];
-      p.life += 0.03; p.x += p.vx * 0.016; p.y += p.vy * 0.016;
-      ctx.save(); ctx.globalAlpha = 1 - p.life;
-      ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 10;
-      ctx.beginPath(); ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2); ctx.fill();
-      ctx.restore();
-      if (p.life >= 1) this.explosions.splice(i, 1);
+  for (let i = this.explosions.length - 1; i >= 0; i--) {
+    const p = this.explosions[i];
+
+    // update
+    p.life += 0.03;
+
+    // 🔥 FIX 1: remove EARLY before drawing
+    if (p.life >= 1) {
+      this.explosions.splice(i, 1);
+      continue;
     }
-  },
+
+    p.x += p.vx * 0.016;
+    p.y += p.vy * 0.016;
+
+    // 🔥 FIX 2: clamp alpha
+    const alpha = Math.max(0, 1 - p.life);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+
+    ctx.fillStyle = p.color;
+    ctx.shadowColor = p.color;
+    ctx.shadowBlur = 10;
+
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  }
+},
 
 
   /* ============================================================
