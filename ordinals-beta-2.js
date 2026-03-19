@@ -1141,6 +1141,20 @@ const Game11 = {
       size,
       size
     );
+
+    /* Suffix label (match ordinal2.js style) */
+    ctx.save();
+    ctx.translate(this.mascot.x, this.mascot.y);
+    ctx.shadowColor = this.T.accentGlow;
+    ctx.shadowBlur = 20 * this.scale;
+    ctx.fillStyle = "#ffffff";
+    // Scale font size with lifeRatio
+    const fontSize = Math.round(62 * this.scale * lifeRatio);
+    ctx.font = `bold ${fontSize}px 'Comic Sans MS', cursive`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
+    ctx.restore();
   },
 
 
@@ -1273,7 +1287,7 @@ const Game11 = {
 
     ctx.save();
 
-    const text = `You Are Galaxy ${this.mode1TargetSuffix.toUpperCase()}! Collect Matching Numbers`;
+    const text = `Show Fingers to Choose Ordinals Suffix`;
     ctx.font = `bold ${34 * this.scale}px Comic Sans MS`;
     const textWidth = ctx.measureText(text).width;
 
