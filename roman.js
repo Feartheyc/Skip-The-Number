@@ -44,7 +44,7 @@ const Game5 = {
     this.currentLevel = 0;
     this.mode = "TRACE"; 
     this.isMenuOpen = false;
-    this.unlockedUntilIndex = 9; // Reset unlocks on fresh load
+    this.unlockedUntilIndex = 100; // Reset unlocks on fresh load
     
     const existingMenu = document.getElementById("game5-level-menu");
     if (existingMenu) existingMenu.style.display = "none";
@@ -826,15 +826,45 @@ const Game5 = {
 
   buildStrokesFromRoman(roman) {
     const chars = roman.split(""), strokes = [];
-    const spacing = 0.15, startX = 0.5 - (chars.length - 1) * spacing / 2;
+    const spacing = 0.3, startX = 0.5 - (chars.length - 1) * spacing / 2;
+    
     chars.forEach((ch, index) => {
       const offset = startX + index * spacing;
-      if (ch === "I") strokes.push({ x1: offset, y1: 0.2, x2: offset, y2: 0.8 });
-      if (ch === "V") strokes.push({ x1: offset - 0.05, y1: 0.2, x2: offset, y2: 0.8 }, { x1: offset, y1: 0.8, x2: offset + 0.05, y2: 0.2 });
-      if (ch === "X") strokes.push({ x1: offset - 0.05, y1: 0.2, x2: offset + 0.05, y2: 0.8 }, { x1: offset + 0.05, y1: 0.2, x2: offset - 0.05, y2: 0.8 });
-      if (ch === "L") strokes.push({ x1: offset - 0.05, y1: 0.2, x2: offset - 0.05, y2: 0.8 }, { x1: offset - 0.05, y1: 0.8, x2: offset + 0.05, y2: 0.8 });
-      if (ch === "C") strokes.push({ x1: offset + 0.05, y1: 0.2, x2: offset - 0.05, y2: 0.5 }, { x1: offset - 0.05, y1: 0.5, x2: offset + 0.05, y2: 0.8 });
+      
+      if (ch === "I") {
+          strokes.push({ x1: offset, y1: 0.2, x2: offset, y2: 0.8 });
+      }
+      if (ch === "V") {
+          // Perfectly symmetrical V
+          strokes.push(
+              { x1: offset - 0.15, y1: 0.2, x2: offset, y2: 0.8 }, 
+              { x1: offset, y1: 0.8, x2: offset + 0.15, y2: 0.2 }
+          );
+      }
+      if (ch === "X") {
+          // Perfectly symmetrical X
+          strokes.push(
+              { x1: offset - 0.15, y1: 0.2, x2: offset + 0.15, y2: 0.8 }, 
+              { x1: offset + 0.15, y1: 0.2, x2: offset - 0.15, y2: 0.8 }
+          );
+      }
+      if (ch === "L") {
+          // Shifted slightly left, shortened horizontal line to avoid overlap
+          strokes.push(
+              { x1: offset - 0.1, y1: 0.2, x2: offset - 0.1, y2: 0.8 }, 
+              { x1: offset - 0.1, y1: 0.8, x2: offset + 0.15, y2: 0.8 }
+          );
+      }
+      if (ch === "C") {
+          // 3-segment "chiseled" block C for a classic look and better tracing
+          strokes.push(
+              { x1: offset + 0.15, y1: 0.2, x2: offset - 0.1, y2: 0.2 }, // Top lip
+              { x1: offset - 0.1, y1: 0.2, x2: offset - 0.1, y2: 0.8 },  // Vertical Spine
+              { x1: offset - 0.1, y1: 0.8, x2: offset + 0.15, y2: 0.8 }  // Bottom lip
+          );
+      }
     });
+    
     return strokes;
   },
 
