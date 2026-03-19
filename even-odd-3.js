@@ -267,33 +267,39 @@ const Game8 = {
     }
 
     const side = sides[Math.floor(Math.random() * sides.length)];
-    let x, y, vx, vy;
+    let x, y, tx, ty;
     const outsideOffset = this.ballRadius * 2;
+    const farBoundary = 2000 * this.scale;
 
     if (side === 0) { // TOP
       x = this.CENTER_X;
       y = -outsideOffset;
-      vx = 0;
-      vy = speed;
+      tx = x;
+      ty = this.cssHeight + farBoundary;
     } else if (side === 1) { // BOTTOM
       x = this.CENTER_X;
       y = this.cssHeight + outsideOffset;
-      vx = 0;
-      vy = -speed;
+      tx = x;
+      ty = -farBoundary;
     } else if (side === 2) { // LEFT
       x = -outsideOffset;
       y = this.CENTER_Y;
-      vx = speed;
-      vy = 0;
+      tx = this.cssWidth + farBoundary;
+      ty = y;
     } else if (side === 3) { // RIGHT
       x = this.cssWidth + outsideOffset;
       y = this.CENTER_Y;
-      vx = -speed;
-      vy = 0;
+      tx = -farBoundary;
+      ty = y;
     }
 
     this.balls.push({
-      x, y, vx, vy,
+      x, y,
+      targetX: tx,
+      targetY: ty,
+      vx: 0,
+      vy: 0,
+      speed,
       number,
       isOdd,
       color: "#ffffff",
@@ -312,18 +318,31 @@ const Game8 = {
       b.prevX = b.x;
       b.prevY = b.y;
 
-      b.x += b.vx * dt;
-      b.y += b.vy * dt;
+      const dx = b.targetX - b.x;
+      const dy = b.targetY - b.y;
+      const len = Math.sqrt(dx * dx + dy * dy) || 1;
+
+      // Feature: Cap step to remaining distance — prevents overshoot jitter
+      const step = Math.min(b.speed * dt, len);
+
+      // We maintain vx/vy for trail and physics, but actual movement uses target
+      b.vx = (dx / len) * b.speed;
+      b.vy = (dy / len) * b.speed;
+
+      b.x += (dx / len) * step;
+      b.y += (dy / len) * step;
 
       b.trail.push({ x: b.x, y: b.y });
       if (b.trail.length > 9) b.trail.shift();
 
       if (b.hitCooldown > 0) b.hitCooldown -= dt;
 
-      const limit = 120 * this.scale;
+      // Removal logic: if we reached the target or go way out of bounds
+      const limit = 150 * this.scale;
       const cw = this.cssWidth;
       const ch = this.cssHeight;
       if (
+        len <= step + 1 ||
         b.x < -limit || b.x > cw + limit ||
         b.y < -limit || b.y > ch + limit
       ) {
@@ -403,6 +422,12 @@ const Game8 = {
           b.vx = (b.vx / sp) * maxSpeed;
           b.vy = (b.vy / sp) * maxSpeed;
         }
+
+        // Recalculate target and speed for smoother movement physics
+        b.speed = Math.hypot(b.vx, b.vy);
+        const farBoundary = 2000 * this.scale;
+        b.targetX = b.x + (b.vx / (b.speed || 1)) * farBoundary;
+        b.targetY = b.y + (b.vy / (b.speed || 1)) * farBoundary;
 
         b.hitCooldown = 8 * this.scale;
         this.spawnExplosion(b.x, b.y, "white", 10);
