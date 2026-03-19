@@ -1255,7 +1255,7 @@ const Game1 = {
      UTILITY
   ============================================================ */
   getRandomSkip() {
-    const w = [2,2,3,3,3,4,4,5,6,7,8,9];
+    const w = [2,2,2,2,3,3,3,3,3,3,4,4,4,5,5,6,7,8,9];
     return w[Math.floor(Math.random() * w.length)];
   },
 };
