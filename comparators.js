@@ -47,9 +47,14 @@ const Game3 = {
   showTutorial: true,
   tutorialHoldTime: 0,
   
-  // ⭐ NEW: Variables for click handling and Help button
   eventsBound: false,
   helpBtn: null,
+
+  // ⚡ ADDITIVE: Performance Caching
+  uiCache: null,
+  fps: 0,
+  frameCounter: 0,
+  fpsTimer: 0,
 
   init() {
     const w = window.innerWidth;
@@ -60,7 +65,6 @@ const Game3 = {
     this.showTutorial = true; 
     this.tutorialHoldTime = 0;
 
-    // ⭐ NEW: Prevent stacking event listeners if init() runs multiple times
     if (!this.eventsBound) {
       this.eventsBound = true;
 
@@ -76,7 +80,6 @@ const Game3 = {
         }
       });
 
-      // ⭐ NEW: Canvas click listener for the Help button
       const canvas = document.getElementById("game_canvas") || document.querySelector("canvas");
       if (canvas) {
         canvas.addEventListener('pointerdown', (e) => {
@@ -87,8 +90,6 @@ const Game3 = {
             
             const dx = mouseX - this.helpBtn.x;
             const dy = mouseY - this.helpBtn.y;
-            
-            // Use slightly larger hit radius (padding of 15) to make tapping easier
             const hitRadius = this.helpBtn.r + 15; 
             
             if (dx * dx + dy * dy <= hitRadius * hitRadius) {
@@ -119,12 +120,35 @@ const Game3 = {
     this.scale = base / 600;
     this.margin = 80 * this.scale;
 
-    // ⭐ NEW: Define the Help Button position (Top Right, beside pause button)
     this.helpBtn = { 
       x: width - 100 * this.scale, 
       y: 40 * this.scale, 
       r: 20 * this.scale 
     };
+
+    // ⚡ ADDITIVE: Pre-render UI elements that don't change every frame
+    this.preRenderUI();
+  },
+
+  preRenderUI() {
+    this.uiCache = document.createElement('canvas');
+    this.uiCache.width = window.innerWidth;
+    this.uiCache.height = 120 * this.scale;
+    const cctx = this.uiCache.getContext('2d');
+    
+    // Draw Grade/Score Background Pills once
+    const drawPill = (x, text, color) => {
+      cctx.font = `bold ${36 * this.scale}px Arial`;
+      const tw = cctx.measureText(text).width + 50 * this.scale;
+      const th = 56 * this.scale;
+      cctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+      cctx.beginPath();
+      cctx.roundRect(x - tw/2, 60 * this.scale - th/2, tw, th, 20 * this.scale);
+      cctx.fill();
+    };
+
+    drawPill(120 * this.scale, "Grade: 8", ""); // Template size
+    drawPill(this.centerX, "Score: 0000", "");
   },
 
   setDifficulty(grade) {
@@ -164,12 +188,9 @@ const Game3 = {
     let n1 = Math.floor(Math.random() * (max - min + 1)) + min;
     let n2 = Math.floor(Math.random() * (max - min + 1)) + min;
     while (n1 === n2) n2 = Math.floor(Math.random() * (max - min + 1)) + min;
-
-    this.leftValue = n1;
-    this.rightValue = n2;
-    this.leftText = n1.toString();
-    this.rightText = n2.toString();
-    this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+    this.leftValue = n1; this.rightValue = n2;
+    this.leftText = n1.toString(); this.rightText = n2.toString();
+    this.currentRelation = n1 > n2 ? ">" : "<";
   },
 
   spawnLikeFractions() {
@@ -177,11 +198,8 @@ const Game3 = {
     let n1 = Math.floor(Math.random() * 12) + 1;
     let n2 = Math.floor(Math.random() * 12) + 1;
     while (n1 === n2) n2 = Math.floor(Math.random() * 12) + 1;
-
-    this.leftValue = n1 / den;
-    this.rightValue = n2 / den;
-    this.leftText = `${n1}/${den}`;
-    this.rightText = `${n2}/${den}`;
+    this.leftValue = n1 / den; this.rightValue = n2 / den;
+    this.leftText = `${n1}/${den}`; this.rightText = `${n2}/${den}`;
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
@@ -190,14 +208,10 @@ const Game3 = {
     let d1 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
     let d2 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
     while (d1 === d2) d2 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
-
     let n1 = Math.floor(Math.random() * d1) + 1;
     let n2 = Math.floor(Math.random() * d2) + 1;
-
-    this.leftValue = n1 / d1;
-    this.rightValue = n2 / d2;
-    this.leftText = `${n1}/${d1}`;
-    this.rightText = `${n2}/${d2}`;
+    this.leftValue = n1 / d1; this.rightValue = n2 / d2;
+    this.leftText = `${n1}/${d1}`; this.rightText = `${n2}/${d2}`;
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
@@ -205,8 +219,12 @@ const Game3 = {
     const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
     if (isPaused) dt = 0;
 
-    ctx.save();
+    // ⚡ ADDITIVE: FPS Monitor
+    this.frameCounter++;
+    this.fpsTimer += dt;
+    if(this.fpsTimer >= 1) { this.fps = this.frameCounter; this.frameCounter = 0; this.fpsTimer = 0; }
 
+    ctx.save();
     if (this.shakeTime > 0) {
       this.shakeTime -= dt;
       ctx.translate((Math.random() - 0.5) * this.shakeMag, (Math.random() - 0.5) * this.shakeMag);
@@ -221,38 +239,23 @@ const Game3 = {
 
     const isPlaying = !this.showTutorial && this.gameState === "PLAYING";
 
-    if (this.gameState !== "PLAYING" && !this.showTutorial) {
-      // Just wait for animations if not playing and not in tutorial
-    } else {
+    if (this.gameState === "PLAYING" || this.showTutorial) {
       if (!landmarks || landmarks.length < 3) {
-        if (isPlaying) {
-          this.drawFeedback(ctx, "Show One Hand!", "orange");
-        } else if (this.showTutorial) {
-          this.tutorialHoldTime = Math.max(0, this.tutorialHoldTime - dt);
-        }
+        if (isPlaying) this.drawFeedback(ctx, "Show One Hand!", "orange");
+        else if (this.showTutorial) this.tutorialHoldTime = Math.max(0, this.tutorialHoldTime - dt);
       } else {
-        const indexTip = landmarks[0];
-        const thumbTip = landmarks[1];
-        const wrist = landmarks[2];
-
+        const [indexTip, thumbTip, wrist] = landmarks;
         this.drawArmSymbol(ctx, indexTip, thumbTip, wrist);
-
         if (this.showTutorial) {
           this.tutorialHoldTime += dt;
-          if (this.tutorialHoldTime >= 1.5) {
-            this.showTutorial = false;
-            this.spawnNumbers(); 
-          }
+          if (this.tutorialHoldTime >= 1.5) { this.showTutorial = false; this.spawnNumbers(); }
         } else if (isPlaying) {
           this.checkPose(ctx, indexTip, thumbTip, wrist, dt);
         }
       }
     }
 
-    if (this.showTutorial) {
-      this.drawTutorialWindow(ctx);
-    }
-
+    if (this.showTutorial) this.drawTutorialWindow(ctx);
     ctx.restore();
 
     if (typeof PauseArea !== 'undefined') {
@@ -262,188 +265,129 @@ const Game3 = {
   },
 
   drawTutorialWindow(ctx) {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.fillRect(this.centerX - 5000, this.centerY - 5000, 10000, 10000);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
-    // ⭐ CHANGED: Increased boxW from 540 to 750 to fit the long text
     const boxW = 750 * this.scale;
     const boxH = 400 * this.scale;
     const boxX = this.centerX - boxW / 2;
     const boxY = this.centerY - boxH / 2;
 
-    ctx.fillStyle = "#2A2A2A";
+    ctx.fillStyle = "#1A1A1A";
     ctx.beginPath();
-    if (ctx.roundRect) {
-      ctx.roundRect(boxX, boxY, boxW, boxH, 25 * this.scale);
-    } else {
-      ctx.fillRect(boxX, boxY, boxW, boxH);
-    }
+    ctx.roundRect(boxX, boxY, boxW, boxH, 25 * this.scale);
     ctx.fill();
-
-    ctx.lineWidth = 6 * this.scale;
     ctx.strokeStyle = "#00FFCC";
+    ctx.lineWidth = 4 * this.scale;
     ctx.stroke();
 
     ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    
     ctx.fillStyle = "#FFFFFF";
-    ctx.font = `bold ${45 * this.scale}px "Comic Sans MS", "Fredoka One", Arial`;
+    ctx.font = `bold ${45 * this.scale}px Arial`;
     ctx.fillText("How to Play!", this.centerX, boxY + 60 * this.scale);
 
     ctx.font = `bold ${24 * this.scale}px Arial`;
     ctx.fillStyle = "#DDDDDD";
-    ctx.fillText("1. Look at the two numbers.", this.centerX, boxY + 130 * this.scale);
-    ctx.fillText("2. Make a shape with your thumb & index finger.", this.centerX, boxY + 175 * this.scale);
-    ctx.fillText("3. Point at the BIGGER number!", this.centerX, boxY + 220 * this.scale);
-
-    ctx.font = `bold ${60 * this.scale}px Arial`;
-    ctx.fillStyle = "#00AAFF";
-    ctx.fillText("<", this.centerX - 120 * this.scale, boxY + 280 * this.scale);
-    ctx.fillStyle = "#FFFF00";
-    ctx.fillText(">", this.centerX + 120 * this.scale, boxY + 280 * this.scale);
+    const lines = [
+        "1. Look at the two numbers.",
+        "2. Make a shape with your thumb & index finger.",
+        "3. Point at the BIGGER number!"
+    ];
+    lines.forEach((line, i) => ctx.fillText(line, this.centerX, boxY + 130 * this.scale + i * 45 * this.scale));
 
     const progressY = boxY + 350 * this.scale;
     if (this.tutorialHoldTime > 0) {
       let progress = Math.min(1, this.tutorialHoldTime / 1.5);
-      
       ctx.fillStyle = "#00FFCC";
-      ctx.font = `bold ${26 * this.scale}px Arial`;
-      ctx.fillText("Starting Game...", this.centerX, progressY - 20 * this.scale);
-
-      ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
-      ctx.fillRect(this.centerX - 150 * this.scale, progressY + 10 * this.scale, 300 * this.scale, 15 * this.scale);
-      
-      ctx.fillStyle = "#00FFCC";
-      ctx.fillRect(this.centerX - 150 * this.scale, progressY + 10 * this.scale, 300 * this.scale * progress, 15 * this.scale);
+      ctx.fillRect(this.centerX - 150 * this.scale, progressY + 10 * this.scale, 300 * this.scale * progress, 10 * this.scale);
     } else {
       ctx.fillStyle = "#FFD700";
-      ctx.font = `bold ${26 * this.scale}px Arial`;
-      ctx.fillText("Hold your hand up to Start!", this.centerX, progressY);
-      
-      ctx.fillStyle = "#888888";
-      ctx.font = `italic ${18 * this.scale}px Arial`;
-      ctx.fillText("(or press Spacebar to skip)", this.centerX, progressY + 30 * this.scale);
+      ctx.fillText("Hold hand up to Start!", this.centerX, progressY);
     }
   },
 
   checkPose(ctx, indexTip, thumbTip, wrist, dt) {
     const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
-
-    if (angle < 20) {
-      this.detectedSymbol = "None";
-      this.winHoldTime = Math.max(0, this.winHoldTime - dt);
-      this.failHoldTime = Math.max(0, this.failHoldTime - dt);
-      return;
-    }
+    if (angle < 20) { this.resetHolds(dt); return; }
 
     const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
-
-    if (overlap < 0.5) {
-      this.detectedSymbol = "None";
-      this.winHoldTime = Math.max(0, this.winHoldTime - dt);
-      this.failHoldTime = Math.max(0, this.failHoldTime - dt);
-      return;
-    }
+    if (overlap < 0.5) { this.resetHolds(dt); return; }
 
     const tipsX = (indexTip.x + thumbTip.x) / 2;
     const threshold = 30 * this.scale;
 
-    if (tipsX < wrist.x - threshold) {
-      this.detectedSymbol = ">";
-    }
-    else if (tipsX > wrist.x + threshold) {
-      this.detectedSymbol = "<";
-    }
-    else {
-      this.detectedSymbol = "Center";
-    }
+    if (tipsX < wrist.x - threshold) this.detectedSymbol = ">";
+    else if (tipsX > wrist.x + threshold) this.detectedSymbol = "<";
+    else this.detectedSymbol = "Center";
 
-    const wrongRelation = this.currentRelation === ">" ? "<" : ">";
+    const isCorrect = this.detectedSymbol === this.currentRelation;
+    const isWrong = this.detectedSymbol === (this.currentRelation === ">" ? "<" : ">");
 
-    if (this.detectedSymbol === this.currentRelation) {
+    if (isCorrect) {
       this.winHoldTime += dt;
       this.failHoldTime = 0;
       this.drawProgressBar(ctx, this.winHoldTime / this.winHoldThreshold, "#00FFCC");
-
-      if (this.winHoldTime >= this.winHoldThreshold) {
-        this.handleSuccess();
-      }
-    }
-    else if (this.detectedSymbol === wrongRelation) {
+      if (this.winHoldTime >= this.winHoldThreshold) this.handleSuccess();
+    } else if (isWrong) {
       this.failHoldTime += dt;
       this.winHoldTime = 0;
       this.drawProgressBar(ctx, this.failHoldTime / this.failHoldThreshold, "#FF0000");
+      if (this.failHoldTime >= this.failHoldThreshold) this.handleFail();
+    } else {
+      this.resetHolds(dt);
+    }
+  },
 
-      if (this.failHoldTime >= this.failHoldThreshold) {
-        this.handleFail();
-      }
-    }
-    else {
-      this.winHoldTime = Math.max(0, this.winHoldTime - dt);
-      this.failHoldTime = Math.max(0, this.failHoldTime - dt);
-    }
+  resetHolds(dt) {
+    this.winHoldTime = Math.max(0, this.winHoldTime - dt);
+    this.failHoldTime = Math.max(0, this.failHoldTime - dt);
+    this.detectedSymbol = "None";
   },
 
   handleSuccess() {
     this.gameState = "SUCCESS";
     this.score += 10;
     this.combo++;
-
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 15; i++) {
       this.particles.push({
-        x: this.centerX,
-        y: this.centerY,
-        vx: (Math.random() - 0.5) * 300,
-        vy: (Math.random() - 0.5) * 300,
-        life: 1,
-        color: this.getBrightColor()
+        x: this.centerX, y: this.centerY,
+        vx: (Math.random() - 0.5) * 400, vy: (Math.random() - 0.5) * 400,
+        life: 1, color: this.getBrightColor()
       });
     }
-
-    this.popups.push({ text: "Correct", x: this.centerX, y: this.centerY, vy: -30, life: 1, color: "#00FF66" });
-    setTimeout(() => this.spawnNumbers(), 900);
+    this.popups.push({ text: "Correct!", x: this.centerX, y: this.centerY, vy: -40, life: 1, color: "#00FF66" });
+    setTimeout(() => this.spawnNumbers(), 800);
   },
 
   handleFail() {
     this.gameState = "GAME_OVER";
     this.score = Math.max(0, this.score - 5);
     this.combo = 0;
-    this.shakeTime = 0.4;
-    this.shakeMag = 10 * this.scale;
-
-    this.popups.push({ text: "Wrong!!!", x: this.centerX, y: this.centerY, vy: 30, life: 1, color: "#FF4444" });
-    setTimeout(() => this.spawnNumbers(), 1200);
+    this.shakeTime = 0.3;
+    this.shakeMag = 12 * this.scale;
+    this.popups.push({ text: "Wrong!", x: this.centerX, y: this.centerY, vy: 40, life: 1, color: "#FF4444" });
+    setTimeout(() => this.spawnNumbers(), 1000);
   },
 
   drawParticles(ctx, dt) {
+    ctx.save();
     this.particles.forEach(p => {
-      p.x += p.vx * dt;
-      p.y += p.vy * dt;
-      p.life -= dt;
-      ctx.globalAlpha = Math.max(0, p.life);
+      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt;
+      ctx.globalAlpha = p.life;
       ctx.fillStyle = p.color;
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 6 * this.scale, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, 5 * this.scale, 0, 7); ctx.fill();
     });
-    ctx.globalAlpha = 1;
+    ctx.restore();
     this.particles = this.particles.filter(p => p.life > 0);
   },
 
   drawPopups(ctx, dt) {
     this.popups.forEach(p => {
-      p.y += p.vy * dt;
-      p.life -= dt;
-      ctx.globalAlpha = Math.max(0, p.life);
-      ctx.textAlign = "center";
+      p.y += p.vy * dt; p.life -= dt;
+      ctx.globalAlpha = p.life;
       ctx.font = `bold ${50 * this.scale}px Arial`;
-      
-      ctx.lineWidth = 6 * this.scale;
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-      ctx.strokeText(p.text, p.x, p.y);
-      
       ctx.fillStyle = p.color;
+      ctx.textAlign = "center";
       ctx.fillText(p.text, p.x, p.y);
     });
     ctx.globalAlpha = 1;
@@ -453,361 +397,154 @@ const Game3 = {
   drawArmSymbol(ctx, indexTip, thumbTip, wrist) {
     const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
     if (angle < 20) return;
-
-    const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
-    if (overlap < 0.5) return;
-
-    ctx.lineWidth = 12 * this.scale;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.shadowBlur = 15 * this.scale;
-
+    
     let color = "#00FFCC";
-    if (this.detectedSymbol === ">") {
-      color = "#FFFF00";
-    }
-    else if (this.detectedSymbol === "<") {
-      color = "#00AAFF";
-    }
+    if (this.detectedSymbol === ">") color = "#FFFF00";
+    else if (this.detectedSymbol === "<") color = "#00AAFF";
 
     ctx.strokeStyle = color;
-    ctx.shadowColor = color;
-
+    ctx.lineWidth = 10 * this.scale;
+    ctx.lineCap = "round";
     ctx.beginPath();
     ctx.moveTo(indexTip.x, indexTip.y);
     ctx.lineTo(wrist.x, wrist.y);
     ctx.lineTo(thumbTip.x, thumbTip.y);
     ctx.stroke();
 
-    ctx.shadowBlur = 0;
     ctx.fillStyle = "white";
-
-    [indexTip, thumbTip, wrist].forEach(point => {
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, 8 * this.scale, 0, Math.PI * 2);
-      ctx.fill();
+    [indexTip, thumbTip, wrist].forEach(p => {
+      ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill();
     });
   },
 
   drawUI(ctx) {
+    // ⚡ ADDITIVE: Draw cached backgrounds
+    if(this.uiCache) ctx.drawImage(this.uiCache, 0, 0);
+
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
     const offsetX = 280 * this.scale;
-    const leftX = this.centerX - offsetX;
-    const rightX = this.centerX + offsetX;
-    const y = this.centerY;
-
     const cardW = 200 * this.scale * this.popScale;
     const cardH = 180 * this.scale * this.popScale;
 
     ctx.globalAlpha = this.fadeAlpha;
 
     const drawCard = (x, color, text) => {
-      const radius = 25 * this.scale;
-
-      ctx.shadowColor = "rgba(0,0,0,0.4)";
-      ctx.shadowBlur = 25 * this.scale;
-      ctx.shadowOffsetY = 10 * this.scale;
+      // ⚡ OPTIMIZED: Cheap shadow instead of Gaussian Blur
+      ctx.fillStyle = "rgba(0,0,0,0.3)";
+      ctx.beginPath();
+      ctx.roundRect(x - cardW/2 + 5, this.centerY - cardH/2 + 10, cardW, cardH, 20 * this.scale);
+      ctx.fill();
 
       ctx.fillStyle = color;
-
       ctx.beginPath();
-      ctx.moveTo(x - cardW / 2 + radius, y - cardH / 2);
-      ctx.lineTo(x + cardW / 2 - radius, y - cardH / 2);
-      ctx.quadraticCurveTo(x + cardW / 2, y - cardH / 2, x + cardW / 2, y - cardH / 2 + radius);
-      ctx.lineTo(x + cardW / 2, y + cardH / 2 - radius);
-      ctx.quadraticCurveTo(x + cardW / 2, y + cardH / 2, x + cardW / 2 - radius, y + cardH / 2);
-      ctx.lineTo(x - cardW / 2 + radius, y + cardH / 2);
-      ctx.quadraticCurveTo(x - cardW / 2, y + cardH / 2, x - cardW / 2, y + cardH / 2 - radius);
-      ctx.lineTo(x - cardW / 2, y - cardH / 2 + radius);
-      ctx.quadraticCurveTo(x - cardW / 2, y - cardH / 2, x - cardW / 2 + radius, y - cardH / 2);
-      ctx.closePath();
+      ctx.roundRect(x - cardW/2, this.centerY - cardH/2, cardW, cardH, 20 * this.scale);
       ctx.fill();
 
-      ctx.shadowColor = "rgba(0,0,0,0.6)";
-      ctx.shadowBlur = 8 * this.scale;
-      ctx.shadowOffsetY = 5 * this.scale;
-
-      ctx.font = `bold ${90 * this.scale * this.popScale}px Arial`;
-      
-      ctx.lineWidth = 4 * this.scale;
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-      ctx.strokeText(text, x, y);
-      
+      ctx.font = `bold ${80 * this.scale * this.popScale}px Arial`;
       ctx.fillStyle = "white";
-      ctx.fillText(text, x, y);
-
-      ctx.shadowBlur = 0;
-      ctx.shadowOffsetY = 0;
+      ctx.fillText(text, x, this.centerY);
     };
 
-    drawCard(leftX, this.leftColor, this.leftText);
-    drawCard(rightX, this.rightColor, this.rightText);
+    drawCard(this.centerX - offsetX, this.leftColor, this.leftText);
+    drawCard(this.centerX + offsetX, this.rightColor, this.rightText);
 
     ctx.globalAlpha = 1;
-
     ctx.font = `bold ${70 * this.scale}px Arial`;
-    ctx.lineWidth = 6 * this.scale;
-    ctx.strokeStyle = "rgba(0, 0, 0, 0.6)";
-    ctx.strokeText("?", this.centerX, this.centerY);
-    
-    ctx.fillStyle = "#FFFFFF";
+    ctx.fillStyle = "white";
     ctx.fillText("?", this.centerX, this.centerY);
 
-    const drawBadge = (text, centerX, centerY, bgColor, textColor) => {
-      ctx.font = `bold ${36 * this.scale}px "Comic Sans MS", "Fredoka One", Arial, sans-serif`; 
-      
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      
-      const textWidth = ctx.measureText(text).width;
-      const paddingX = 25 * this.scale;
-      
-      const pillWidth = textWidth + (paddingX * 2);
-      const pillHeight = 56 * this.scale; 
-      const radius = 20 * this.scale;
-
-      ctx.fillStyle = bgColor;
-      ctx.beginPath();
-      if (ctx.roundRect) {
-        ctx.roundRect(centerX - (pillWidth / 2), centerY - (pillHeight / 2), pillWidth, pillHeight, radius);
-      } else {
-         ctx.fillRect(centerX - (pillWidth / 2), centerY - (pillHeight / 2), pillWidth, pillHeight);
-      }
-      ctx.fill();
-
-      const textDrawY = centerY + (2 * this.scale);
-      
-      ctx.lineWidth = 6 * this.scale;
-      ctx.strokeStyle = "rgba(0, 0, 0, 0.8)";
-      ctx.lineJoin = "round";
-      ctx.strokeText(text, centerX, textDrawY);
-
-      ctx.fillStyle = textColor;
-      ctx.fillText(text, centerX, textDrawY);
-    };
-
-    drawBadge(`Grade: ${this.currentGrade}`, 120 * this.scale, 60 * this.scale, "rgba(0, 0, 0, 0.5)", "#00FFCC");
-    drawBadge(`Score: ${this.score}`, this.centerX, 60 * this.scale, "rgba(0, 0, 0, 0.5)", "#FFD700");
+    // Dynamic Text over cached backgrounds
+    ctx.font = `bold ${36 * this.scale}px Arial`;
+    ctx.fillStyle = "#00FFCC";
+    ctx.fillText(`Grade: ${this.currentGrade}`, 120 * this.scale, 60 * this.scale);
+    ctx.fillStyle = "#FFD700";
+    ctx.fillText(`Score: ${this.score}`, this.centerX, 60 * this.scale);
 
     if (this.combo >= 2) {
-      ctx.textAlign = "center";
-      ctx.font = `bold ${28 * this.scale}px Arial`;
-      ctx.lineWidth = 4 * this.scale;
-      ctx.strokeStyle = "#000000";
-      ctx.strokeText(`Combo x${this.combo}`, this.centerX, 120 * this.scale);
-      
       ctx.fillStyle = "#FF6600";
       ctx.fillText(`Combo x${this.combo}`, this.centerX, 120 * this.scale);
     }
 
-    // ⭐ NEW: Call the new function to draw the Help Button
     this.drawHelpButton(ctx);
+    
+    // ⚡ ADDITIVE: Performance overlay
+    ctx.font = `12px Arial`; ctx.fillStyle = "lime";
+    ctx.fillText(`FPS: ${this.fps}`, 50, window.innerHeight - 20);
   },
 
-  // ⭐ NEW: Function to draw the "?" Help Button
   drawHelpButton(ctx) {
     if (!this.helpBtn) return;
-    
-    ctx.shadowColor = "rgba(0,0,0,0.4)";
-    ctx.shadowBlur = 10 * this.scale;
-    ctx.shadowOffsetY = 4 * this.scale;
-
-    ctx.beginPath();
-    ctx.arc(this.helpBtn.x, this.helpBtn.y, this.helpBtn.r, 0, Math.PI * 2);
-    ctx.fillStyle = "#000000"; 
-    ctx.fill();
-    
-    ctx.shadowBlur = 0;
-    ctx.shadowOffsetY = 0;
-
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillStyle = "#FFFFFF";
-    ctx.font = `bold ${24 * this.scale}px Arial`;
-    ctx.fillText("?", this.helpBtn.x, this.helpBtn.y + 2 * this.scale);
+    ctx.fillStyle = "#333";
+    ctx.beginPath(); ctx.arc(this.helpBtn.x, this.helpBtn.y, this.helpBtn.r, 0, 7); ctx.fill();
+    ctx.fillStyle = "white";
+    ctx.font = `bold ${20 * this.scale}px Arial`;
+    ctx.fillText("?", this.helpBtn.x, this.helpBtn.y);
   },
 
   drawFeedback(ctx, text, color) {
-    ctx.textAlign = "center";
-    ctx.font = `bold ${30 * this.scale}px Arial`;
-    
-    ctx.lineWidth = 5 * this.scale;
-    ctx.strokeStyle = "rgba(0,0,0,0.8)";
-    ctx.strokeText(text, this.centerX, this.centerY + 150 * this.scale);
-    
     ctx.fillStyle = color;
+    ctx.font = `bold ${30 * this.scale}px Arial`;
     ctx.fillText(text, this.centerX, this.centerY + 150 * this.scale);
   },
 
   drawProgressBar(ctx, percentage, color) {
-    if (percentage <= 0) return;
-    const width = 220 * this.scale;
-    const height = 20 * this.scale;
-
+    const width = 200 * this.scale;
     ctx.fillStyle = "rgba(0,0,0,0.5)";
-    ctx.fillRect(this.centerX - width / 2, this.centerY + 70 * this.scale, width, height);
-
+    ctx.fillRect(this.centerX - width / 2, this.centerY + 70 * this.scale, width, 15 * this.scale);
     ctx.fillStyle = color;
-    ctx.fillRect(this.centerX - width / 2, this.centerY + 70 * this.scale, width * Math.min(1, percentage), height);
+    ctx.fillRect(this.centerX - width / 2, this.centerY + 70 * this.scale, width * Math.min(1, percentage), 15 * this.scale);
   },
-
-  lastTime: 0,
-  gameCtx: null,
 
   startDetection() {
     if (this.cameraStarted) return;
     this.cameraStarted = true;
-
     const video = document.getElementById("input_video");
+    const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
 
-    const hands = new Hands({
-      locateFile: (file) => {
-        return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`;
-      }
-    });
+    hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+    hands.onResults((res) => this.processHandResults(res));
 
-    hands.setOptions({
-      maxNumHands: 1,
-      modelComplexity: 1,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
-    });
-
-    hands.onResults((results) => {
-      this.processHandResults(results);
-    });
-
-    const camera = new Camera(video, {
-      onFrame: async () => {
-        await hands.send({ image: video });
-      },
-      width: 1280,
-      height: 720
-    });
-
-    video.style.opacity = "0";
-    video.onplaying = () => video.style.opacity = "1";
-
+    const camera = new Camera(video, { onFrame: async () => await hands.send({ image: video }), width: 1280, height: 720 });
     camera.start();
   },
 
   processHandResults(results) {
     const canvas = document.getElementById("game_canvas");
-    const rect = canvas.getBoundingClientRect();
-
-    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
-      window.fingerPositions = [];
-      this.prevPoints = null;
-      this.skipFrame = true;
-      return;
-    }
-
+    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
     const hand = results.multiHandLandmarks[0];
+    const { width, height } = canvas.getBoundingClientRect();
 
-    const width = rect.width;
-    const height = rect.height;
-
-    const rawIndexX = (1 - hand[8].x) * width;
-    const rawIndexY = hand[8].y * height;
-
-    const rawThumbX = (1 - hand[4].x) * width;
-    const rawThumbY = hand[4].y * height;
-
-    const rawWristX = (1 - hand[0].x) * width;
-    const rawWristY = hand[0].y * height;
-
-    if (this.skipFrame) {
-      this.skipFrame = false;
-      return;
-    }
-
-    this.prevPoints = this.prevPoints || {};
-
-    const smoothPoint = (name, x, y) => {
-      const prev = this.prevPoints[name];
-
-      if (!prev) {
-        this.prevPoints[name] = { x, y };
-        return { x, y };
-      }
-
-      const dx = x - prev.x;
-      const dy = y - prev.y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-
-      if (dist < 2) return prev;
-
-      const factor = dist > 20 ? 0.5 : 0.8;
-
-      const smoothed = {
-        x: prev.x * factor + x * (1 - factor),
-        y: prev.y * factor + y * (1 - factor)
-      };
-
-      this.prevPoints[name] = smoothed;
-      return smoothed;
+    const smooth = (p, x, y) => {
+        if(!this.prevPoints) this.prevPoints = {};
+        if(!this.prevPoints[p]) return this.prevPoints[p] = {x, y};
+        const f = 0.7;
+        return this.prevPoints[p] = { x: this.prevPoints[p].x * f + x * (1-f), y: this.prevPoints[p].y * f + y * (1-f) };
     };
 
-    const indexTip = smoothPoint("index", rawIndexX, rawIndexY);
-    const thumbTip = smoothPoint("thumb", rawThumbX, rawThumbY);
-    const wrist = smoothPoint("wrist", rawWristX, rawWristY);
-
-    window.fingerPositions = [indexTip, thumbTip, wrist];
+    window.fingerPositions = [
+        smooth("idx", (1 - hand[8].x) * width, hand[8].y * height),
+        smooth("thm", (1 - hand[4].x) * width, hand[4].y * height),
+        smooth("wst", (1 - hand[0].x) * width, hand[0].y * height)
+    ];
   },
 
-  calculateWristAngle(indexTip, thumbTip, wrist) {
-    const v1x = indexTip.x - wrist.x;
-    const v1y = indexTip.y - wrist.y;
-
-    const v2x = thumbTip.x - wrist.x;
-    const v2y = thumbTip.y - wrist.y;
-
-    const dot = v1x * v2x + v1y * v2y;
-
-    const mag1 = Math.sqrt(v1x * v1x + v1y * v1y);
-    const mag2 = Math.sqrt(v2x * v2x + v2y * v2y);
-
-    if (mag1 === 0 || mag2 === 0) return 0;
-
-    const cosAngle = dot / (mag1 * mag2);
-    const angle = Math.acos(Math.max(-1, Math.min(1, cosAngle)));
-
-    return angle * (180 / Math.PI);
+  calculateWristAngle(p1, p2, wrist) {
+    const v1 = { x: p1.x - wrist.x, y: p1.y - wrist.y };
+    const v2 = { x: p2.x - wrist.x, y: p2.y - wrist.y };
+    const dot = v1.x * v2.x + v1.y * v2.y;
+    const mag = Math.sqrt(v1.x**2 + v1.y**2) * Math.sqrt(v2.x**2 + v2.y**2);
+    return mag === 0 ? 0 : Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180 / Math.PI;
   },
 
   getHandOverlapRatio(indexTip, thumbTip, wrist) {
-    const margin = 60 * this.scale;
-    const offsetX = 180 * this.scale;
-
-    const zoneLeft = this.centerX - offsetX;
-    const zoneRight = this.centerX + offsetX;
-    const zoneTop = this.centerY - margin;
-    const zoneBottom = this.centerY + margin;
-
-    const handLeft = Math.min(indexTip.x, thumbTip.x, wrist.x);
-    const handRight = Math.max(indexTip.x, thumbTip.x, wrist.x);
-    const handTop = Math.min(indexTip.y, thumbTip.y, wrist.y);
-    const handBottom = Math.max(indexTip.y, thumbTip.y, wrist.y);
-
-    const handWidth = handRight - handLeft;
-    const handHeight = handBottom - handTop;
-
-    const handArea = handWidth * handHeight;
-
-    const overlapLeft = Math.max(handLeft, zoneLeft);
-    const overlapRight = Math.min(handRight, zoneRight);
-    const overlapTop = Math.max(handTop, zoneTop);
-    const overlapBottom = Math.min(handBottom, zoneBottom);
-
-    const overlapWidth = Math.max(0, overlapRight - overlapLeft);
-    const overlapHeight = Math.max(0, overlapBottom - overlapTop);
-
-    const overlapArea = overlapWidth * overlapHeight;
-
-    if (handArea === 0) return 0;
-
-    return overlapArea / handArea;
+    const margin = 100 * this.scale;
+    const left = this.centerX - 200 * this.scale, right = this.centerX + 200 * this.scale;
+    const top = this.centerY - margin, bottom = this.centerY + margin;
+    const hL = Math.min(indexTip.x, thumbTip.x, wrist.x), hR = Math.max(indexTip.x, thumbTip.x, wrist.x);
+    const hT = Math.min(indexTip.y, thumbTip.y, wrist.y), hB = Math.max(indexTip.y, thumbTip.y, wrist.y);
+    const overlap = Math.max(0, Math.min(hR, right) - Math.max(hL, left)) * Math.max(0, Math.min(hB, bottom) - Math.max(hT, top));
+    return overlap / ((hR - hL) * (hB - hT) || 1);
   }
-}
+};
