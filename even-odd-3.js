@@ -50,10 +50,8 @@ const Game8 = {
 
   CENTER_X: 0,
   CENTER_Y: 0,
-
-  // helpers to work in CSS pixels (canvas buffer is scaled by devicePixelRatio)
-  get cssWidth() { return canvasElement.width / (window.devicePixelRatio || 1); },
-  get cssHeight() { return canvasElement.height / (window.devicePixelRatio || 1); },
+  cssWidth: 0,
+  cssHeight: 0,
 
   SMOOTH: 0.6,
   MIN_ARM_LENGTH: 25,
@@ -150,7 +148,7 @@ const Game8 = {
 
       const dx = index.x - wrist.x;
       const dy = index.y - wrist.y;
-      if (Math.hypot(dx, dy) < this.MIN_ARM_LENGTH) return;
+      if (dx * dx + dy * dy < this.MIN_ARM_LENGTH * this.MIN_ARM_LENGTH) return;
 
       const vel = this.armVelocity[side];
       if (vel.last) {
@@ -183,6 +181,9 @@ const Game8 = {
     // update canvas buffer size (main.js already does this but repeating is safe)
     canvasElement.width = cssW * dpr;
     canvasElement.height = cssH * dpr;
+
+    this.cssWidth = cssW;
+    this.cssHeight = cssH;
 
     // compute game scale using CSS coordinates (avoids DPI issues)
     this.scale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
@@ -311,7 +312,8 @@ const Game8 = {
   },
 
   updateBalls(dt) {
-    for (let b of this.balls) {
+    for (let i = 0; i < this.balls.length; i++) {
+      let b = this.balls[i];
       if (b.scored) continue;
 
       // Store previous position (important for collision sweep)
@@ -332,8 +334,14 @@ const Game8 = {
       b.x += (dx / len) * step;
       b.y += (dy / len) * step;
 
-      b.trail.push({ x: b.x, y: b.y });
-      if (b.trail.length > 9) b.trail.shift();
+      if (b.trailIdx === undefined) b.trailIdx = 0;
+      if (b.trail.length < 9) {
+        b.trail.push({ x: b.x, y: b.y });
+      } else {
+        b.trail[b.trailIdx].x = b.x;
+        b.trail[b.trailIdx].y = b.y;
+        b.trailIdx = (b.trailIdx + 1) % 9;
+      }
 
       if (b.hitCooldown > 0) b.hitCooldown -= dt;
 
@@ -354,6 +362,8 @@ const Game8 = {
   },
 
   checkPhysics() {
+    if (this.balls.length === 0) return;
+
     const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
     const arm = this.armData.right;
     if (!arm?.wrist || !arm?.shoulder) return;
@@ -373,7 +383,8 @@ const Game8 = {
 
     const tangentialSpeed = angVel * this.armLength * 0.8;
 
-    for (let stickAngle of angles) {
+    for (let a = 0; a < angles.length; a++) {
+      let stickAngle = angles[a];
       const tipX = pivot.x + Math.cos(stickAngle) * this.armLength;
       const tipY = pivot.y + Math.sin(stickAngle) * this.armLength;
 
@@ -382,7 +393,8 @@ const Game8 = {
 
       const radius = this.ballRadius + 6;
 
-      for (let b of this.balls) {
+      for (let i = 0; i < this.balls.length; i++) {
+        let b = this.balls[i];
         if (b.hitCooldown > 0 || b.scored) continue;
 
         const dx = tipX - pivot.x;
@@ -397,9 +409,10 @@ const Game8 = {
 
         const distX = b.x - closestX;
         const distY = b.y - closestY;
-        const dist = Math.hypot(distX, distY);
+        const distSq2 = distX * distX + distY * distY;
 
-        if (dist > radius) continue;
+        if (distSq2 > radius * radius) continue;
+        const dist = Math.sqrt(distSq2);
 
         let nx = distX / (dist || 1);
         let ny = distY / (dist || 1);
@@ -417,14 +430,15 @@ const Game8 = {
         b.vy = rvy + armVelY;
 
         const maxSpeed = 18 * this.scale;
-        const sp = Math.hypot(b.vx, b.vy);
+        let sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
         if (sp > maxSpeed) {
           b.vx = (b.vx / sp) * maxSpeed;
           b.vy = (b.vy / sp) * maxSpeed;
+          sp = maxSpeed;
         }
 
         // Recalculate target and speed for smoother movement physics
-        b.speed = Math.hypot(b.vx, b.vy);
+        b.speed = sp;
         const farBoundary = 2000 * this.scale;
         b.targetX = b.x + (b.vx / (b.speed || 1)) * farBoundary;
         b.targetY = b.y + (b.vy / (b.speed || 1)) * farBoundary;
@@ -478,7 +492,8 @@ const Game8 = {
       if (scoreType) {
         const dx = this.CENTER_X - b.x;
         const dy = this.CENTER_Y - b.y;
-        const dist = Math.hypot(dx, dy) || 1;
+        const distSq = dx * dx + dy * dy;
+        const dist = Math.sqrt(distSq) || 1;
         const nx = dx / dist;
         const ny = dy / dist;
 
@@ -518,9 +533,11 @@ const Game8 = {
     const arm = this.armData.right;
     if (!arm?.shoulder) return; // shoulder now stores wrist position
 
-    const dist = Math.hypot(arm.shoulder.x - cx, arm.shoulder.y - cy);
+    const dx = arm.shoulder.x - cx;
+    const dy = arm.shoulder.y - cy;
+    const distSq = dx * dx + dy * dy;
 
-    if (dist < 120 * this.scale) {
+    if (distSq < (120 * this.scale) * (120 * this.scale)) {
       this.pivotLockTimer.right += dt;
       this.lockProgress = Math.min(
         this.pivotLockTimer.right / this.LOCK_TIME,
@@ -656,7 +673,8 @@ const Game8 = {
     ctx.textBaseline = "middle";
     ctx.font = `bold ${30 * this.scale}px Orbitron`;
 
-    for (let b of this.balls) {
+    for (let i = 0; i < this.balls.length; i++) {
+      let b = this.balls[i];
       // Trail
       if (b.trail.length > 1) {
         ctx.beginPath();
@@ -664,8 +682,13 @@ const Game8 = {
         ctx.lineWidth = this.ballRadius * 1.5; // Increased from 1.2
         ctx.lineCap = "round";
         ctx.globalAlpha = 0.25; // Slightly lower alpha for longer trail
-        ctx.moveTo(b.trail[0].x, b.trail[0].y);
-        for (let t of b.trail) ctx.lineTo(t.x, t.y);
+        
+        let tIdx = b.trailIdx || 0;
+        ctx.moveTo(b.trail[tIdx].x, b.trail[tIdx].y);
+        for (let j = 1; j < b.trail.length; j++) {
+            let idx = (tIdx + j) % b.trail.length;
+            ctx.lineTo(b.trail[idx].x, b.trail[idx].y);
+        }
         ctx.stroke();
         ctx.globalAlpha = 1.0;
       }
@@ -696,7 +719,8 @@ const Game8 = {
 
     const angles = [baseAngle, baseAngle + Math.PI];
 
-    for (let angle of angles) {
+    for (let i = 0; i < angles.length; i++) {
+      let angle = angles[i];
       const tipX = pivot.x + Math.cos(angle) * this.armLength;
       const tipY = pivot.y + Math.sin(angle) * this.armLength;
 
@@ -755,7 +779,8 @@ const Game8 = {
   },
 
   drawParticles(ctx) {
-    for (let p of this.particles) {
+    for (let i = 0; i < this.particles.length; i++) {
+      let p = this.particles[i];
       ctx.globalAlpha = p.life;
       ctx.fillStyle = p.color;
       ctx.beginPath(); ctx.arc(p.x, p.y, 4 * this.scale, 0, Math.PI * 2); ctx.fill();
@@ -766,7 +791,8 @@ const Game8 = {
   drawFloaters(ctx) {
     ctx.font = `bold ${24 * this.scale}px Orbitron`;
     ctx.textAlign = "center";
-    for (let f of this.floaters) {
+    for (let i = 0; i < this.floaters.length; i++) {
+      let f = this.floaters[i];
       ctx.globalAlpha = f.life;
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
