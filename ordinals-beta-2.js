@@ -150,6 +150,12 @@ const Game11 = {
   blackHoleSuctionParticles: [],
   blackHoleGrowthPhase: 0,
 
+  // 📦 Object Pools
+  pools: {
+    sparkBursts: [],
+    floatingTexts: [],
+    blackHoleSuctionParticles: []
+  },
 
   // 🎁 Sticker System
   stickers: [],
@@ -257,6 +263,39 @@ const Game11 = {
 
     this.CENTER_X = cssW / 2;
     this.CENTER_Y = cssH / 2;
+
+    this.cacheScalesAndGradients(ctx, cssW, cssH);
+  },
+
+  cacheScalesAndGradients(ctx, W, H) {
+    const s = this.scale;
+    // Pre-calculate scale multiplications
+    this.s30 = 30 * s; this.s34 = 34 * s; this.s36 = 36 * s;
+    this.s40 = 40 * s; this.s45 = 45 * s; this.s60 = 60 * s;
+    this.s70 = 70 * s; this.s80 = 80 * s; this.s100 = 100 * s;
+    this.s120 = 120 * s; this.s140 = 140 * s; this.s260 = 260 * s;
+    this.doorR = this.DOOR_RADIUS * s;
+    this.doorDist = this.DOOR_DISTANCE * s;
+
+    // Cache font strings
+    this.fScore = `bold ${this.s36}px Comic Sans MS`;
+    this.fInstruction = `bold ${this.s34}px Comic Sans MS`;
+    this.fFloating = `bold ${this.s40}px Comic Sans MS`;
+    this.fGameOver = `bold ${this.s80}px Arial`;
+    this.fRetry = `bold ${this.s45}px Arial`;
+    this.fFinger = `bold ${20 * s}px Arial`;
+    this.fNumber = `bold ${this.s30}px Arial`;
+
+    // Cache gradients
+    const T = this.T;
+    this.bgGrd = ctx.createLinearGradient(0, 0, 0, H);
+    this.bgGrd.addColorStop(0, T.bg1);
+    this.bgGrd.addColorStop(0.5, T.bg2);
+    this.bgGrd.addColorStop(1, T.bg3);
+
+    this.radialGrd = ctx.createRadialGradient(this.CENTER_X, this.CENTER_Y * 0.7, 0, this.CENTER_X, this.CENTER_Y * 0.7, W * 0.55);
+    this.radialGrd.addColorStop(0, "rgba(124,58,237,0.15)");
+    this.radialGrd.addColorStop(1, "rgba(0,0,0,0)");
   },
 
   activateGameMode1() {
@@ -484,7 +523,7 @@ const Game11 = {
     ctx.fillStyle = "#FFD700"; // gold
     ctx.shadowColor = "#FFD700";
     ctx.shadowBlur = 10;
-    ctx.font = `bold ${36 * this.scale}px Comic Sans MS`;
+    ctx.font = this.fScore;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -527,54 +566,40 @@ const Game11 = {
 
 
   spawnSparkBurst(x, y) {
+    const burst = this.pools.sparkBursts.pop() || {};
+    burst.x = x; burst.y = y;
+    burst.radius = 0; burst.maxRadius = 140 * this.scale;
+    burst.alpha = 1; burst.life = 600; burst.type = "circle";
+    this.sparkBursts.push(burst);
 
-    this.sparkBursts.push({
-      x: x,
-      y: y,
-      radius: 0,
-      maxRadius: 140 * this.scale,
-      alpha: 1,
-      life: 600
-    });
-
-    // Add mini sparks
-    for (let i = 0; i < 20; i++) {
-      this.sparkBursts.push({
-        x: x,
-        y: y,
-        vx: (Math.random() - 0.5) * 10,
-        vy: (Math.random() - 0.5) * 10,
-        size: (Math.random() * 4 + 2) * this.scale,
-        life: 500,
-        type: "particle"
-      });
+    for (let i = 0; i < 15; i++) {
+        const p = this.pools.sparkBursts.pop() || {};
+        p.x = x; p.y = y;
+        p.vx = (Math.random() - 0.5) * 10;
+        p.vy = (Math.random() - 0.5) * 10;
+        p.size = (Math.random() * 4 + 2) * this.scale;
+        p.life = 500; p.type = "particle";
+        this.sparkBursts.push(p);
     }
   },
 
   updateSparkBursts(delta) {
-
     for (let i = this.sparkBursts.length - 1; i >= 0; i--) {
-
       const s = this.sparkBursts[i];
-
       s.life -= delta;
-
+      if (s.life <= 0) {
+        this.pools.sparkBursts.push(this.sparkBursts[i]);
+        this.sparkBursts[i] = this.sparkBursts[this.sparkBursts.length - 1];
+        this.sparkBursts.pop();
+        continue;
+      }
       if (s.type === "particle") {
-
-        s.x += s.vx;
-        s.y += s.vy;
-        s.vx *= 0.95;
-        s.vy *= 0.95;
-
+        s.x += s.vx; s.y += s.vy;
+        s.vx *= 0.95; s.vy *= 0.95;
       } else {
-
         const progress = 1 - (s.life / 600);
         s.radius = s.maxRadius * progress;
         s.alpha = 1 - progress;
-      }
-
-      if (s.life <= 0) {
-        this.sparkBursts.splice(i, 1);
       }
     }
   },
@@ -931,18 +956,10 @@ const Game11 = {
      BACKGROUND (Ported from ordinal2.js)
   ============================================================ */
   drawBackground(ctx) {
-    const T = this.T, W = this.cssWidth, H = this.cssHeight;
-    const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, T.bg1);
-    g.addColorStop(0.5, T.bg2);
-    g.addColorStop(1, T.bg3);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
-    const r = ctx.createRadialGradient(this.CENTER_X, this.CENTER_Y * 0.7, 0, this.CENTER_X, this.CENTER_Y * 0.7, W * 0.55);
-    r.addColorStop(0, "rgba(124,58,237,0.2)");
-    r.addColorStop(1, "rgba(0,0,0,0)");
-    ctx.fillStyle = r;
-    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = this.bgGrd || "#0a0e27";
+    ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+    ctx.fillStyle = this.radialGrd || "transparent";
+    ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
   },
   initStarfield() {
     this.stars = [];
@@ -1146,9 +1163,8 @@ const Game11 = {
     ctx.save();
     ctx.translate(this.mascot.x, this.mascot.y);
     ctx.shadowColor = this.T.accentGlow;
-    ctx.shadowBlur = 20 * this.scale;
+    ctx.shadowBlur = 15;
     ctx.fillStyle = "#ffffff";
-    // Scale font size with lifeRatio
     const fontSize = Math.round(62 * this.scale * lifeRatio);
     ctx.font = `bold ${fontSize}px 'Comic Sans MS', cursive`;
     ctx.textAlign = "center";
@@ -1218,11 +1234,10 @@ const Game11 = {
       ctx.scale(scale, scale);
 
       ctx.fillStyle = "#FFFFFF";
-      ctx.strokeStyle = "#8B4513"; // Saddle brown for contrast on gold
+      ctx.strokeStyle = "#8B4513";
       ctx.lineWidth = 5 * this.scale;
-      ctx.shadowColor = "rgba(0,0,0,0.5)";
-      ctx.shadowBlur = 8;
-      ctx.font = `bold ${30 * this.scale}px Arial`;
+      ctx.shadowBlur = 4;
+      ctx.font = this.fNumber;
 
       ctx.strokeText(n.number, 0, 0);
       ctx.fillText(n.number, 0, 0);
@@ -1288,7 +1303,7 @@ const Game11 = {
     ctx.save();
 
     const text = `Show Fingers to Choose Ordinals Suffix`;
-    ctx.font = `bold ${34 * this.scale}px Comic Sans MS`;
+    ctx.font = this.fInstruction;
     const textWidth = ctx.measureText(text).width;
 
     const padX = 40 * this.scale;
@@ -1354,8 +1369,8 @@ const Game11 = {
 
     ctx.fillStyle = "#FF4444";
     ctx.shadowColor = "#FF0000";
-    ctx.shadowBlur = 20 + Math.sin(time * 0.005) * 10;
-    ctx.font = `bold ${80 * this.scale}px Arial`;
+    ctx.shadowBlur = 10;
+    ctx.font = this.fGameOver;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -1376,8 +1391,8 @@ const Game11 = {
     ctx.globalAlpha = 0.8 + Math.sin(time * 0.005) * 0.2;
     ctx.fillStyle = "#00FFAA";
     ctx.shadowColor = "#00FFAA";
-    ctx.shadowBlur = 15;
-    ctx.font = `bold ${45 * this.scale}px Arial`;
+    ctx.shadowBlur = 10;
+    ctx.font = this.fRetry;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
 
@@ -1497,6 +1512,12 @@ const Game11 = {
     this.mode1SuctionData = null;
   },
 
+  distSq(ax, ay, bx, by) {
+    const dx = ax - bx;
+    const dy = ay - by;
+    return dx * dx + dy * dy;
+  },
+
   drawBlackHole(ctx, delta) {
     if (!this.galaxyCollapsed) return;
 
@@ -1586,15 +1607,22 @@ const Game11 = {
       const p = this.blackHoleSuctionParticles[i];
       const dx = bx - p.x;
       const dy = by - p.y;
-      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const dSq = dx * dx + dy * dy;
+      const brSq = br * br;
+
+      if (p.life <= 0 || dSq < brSq * 0.9) {
+        this.pools.blackHoleSuctionParticles.push(this.blackHoleSuctionParticles[i]);
+        this.blackHoleSuctionParticles[i] = this.blackHoleSuctionParticles[this.blackHoleSuctionParticles.length - 1];
+        this.blackHoleSuctionParticles.pop();
+        continue;
+      }
+      
+      const dist = Math.sqrt(dSq) || 1;
       const pull = Math.min(1200 / dist, 30);
       p.x += (dx / dist) * pull * (delta / 16);
       p.y += (dy / dist) * pull * (delta / 16);
       p.life -= delta;
-      if (p.life <= 0 || dist < br * 0.95) {
-        this.blackHoleSuctionParticles.splice(i, 1);
-        continue;
-      }
+
       const alpha = (p.life / p.maxLife) * 0.9;
       ctx.globalAlpha = alpha;
       ctx.fillStyle = p.color + alpha + ")";
@@ -1668,15 +1696,10 @@ const Game11 = {
 
 
   spawnFloatingText(x, y, text, color) {
-    this.floatingTexts.push({
-      x: x,
-      y: y,
-      text: text,
-      color: color,
-      life: 1000,
-      maxLife: 1000,
-      vy: -2 * this.scale
-    });
+    const ft = this.pools.floatingTexts.pop() || {};
+    ft.x = x; ft.y = y; ft.text = text; ft.color = color;
+    ft.life = 1000; ft.maxLife = 1000; ft.vy = -2 * this.scale;
+    this.floatingTexts.push(ft);
   },
 
   updateFloatingTexts(delta) {
@@ -1685,7 +1708,9 @@ const Game11 = {
       ft.y += ft.vy;
       ft.life -= delta;
       if (ft.life <= 0) {
-        this.floatingTexts.splice(i, 1);
+        this.pools.floatingTexts.push(this.floatingTexts[i]);
+        this.floatingTexts[i] = this.floatingTexts[this.floatingTexts.length - 1];
+        this.floatingTexts.pop();
       }
     }
   },
@@ -1697,10 +1722,9 @@ const Game11 = {
     for (let ft of this.floatingTexts) {
       const alpha = Math.max(0, ft.life / ft.maxLife);
       ctx.globalAlpha = alpha;
-      ctx.font = `bold ${40 * this.scale}px Comic Sans MS`;
+      ctx.font = this.fFloating;
       ctx.fillStyle = ft.color;
-      ctx.shadowColor = ft.color;
-      ctx.shadowBlur = 10;
+      ctx.shadowBlur = 6;
       ctx.fillText(ft.text, ft.x, ft.y);
     }
     ctx.restore();
