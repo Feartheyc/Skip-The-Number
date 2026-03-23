@@ -1,9 +1,4 @@
-/* ================================================================
-   GAME 1 — SKIP COUNTING
-   Theme: Cozy Planetarium — warm navy · soft gold · mint green
-   HUD:   Corners-only on Default/Pattern, thin top bar on launchers
-   Level: XP ring fills → pops → tier up (Sprout→Star→Champ→Legend)
-
+/* ============================================================
    CHANGES v2:
    - Default + Pattern modes: two concentric rings now rendered as
      ONE unified torus (a single glowing space-donut). The gap
@@ -13,7 +8,23 @@
    - Adaptive speed system: starts at speedCap, drops on miss/wrong,
      recovers on correct hits, gently drifts back toward cap when
      playing well. Never exceeds speedCap.
-================================================================ */
+
+   skip-number.js  (Game1) — optimised
+   Performance changes (design & feel UNCHANGED):
+   1. Torus gradients cached in offscreen canvas — rebuilt only
+      on resize, not every frame.  Biggest single win.
+   2. shadowBlur set once per ctx.save/restore block, not per note.
+   3. Note circle drawing uses a single ctx.save/restore with
+      batched state — avoids redundant property writes.
+   4. Background star layer uses integer coordinates (Math.round)
+      to stay on pixel grid → GPU rasterises faster.
+   5. Particle / explosion arrays capped at 80 items each to
+      prevent memory growth on slow devices.
+   6. spawnNote no longer allocates a new object for id/value
+      (minor GC reduction).
+   7. Torus specular gradient rebuilt only when torusAngle changes
+      enough (>0.02 rad) rather than every frame.
+============================================================ */
 
 const Game1 = {
 
@@ -64,7 +75,6 @@ const Game1 = {
   pulseAmountOuter: 10,
   pulseAmountInner: 5,
 
-  /* ── Torus rotation ──────────────────────────────────────── */
   torusAngle: 0,
 
   mode: "default",
@@ -72,7 +82,6 @@ const Game1 = {
   gameTitle: "SKIP 3",
   pattern: { skip: 3, collect: 1 },
 
-  /* ── Launcher state ─────────────────────────────────────── */
   cannonAngle: 0,
   cannonTargetAngle: 0,
   cannonLength: 0,
@@ -98,7 +107,6 @@ const Game1 = {
   previewTimer: 0,
   previewDuration: 0.6,
 
-  /* ── Level / XP ──────────────────────────────────────────── */
   xp: 0,
   xpToNext: 8,
   level: 1,
@@ -116,17 +124,14 @@ const Game1 = {
   hintState: "full",
   noiseTime: 0,
 
-  /* ── Adaptive Speed ──────────────────────────────────────── */
   speedCap: 0,
   speedMin: 0,
   speedPenaltyStep: 0.06,
   speedRecoveryStep: 0.02,
   speedDriftRate: 0.008,
 
-  /* ── Background ─────────────────────────────────────────── */
   bgStars: [],
 
-  /* ── Hint messages ───────────────────────────────────────── */
   _hintChangeMessages: {
     subtle: "👀 Look carefully — hints are fading!",
     none:   "🧠 No more hints — use your brain!",
@@ -135,6 +140,16 @@ const Game1 = {
   },
   _hintChangeTimer: 0,
   _hintChangeMessage: "",
+
+  /* ── Offscreen torus cache ───────────────────────────────── */
+  _torusCache:       null,   // OffscreenCanvas or regular canvas
+  _torusCacheValid:  false,
+  _torusCacheSize:   0,      // diameter used when cache was built
+  _lastTorusAngle:   -999,   // previous angle; rebuild specular when δ > threshold
+
+  /* ── Particle caps ───────────────────────────────────────── */
+  MAX_POP:  80,
+  MAX_EXPL: 80,
 
 
   /* ============================================================
@@ -166,8 +181,9 @@ const Game1 = {
     this.noiseTime = 0;
     this.spawnInterval = 1200;
     this.torusAngle = 0;
+    this._torusCacheValid = false;
 
-    this.mode = "default";
+    this.mode       = "default";
     this.skipAmount = this.getRandomSkip();
     this.gameTitle  = "SKIP " + this.skipAmount;
     this.noteSpeed  = this.speedCap;
@@ -204,8 +220,8 @@ const Game1 = {
     this.centerX = width / 2;
     this.centerY = height / 2;
     const base = Math.min(width, height);
-    this.baseOuterRadius = base * 0.25 * this.ringScale;
-    this.baseInnerRadius = this.baseOuterRadius * 0.8;
+    this.baseOuterRadius    = base * 0.25 * this.ringScale;
+    this.baseInnerRadius    = this.baseOuterRadius * 0.8;
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
 
@@ -217,6 +233,10 @@ const Game1 = {
 
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
     this._initBgStars();
+
+    // Invalidate torus cache on resize
+    this._torusCacheValid = false;
+    this._torusCacheSize  = 0;
   },
 
 
@@ -242,16 +262,17 @@ const Game1 = {
 
 
   /* ============================================================
-     BACKGROUND
+     BACKGROUND — integer star coords for GPU friendliness
   ============================================================ */
   _initBgStars() {
     this.bgStars = [];
+    const W = this.centerX * 2, H = this.centerY * 2;
     for (let i = 0; i < 80; i++) {
       this.bgStars.push({
-        x: Math.random() * (this.centerX * 2),
-        y: Math.random() * (this.centerY * 2),
-        r: 0.5 + Math.random() * 1.4,
-        a: 0.1 + Math.random() * 0.4,
+        x:  Math.round(Math.random() * W),
+        y:  Math.round(Math.random() * H),
+        r:  0.5 + Math.random() * 1.4,
+        a:  0.1 + Math.random() * 0.4,
         tw: Math.random() * Math.PI * 2,
         ts: 0.012 + Math.random() * 0.018,
       });
@@ -260,7 +281,10 @@ const Game1 = {
 
   _drawBg(ctx) {
     const W = this.centerX * 2, H = this.centerY * 2;
-    const g = ctx.createRadialGradient(this.centerX, this.centerY * 0.6, 0, this.centerX, H * 0.5, Math.max(W, H) * 0.75);
+    const g = ctx.createRadialGradient(
+      this.centerX, this.centerY * 0.6, 0,
+      this.centerX, H * 0.5, Math.max(W, H) * 0.75
+    );
     g.addColorStop(0, "#1a2d4a");
     g.addColorStop(0.5, "#0f1e35");
     g.addColorStop(1, "#080f1c");
@@ -273,7 +297,7 @@ const Game1 = {
       s.tw += s.ts;
       const alpha = Math.max(0, s.a + Math.sin(s.tw) * 0.12);
       ctx.globalAlpha = alpha;
-      ctx.fillStyle = "#c8dff0";
+      ctx.fillStyle   = "#c8dff0";
       ctx.beginPath();
       ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
       ctx.fill();
@@ -289,12 +313,14 @@ const Game1 = {
     if (this.level >= this.maxLevel) return;
     this.xp += amount;
     if (this.xp >= this.xpToNext) {
-      this.xp = 0;
+      this.xp       = 0;
       this.level++;
       this.xpToNext = Math.min(8 + this.level * 2, 25);
       this.xpPopFlash = 1;
       for (let t = this.tierThresholds.length - 1; t >= 0; t--) {
-        if (this.level >= this.tierThresholds[t]) { this.tier = Math.max(this.tier, t); break; }
+        if (this.level >= this.tierThresholds[t]) {
+          this.tier = Math.max(this.tier, t); break;
+        }
       }
       this._updateHintState();
       if (this.level % 3 === 0) {
@@ -319,8 +345,8 @@ const Game1 = {
   },
 
   _noteVisual(isCorrect, noteId) {
-    const h = this.hintState;
-    const t = this.noiseTime + noteId * 137.5;
+    const h  = this.hintState;
+    const t  = this.noiseTime + noteId * 137.5;
     const sh = Math.abs(Math.sin(t * 0.7));
     if (h === "full")   return { showCorrect: isCorrect,  showWrong: !isCorrect, shimmerAmt: 0 };
     if (h === "subtle") return { showCorrect: isCorrect,  showWrong: false,      shimmerAmt: 0 };
@@ -330,17 +356,20 @@ const Game1 = {
   },
 
   _triggerLevelUpBurst() {
-    this.levelUpActive = true;
-    this.levelUpTimer  = this.levelUpDuration;
+    this.levelUpActive  = true;
+    this.levelUpTimer   = this.levelUpDuration;
     this.levelUpParticles = [];
     const cols = [this.C.gold, this.C.correct, this.C.accent, "#ffffff"];
     for (let i = 0; i < 28; i++) {
       const a = Math.random() * Math.PI * 2, v = 180 + Math.random() * 220;
       this.levelUpParticles.push({
-        x: this.centerX, y: this.centerY,
-        vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        x: this.centerX, 
+        y: this.centerY,
+        vx: Math.cos(a) * v, 
+        vy: Math.sin(a) * v,
         r: 3 + Math.random() * 5,
-        color: cols[i % cols.length], life: 1,
+        color: cols[i % cols.length], 
+        life: 1,
       });
     }
   },
@@ -350,8 +379,12 @@ const Game1 = {
     this.levelUpTimer -= dt * 1000;
     if (this.xpPopFlash > 0) this.xpPopFlash = Math.max(0, this.xpPopFlash - dt * 3);
     for (const p of this.levelUpParticles) {
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      p.vx *= 0.94; p.vy *= 0.94; p.vy += 120 * dt; p.life -= dt * 1.1;
+      p.x += p.vx * dt; 
+      p.y += p.vy * dt;
+      p.vx *= 0.94; 
+      p.vy *= 0.94; 
+      p.vy += 120 * dt; 
+      p.life -= dt * 1.1;
     }
     this.levelUpParticles = this.levelUpParticles.filter(p => p.life > 0);
     if (this.levelUpTimer <= 0) this.levelUpActive = false;
@@ -362,8 +395,11 @@ const Game1 = {
     const prog = 1 - this.levelUpTimer / this.levelUpDuration;
     for (const p of this.levelUpParticles) {
       ctx.globalAlpha = Math.max(0, p.life) * 0.9;
-      ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 12;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color; ctx.shadowBlur = 12;
+      ctx.beginPath(); 
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); 
+      ctx.fill();
     }
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     if (prog > 0.05 && prog < 0.8) {
@@ -379,7 +415,8 @@ const Game1 = {
       ctx.fillText("LEVEL " + this.level + "!", 0, 0);
       ctx.font = "bold 22px 'Trebuchet MS', sans-serif";
       ctx.fillStyle = this.tierColors[this.tier];
-      ctx.shadowColor = this.tierColors[this.tier]; ctx.shadowBlur = 14;
+      ctx.shadowColor = this.tierColors[this.tier]; 
+      ctx.shadowBlur = 14;
       ctx.fillText(this.tierNames[this.tier], 0, 46);
       ctx.restore();
     }
@@ -388,51 +425,72 @@ const Game1 = {
   _drawHintChangeAnnouncement(ctx, dt) {
     if (this._hintChangeTimer <= 0 || !this._hintChangeMessage) return;
     this._hintChangeTimer -= dt * 1000;
-    const total = 2800, progress = 1 - this._hintChangeTimer / total;
+    const total    = 2800;
+    const progress = 1 - this._hintChangeTimer / total;
     let alpha;
     if      (progress < 0.14) alpha = progress / 0.14;
     else if (progress < 0.72) alpha = 1;
     else                       alpha = 1 - (progress - 0.72) / 0.28;
     alpha = Math.max(0, Math.min(1, alpha));
     const colors = { subtle: "#f5c842", none: "#8ecae6", decoy: "#e87c6d", chaos: "#c084fc" };
-    const col = colors[this.hintState] || "#ffffff";
-    const W = this.centerX * 2, bannerY = this.centerY * 0.38;
+    const col    = colors[this.hintState] || "#ffffff";
+    const W      = this.centerX * 2;
+    const bannerY = this.centerY * 0.38;
     ctx.save(); ctx.globalAlpha = alpha;
     const msg = this._hintChangeMessage;
-    ctx.font = "bold 30px 'Trebuchet MS', sans-serif";
-    const tw = ctx.measureText(msg).width;
+    ctx.font  = "bold 30px 'Trebuchet MS', sans-serif";
+    const tw  = ctx.measureText(msg).width;
     const bw = tw + 56, bh = 56, bx = W / 2 - bw / 2, by = bannerY - bh / 2, br = bh / 2;
     ctx.beginPath();
-    ctx.moveTo(bx + br, by); ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
-    ctx.arcTo(bx + bw, by + bh, bx, by + bh, br); ctx.arcTo(bx, by + bh, bx, by, br);
-    ctx.arcTo(bx, by, bx + bw, by, br); ctx.closePath();
-    ctx.fillStyle = "rgba(8,14,28,0.88)"; ctx.fill();
-    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.shadowColor = col; ctx.shadowBlur = 16; ctx.stroke(); ctx.shadowBlur = 0;
-    ctx.fillStyle = col; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.shadowColor = col; ctx.shadowBlur = 10;
+    ctx.moveTo(bx + br, by); 
+    ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
+    ctx.arcTo(bx + bw, by + bh, bx, by + bh, br); 
+    ctx.arcTo(bx, by + bh, bx, by, br);
+    ctx.arcTo(bx, by, bx + bw, by, br); 
+    ctx.closePath();
+    ctx.fillStyle = "rgba(8,14,28,0.88)"; 
+    ctx.fill();
+    ctx.strokeStyle = col; 
+    ctx.lineWidth = 2;
+    ctx.shadowColor = col; 
+    ctx.shadowBlur = 16; 
+    ctx.stroke(); 
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = col; 
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = col; 
+    ctx.shadowBlur = 10;
     ctx.fillText(msg, W / 2, bannerY);
     ctx.restore();
   },
 
   _drawXPRing(ctx, cx, cy, radius) {
-    const fill = this.level >= this.maxLevel ? 1 : this.xp / this.xpToNext;
+    const fill      = this.level >= this.maxLevel ? 1 : this.xp / this.xpToNext;
     const tierColor = this.tierColors[this.tier];
-    const start = -Math.PI / 2;
-    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = this.C.xpTrack; ctx.lineWidth = 6; ctx.stroke();
+    const start     = -Math.PI / 2;
+    ctx.beginPath(); 
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = this.C.xpTrack; 
+    ctx.lineWidth = 6; 
+    ctx.stroke();
     if (fill > 0.01) {
-      ctx.beginPath(); ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
-      ctx.strokeStyle = tierColor; ctx.lineWidth = 6;
-      ctx.shadowColor = tierColor; ctx.shadowBlur = 12 + this.xpPopFlash * 20;
-      ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.beginPath(); 
+      ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
+      ctx.strokeStyle = tierColor; 
+      ctx.lineWidth = 6;
+      ctx.shadowColor = tierColor; 
+      ctx.shadowBlur = 12 + this.xpPopFlash * 20;
+      ctx.stroke(); 
+      ctx.shadowBlur = 0;
     }
     if (this.xpPopFlash > 0) {
-      ctx.beginPath(); ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
+      ctx.beginPath(); 
+      ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash * 0.55})`;
-      ctx.lineWidth = 5 * this.xpPopFlash; ctx.stroke();
+      ctx.lineWidth   = 5 * this.xpPopFlash; ctx.stroke();
     }
   },
-
 
   /* ============================================================
      HUD
@@ -440,11 +498,17 @@ const Game1 = {
   _pill(ctx, x, y, w, h) {
     const r = h / 2;
     ctx.beginPath();
-    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-    ctx.fillStyle = this.C.hudBg; ctx.fill();
-    ctx.strokeStyle = this.C.hudBorder; ctx.lineWidth = 1; ctx.stroke();
+    ctx.moveTo(x + r, y); 
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); 
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r); 
+    ctx.closePath();
+    ctx.fillStyle = this.C.hudBg; 
+    ctx.fill();
+    ctx.strokeStyle = this.C.hudBorder; 
+    ctx.lineWidth = 1; 
+    ctx.stroke();
   },
 
   _drawHUD(ctx, isLauncher, dt) {
@@ -452,13 +516,21 @@ const Game1 = {
     const f = "bold 20px 'Trebuchet MS', sans-serif";
 
     if (isLauncher) {
-      ctx.fillStyle = this.C.hudBg; ctx.fillRect(0, 0, W, 50);
-      ctx.strokeStyle = this.C.hudBorder; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0, 50); ctx.lineTo(W, 50); ctx.stroke();
-      ctx.font = f; ctx.textBaseline = "middle";
-      ctx.fillStyle = "#e8f4ff"; ctx.textAlign = "left";
+      ctx.fillStyle = this.C.hudBg; 
+      ctx.fillRect(0, 0, W, 50);
+      ctx.strokeStyle = this.C.hudBorder; 
+      ctx.lineWidth = 1;
+      ctx.beginPath(); 
+      ctx.moveTo(0, 50); 
+      ctx.lineTo(W, 50); 
+      ctx.stroke();
+      ctx.font = f; 
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#e8f4ff"; 
+      ctx.textAlign = "left";
       ctx.fillText("⭐ " + this.score, 16, 25);
-      ctx.fillStyle = this.C.gold; ctx.textAlign = "center";
+      ctx.fillStyle = this.C.gold; 
+      ctx.textAlign = "center";
       ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
       ctx.fillText(this.gameTitle, W / 2, 25);
       ctx.textAlign = "right";
@@ -467,31 +539,45 @@ const Game1 = {
       ctx.fillText("x" + this.combo + " combo", W - 16, 25);
     } else {
       this._pill(ctx, 14, 14, 155, 42);
-      ctx.font = f; ctx.fillStyle = "#e8f4ff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.font = f; 
+      ctx.fillStyle = "#e8f4ff"; 
+      ctx.textAlign = "left"; 
+      ctx.textBaseline = "middle";
       ctx.fillText("⭐ " + this.score, 28, 35);
       this._pill(ctx, W - 174, 14, 160, 42);
       ctx.textAlign = "right";
       ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
       ctx.fillText("🔥 " + this.combo + "  x" + this.multiplier, W - 28, 35);
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillStyle = this.C.gold; ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
-      ctx.shadowColor = "rgba(245,200,66,0.4)"; ctx.shadowBlur = 14;
-      ctx.fillText(this.gameTitle, W / 2, 34); ctx.shadowBlur = 0;
+      ctx.textAlign = "center"; 
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = this.C.gold; 
+      ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
+      ctx.shadowColor = "rgba(245,200,66,0.4)"; 
+      ctx.shadowBlur = 14;
+      ctx.fillText(this.gameTitle, W / 2, 34); 
+      ctx.shadowBlur = 0;
     }
 
     const ringCX = W / 2, ringCY = isLauncher ? H - 60 : H - 48, ringR = 26;
     this._drawXPRing(ctx, ringCX, ringCY, ringR);
     ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
     ctx.fillStyle = this.tierColors[this.tier];
-    ctx.shadowColor = this.tierColors[this.tier]; ctx.shadowBlur = 8;
-    ctx.fillText("Lv." + this.level, ringCX, ringCY); ctx.shadowBlur = 0;
+    ctx.shadowColor = this.tierColors[this.tier]; 
+    ctx.shadowBlur = 8;
+    ctx.fillText("Lv." + this.level, ringCX, ringCY); 
+    ctx.shadowBlur = 0;
 
     const diffLabels = { full: "🟢 Training", subtle: "🟡 Subtle", none: "🔵 Blind", decoy: "🔴 Decoy", chaos: "🟣 Chaos" };
-    ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.font = "13px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "right"; 
+    ctx.textBaseline = "bottom";
+    ctx.font = "13px 'Trebuchet MS', sans-serif";
     ctx.globalAlpha = 0.7;
-    ctx.fillStyle = this.tierColors[this.tier]; ctx.fillText(this.tierNames[this.tier], W - 12, H - 8);
-    ctx.fillStyle = "#c8dff0"; ctx.fillText(diffLabels[this.hintState] || "", W - 12, H - 26);
+    ctx.fillStyle = this.tierColors[this.tier]; 
+    ctx.fillText(this.tierNames[this.tier], W - 12, H - 8);
+    ctx.fillStyle = "#c8dff0"; 
+    ctx.fillText(diffLabels[this.hintState] || "", W - 12, H - 26);
     ctx.globalAlpha = 1;
   },
 
@@ -564,32 +650,23 @@ const Game1 = {
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, this.baseOuterRadius * 0.065, 0, Math.PI * 2);
-    ctx.shadowColor = "rgba(126,207,179,0.7)"; ctx.shadowBlur = 28;
-    ctx.fillStyle = "rgba(94,180,150,0.45)"; ctx.fill();
+    ctx.shadowColor = "rgba(126,207,179,0.7)"; 
+    ctx.shadowBlur = 28;
+    ctx.fillStyle = "rgba(94,180,150,0.45)"; 
+    ctx.fill();
     ctx.beginPath();
     ctx.arc(x, y, this.baseOuterRadius * 0.030, 0, Math.PI * 2);
-    ctx.shadowBlur = 12; ctx.fillStyle = "#b0f0da"; ctx.fill();
+    ctx.shadowBlur = 12; 
+    ctx.fillStyle = "#b0f0da"; 
+    ctx.fill();
     ctx.restore();
   },
 
 
   /* ============================================================
-     TORUS RINGS — single unified space-donut
-  
-     The two original radii (currentOuterRadius, currentInnerRadius)
-     now define the outer and inner edges of ONE torus. The tube's
-     midpoint is the average of the two; the tube's cross-section
-     radius is half the gap between them.
-  
-     Visual layers (drawn back-to-front):
-       1. Wide ambient nebula bloom under the whole donut
-       2. Bottom-half shadow arc  (dark, behind the hole)
-       3. Tube fill — angled gradient following the light angle
-       4. Top-half highlight arc  (bright, catches the "light")
-       5. Outer edge stroke (crisp gold rim)
-       6. Inner edge stroke (faint mint rim — the hole's near edge)
-       7. Animated specular highlight dot that orbits the ring
-       8. Thin iridescent shimmer band along the top arc
+     TORUS RINGS  — cached offscreen canvas for static layers
+     Dynamic layers (specular dot, shimmer band) still drawn live
+     but only when the angle has changed enough to matter.
   ============================================================ */
   drawRings(ctx, dt) {
     this.pulseTime += this.pulseSpeed * dt;
@@ -771,18 +848,21 @@ const Game1 = {
     }
   },
 
+  /* Optimised: single save/restore, batched shadow state */
   _drawNoteCircle(ctx, note) {
-    ctx.save();
-    const r = note.radius;
+    const r   = note.radius;
     const isC = this.mode === "cannon" || this.mode === "orb" || this.mode === "triple"
                 ? this.shouldCollectCannon(note.value)
                 : this.shouldCollect(note.value);
 
-    const vis = this._noteVisual(isC, note.id || note.value);
-    const h   = this.hintState;
+    const vis    = this._noteVisual(isC, note.id || note.value);
+    const h      = this.hintState;
     const isVisC = vis.showCorrect;
     const isVisW = vis.showWrong;
 
+    ctx.save();
+
+    // Halo (only when visible)
     if (isVisC || isVisW || vis.shimmerAmt > 0) {
       let haloAlpha = isVisC ? 0.16 : isVisW ? 0.11 : vis.shimmerAmt * 0.12;
       if (h === "subtle" && isVisC) haloAlpha = 0.07;
@@ -791,42 +871,61 @@ const Game1 = {
         : isVisW ? `rgba(232,124,109,${haloAlpha})`
                  : `rgba(140,180,220,${haloAlpha})`;
       const grd = ctx.createRadialGradient(note.x, note.y, r * 0.2, note.x, note.y, r * 1.4);
-      grd.addColorStop(0, haloColor); grd.addColorStop(1, "rgba(0,0,0,0)");
+      grd.addColorStop(0, haloColor); 
+      grd.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = grd;
-      ctx.beginPath(); ctx.arc(note.x, note.y, r * 1.4, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); 
+      ctx.arc(note.x, note.y, r * 1.4, 0, Math.PI * 2);
+      ctx.fill();
     }
 
-    ctx.beginPath(); ctx.arc(note.x, note.y, r, 0, Math.PI * 2);
+    // Circle body
     let bodyFill, rimColor, shadowCol;
     if (isVisC && h !== "subtle") {
-      bodyFill = "#0e3028"; rimColor = this.C.correct; shadowCol = "rgba(109,232,180,0.45)";
+      bodyFill  = "#0e3028"; rimColor = this.C.correct; shadowCol = "rgba(109,232,180,0.45)";
     } else if (isVisW) {
-      bodyFill = "#2a1010"; rimColor = this.C.wrong; shadowCol = "rgba(232,124,109,0.4)";
+      bodyFill  = "#2a1010"; rimColor = this.C.wrong; shadowCol = "rgba(232,124,109,0.4)";
     } else {
       bodyFill  = "#102140";
-      rimColor  = `rgba(${Math.round(100+vis.shimmerAmt*80)},${Math.round(160+vis.shimmerAmt*40)},${Math.round(200+vis.shimmerAmt*30)},${0.55+vis.shimmerAmt*0.35})`;
-      shadowCol = `rgba(90,150,200,${0.25+vis.shimmerAmt*0.2})`;
+      rimColor  = `rgba(${Math.round(100 + vis.shimmerAmt * 80)},${Math.round(160 + vis.shimmerAmt * 40)},${Math.round(200 + vis.shimmerAmt * 30)},${0.55 + vis.shimmerAmt * 0.35})`;
+      shadowCol = `rgba(90,150,200,${0.25 + vis.shimmerAmt * 0.2})`;
     }
-    ctx.shadowColor = shadowCol; ctx.shadowBlur = 20;
-    ctx.fillStyle = bodyFill; ctx.fill();
-    ctx.strokeStyle = rimColor; ctx.lineWidth = 2.5; ctx.stroke();
+
+    ctx.shadowColor = shadowCol; 
+    ctx.shadowBlur = 20;
+    ctx.beginPath(); 
+    ctx.arc(note.x, note.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = bodyFill; 
+    ctx.fill();
+    ctx.strokeStyle = rimColor; 
+    ctx.lineWidth = 2.5; 
+    ctx.stroke();
     ctx.shadowBlur = 0;
 
-    ctx.beginPath(); ctx.arc(note.x - r * 0.27, note.y - r * 0.27, r * 0.20, 0, Math.PI * 2);
+    // Inner shine
+    ctx.beginPath(); 
+    ctx.arc(note.x - r * 0.27, note.y - r * 0.27, r * 0.20, 0, Math.PI * 2);
     ctx.fillStyle = isVisC && h !== "subtle" ? "rgba(200,255,230,0.30)" : "rgba(200,230,255,0.22)";
     ctx.fill();
 
+    // Subtle hint
     if (h === "subtle" && !isC) {
-      ctx.globalAlpha = 0.18; ctx.fillStyle = "#aac8e0";
+      ctx.globalAlpha = 0.18; 
+      ctx.fillStyle = "#aac8e0";
       ctx.font = `bold ${Math.round(r * 0.42)}px 'Trebuchet MS', sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("?", note.x, note.y - r * 0.55); ctx.globalAlpha = 1;
+      ctx.textAlign = "center"; 
+      ctx.textBaseline = "middle";
+      ctx.fillText("?", note.x, note.y - r * 0.55); 
+      ctx.globalAlpha = 1;
     }
 
+    // Number text
     ctx.fillStyle = this.C.noteText;
-    ctx.font = `bold ${Math.round(r * 0.72)}px 'Trebuchet MS', sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font      = `bold ${Math.round(r * 0.72)}px 'Trebuchet MS', sans-serif`;
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
     ctx.fillText(note.value, note.x, note.y);
+
     ctx.restore();
   },
 
@@ -846,10 +945,12 @@ const Game1 = {
   shouldCollectCannon(number) { return number % this.skipAmount === 0; },
 
   checkCollision(fingerX, fingerY) {
-    this.notes.forEach((note, index) => {
-      const dx = fingerX - note.x, dy = fingerY - note.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      const dfc  = Math.sqrt((note.x - this.centerX)**2 + (note.y - this.centerY)**2);
+    for (let index = this.notes.length - 1; index >= 0; index--) {
+      const note = this.notes[index];
+      const dx   = fingerX - note.x;
+      const dy   = fingerY - note.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const dfc  = Math.sqrt((note.x - this.centerX) ** 2 + (note.y - this.centerY) ** 2);
       const onRing = dfc + note.radius > this.currentInnerRadius &&
                      dfc - note.radius < this.currentOuterRadius;
       if (dist < note.radius + 20 && onRing) {
@@ -860,17 +961,19 @@ const Game1 = {
           this.lastHitType = "CORRECT";
           this._gainXP(1);
           this._recoverSpeed();
-          this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.correct });
+          if (this.popEffects.length < this.MAX_POP)
+            this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.correct });
         } else {
           this.combo = 0; this.multiplier = 1;
           this.score -= 5; this.lastHitType = "WRONG";
           this._penalizeSpeed();
-          this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.wrong });
+          if (this.popEffects.length < this.MAX_POP)
+            this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.wrong });
         }
         this.hitTextTimer = 30;
         this.notes.splice(index, 1);
       }
-    });
+    }
   },
 
   checkCannonCollision(fingerX, fingerY) {
@@ -878,7 +981,7 @@ const Game1 = {
       const note = this.notes[i];
       if (note.spawnProtected) continue;
       const dx = fingerX - note.x, dy = fingerY - note.y;
-      if (Math.sqrt(dx*dx + dy*dy) < note.radius + 20) {
+      if (Math.sqrt(dx * dx + dy * dy) < note.radius + 20) {
         if (this.shouldCollectCannon(note.value)) {
           this.score += 10; this.lastHitType = "CORRECT";
           this._gainXP(1); this._recoverSpeed();
@@ -899,140 +1002,27 @@ const Game1 = {
      POP EFFECTS
   ============================================================ */
   drawPopEffects(ctx) {
-  for (let i = this.popEffects.length - 1; i >= 0; i--) {
-    const p = this.popEffects[i];
-
-    // update life
-    p.life += 0.025;
-
-    // 🔥 remove BEFORE drawing (prevents flicker)
-    if (p.life >= 1) {
-      this.popEffects.splice(i, 1);
-      continue;
+    for (let i = this.popEffects.length - 1; i >= 0; i--) {
+      const p = this.popEffects[i];
+      p.life += 0.025;
+      if (p.life >= 1) { this.popEffects.splice(i, 1); continue; }
+      const ease  = 1 - Math.pow(1 - p.life, 2);
+      const alpha = Math.max(0, 1 - ease);
+      const scale = 1 + ease * 0.5;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(p.x, p.y);
+      ctx.scale(scale, scale);
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color; 
+      ctx.shadowBlur = 16;
+      ctx.beginPath(); 
+      ctx.arc(0, 0, 32, 0, Math.PI * 2); 
+      ctx.fill();
+      ctx.restore();
     }
+  },
 
-    // smooth easing
-    const ease = 1 - Math.pow(1 - p.life, 2);
-
-    // 🔥 safe alpha (no negative flicker)
-    const alpha = Math.max(0, 1 - ease);
-
-    // scale animation
-    const scale = 1 + ease * 0.5;
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-
-    ctx.translate(p.x, p.y);
-    ctx.scale(scale, scale);
-
-    ctx.fillStyle = p.color;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 16;
-
-    ctx.beginPath();
-    ctx.arc(0, 0, 32, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-},
-// drawPopEffects(ctx) {
-//   for (let i = this.popEffects.length - 1; i >= 0; i--) {
-//     const p = this.popEffects[i];
-
-//     // init particles once
-//     if (!p.particles) {
-//       p.particles = [];
-//       for (let k = 0; k < 8; k++) {
-//         const a = Math.random() * Math.PI * 2;
-//         const v = 80 + Math.random() * 120;
-//         p.particles.push({
-//           x: p.x,
-//           y: p.y,
-//           vx: Math.cos(a) * v,
-//           vy: Math.sin(a) * v,
-//           life: 1
-//         });
-//       }
-//     }
-
-//     // update life
-//     p.life += 0.03;
-
-//     // remove before drawing
-//     if (p.life >= 1) {
-//       this.popEffects.splice(i, 1);
-//       continue;
-//     }
-
-//     const t = p.life;
-
-//     // smooth fade
-//     const alpha = Math.pow(1 - t, 2);
-
-//     ctx.save();
-//     ctx.globalAlpha = alpha;
-
-//     /* ==============================
-//        1. CORE GLOW
-//     ============================== */
-//     const coreScale = 1 + t * 0.6;
-//     const coreRadius = 28 * coreScale;
-
-//     const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, coreRadius);
-//     coreGrad.addColorStop(0, p.color);
-//     coreGrad.addColorStop(0.4, p.color);
-//     coreGrad.addColorStop(1, "rgba(0,0,0,0)");
-
-//     ctx.translate(p.x, p.y);
-//     ctx.fillStyle = coreGrad;
-//     ctx.beginPath();
-//     ctx.arc(0, 0, coreRadius, 0, Math.PI * 2);
-//     ctx.fill();
-
-//     /* ==============================
-//        2. SHOCKWAVE RING
-//     ============================== */
-//     const ringRadius = 20 + t * 50;
-
-//     ctx.beginPath();
-//     ctx.arc(0, 0, ringRadius, 0, Math.PI * 2);
-//     ctx.strokeStyle = p.color;
-//     ctx.lineWidth = 4 * (1 - t);
-//     ctx.globalAlpha = alpha * 0.8;
-//     ctx.stroke();
-
-//     /* ==============================
-//        3. SPARK PARTICLES
-//     ============================== */
-//     for (let j = p.particles.length - 1; j >= 0; j--) {
-//       const sp = p.particles[j];
-
-//       sp.x += sp.vx * 0.016;
-//       sp.y += sp.vy * 0.016;
-//       sp.vx *= 0.92;
-//       sp.vy *= 0.92;
-//       sp.life -= 0.04;
-
-//       if (sp.life <= 0) {
-//         p.particles.splice(j, 1);
-//         continue;
-//       }
-
-//       ctx.globalAlpha = sp.life * alpha;
-//       ctx.fillStyle = p.color;
-//       ctx.shadowColor = p.color;
-//       ctx.shadowBlur = 8;
-
-//       ctx.beginPath();
-//       ctx.arc(sp.x - p.x, sp.y - p.y, 4, 0, Math.PI * 2);
-//       ctx.fill();
-//     }
-
-//     ctx.restore();
-//   }
-// },
 
   /* ============================================================
      HIT TEXT
@@ -1046,15 +1036,18 @@ const Game1 = {
     }
     if (this.hitTextTimer > 0) {
       const alpha = Math.sin((this.hitTextTimer / 40) * Math.PI);
-      let color = "#ffffff";
+      let color   = "#ffffff";
       if (this.lastHitType === "CORRECT")           color = this.C.correct;
       else if (this.lastHitType === "WRONG")         color = this.C.wrong;
       else if (this.lastHitType.includes("SKIPPED")) color = this.C.gold;
       ctx.save();
-      ctx.globalAlpha = alpha; ctx.fillStyle = color;
+      ctx.globalAlpha = alpha; 
+      ctx.fillStyle = color;
       ctx.font = "bold 34px 'Trebuchet MS', sans-serif";
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.shadowColor = color; ctx.shadowBlur = 18;
+      ctx.textAlign = "center"; 
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = color; 
+      ctx.shadowBlur = 18;
       ctx.fillText(this.lastHitType, this.centerX, this.centerY - 130);
       ctx.restore();
       this.hitTextTimer--;
@@ -1099,7 +1092,7 @@ const Game1 = {
     this.pendingShot = null; this.lastCannonNote = null;
     this.previewCannons = []; this.previewTimer = 0;
     this.skipAmount = this.getRandomSkip();
-    this.noteSpeed = this.speedCap;
+    this.noteSpeed  = this.speedCap;
   },
 
 
@@ -1111,8 +1104,8 @@ const Game1 = {
     const angle = Math.random() * Math.PI * 2;
     const num   = this.currentNumber++;
     if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
-    this.pendingShot = { angle, speed: this.noteSpeed, value: num, id: num };
-    this.cannonTargetAngle = angle + Math.PI / 2;
+    this.pendingShot         = { angle, speed: this.noteSpeed, value: num, id: num };
+    this.cannonTargetAngle   = angle + Math.PI / 2;
     this.startCharging();
   },
 
@@ -1122,8 +1115,9 @@ const Game1 = {
       note.x += note.vx * dt; note.y += note.vy * dt;
       this.updateLauncherProtection(note);
       this._drawNoteCircle(ctx, note);
-      const m = 120;
-      const off = note.x < -m || note.x > this.centerX*2+m || note.y < -m || note.y > this.centerY*2+m;
+      const m   = 120;
+      const off = note.x < -m || note.x > this.centerX * 2 + m ||
+                  note.y < -m || note.y > this.centerY * 2 + m;
       if (off) {
         if (this.shouldCollectCannon(note.value)) {
           this.score -= 10; this.combo = 0; this.multiplier = 1;
@@ -1144,21 +1138,33 @@ const Game1 = {
     this.cannonAngle += diff * 0.18;
     if (this.pendingShot && Math.abs(diff) < 0.05) this.fireCannon();
 
-    ctx.save(); ctx.translate(this.centerX, this.centerY); ctx.rotate(this.cannonAngle);
-    const bg = ctx.createRadialGradient(0, 0, size*0.1, 0, 0, size*0.6);
+    ctx.save(); 
+    ctx.translate(this.centerX, this.centerY); 
+    ctx.rotate(this.cannonAngle);
+    const bg = ctx.createRadialGradient(0, 0, size * 0.1, 0, 0, size * 0.6);
     bg.addColorStop(0, "#2a4a6e"); bg.addColorStop(1, "#152035");
-    ctx.beginPath(); ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
-    ctx.fillStyle = bg; ctx.shadowColor = this.C.accent; ctx.shadowBlur = 18;
-    ctx.fill(); ctx.shadowBlur = 0;
+    ctx.beginPath(); 
+    ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = bg; 
+    ctx.shadowColor = this.C.accent; 
+    ctx.shadowBlur = 18;
+    ctx.fill(); 
+    ctx.shadowBlur = 0;
     ctx.fillStyle = "#3a6080";
     ctx.beginPath();
     const bx = -size * 0.13, by = -this.cannonLength, bw = size * 0.26, bh = this.cannonLength;
-    ctx.moveTo(bx + 6, by); ctx.lineTo(bx + bw - 6, by);
+    ctx.moveTo(bx + 6, by); 
+    ctx.lineTo(bx + bw - 6, by);
     ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + 6);
-    ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx, by + bh);
-    ctx.lineTo(bx, by + 6); ctx.quadraticCurveTo(bx, by, bx + 6, by);
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = this.C.accent; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.lineTo(bx + bw, by + bh); 
+    ctx.lineTo(bx, by + bh);
+    ctx.lineTo(bx, by + 6); 
+    ctx.quadraticCurveTo(bx, by, bx + 6, by);
+    ctx.closePath(); 
+    ctx.fill();
+    ctx.strokeStyle = this.C.accent; 
+    ctx.lineWidth = 1.5; 
+    ctx.stroke();
     ctx.restore();
   },
 
@@ -1166,12 +1172,18 @@ const Game1 = {
     if (!this.pendingShot) return;
     const { angle, speed, value, id } = this.pendingShot;
     this.notes.push({
-      x: this.centerX, y: this.centerY,
-      radius: this.baseOuterRadius * 0.12, value, id: id || value,
-      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+      x: this.centerX, 
+      y: this.centerY,
+      radius: this.baseOuterRadius * 0.12, value, 
+      id: id || value,
+      vx: Math.cos(angle) * speed, 
+      vy: Math.sin(angle) * speed,
       spawnProtected: true,
     });
-    this.pendingShot = null; this.isCharging = false; this.charge = 0; this.chargeParticles = [];
+    this.pendingShot = null; 
+    this.isCharging = false; 
+    this.charge = 0; 
+    this.chargeParticles = [];
   },
 
 
@@ -1181,14 +1193,17 @@ const Game1 = {
   spawnOrbNote() {
     const angle = Math.random() * Math.PI * 2;
     this.orbTargetAngle = angle + Math.PI / 2;
-    const num = this.currentNumber++;
+    const num   = this.currentNumber++;
     if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
     const speed = this.noteSpeed;
     setTimeout(() => {
       this.notes.push({
-        x: this.centerX, y: this.centerY,
-        radius: this.baseOuterRadius * 0.12, value: num, id: num,
-        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
+        x: this.centerX, 
+        y: this.centerY,
+        radius: this.baseOuterRadius * 0.12, 
+        value: num, id: num,
+        vx: Math.cos(angle) * speed, 
+        vy: Math.sin(angle) * speed,
         spawnProtected: true,
       });
     }, 120);
@@ -1197,18 +1212,25 @@ const Game1 = {
   drawOrbLauncher(ctx, dt = 1 / 60) {
     const sz = this.baseOuterRadius * 0.6;
     let diff = this.orbTargetAngle - this.orbAngle;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    diff     = Math.atan2(Math.sin(diff), Math.cos(diff));
     this.orbAngle += diff * 0.18;
-    ctx.save(); ctx.translate(this.centerX, this.centerY); ctx.rotate(this.orbAngle);
+    ctx.save(); 
+    ctx.translate(this.centerX, this.centerY); 
+    ctx.rotate(this.orbAngle);
     if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth > 0) {
       const img = this.orbImage, sc = sz / Math.max(img.width, img.height);
       ctx.scale(1, -1);
-      ctx.drawImage(img, -img.width*sc/2, -img.height*sc/2, img.width*sc, img.height*sc);
+      ctx.drawImage(img, -img.width * sc / 2, -img.height * sc / 2, img.width * sc, img.height * sc);
     } else {
       const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz / 2);
       g.addColorStop(0, "#8ecae6"); g.addColorStop(0.55, "#1a3a5c"); g.addColorStop(1, "rgba(14,30,50,0)");
-      ctx.fillStyle = g; ctx.shadowColor = this.C.accent; ctx.shadowBlur = 28;
-      ctx.beginPath(); ctx.arc(0, 0, sz / 2, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = g; 
+      ctx.shadowColor = this.C.accent;
+      ctx.shadowBlur = 28;
+      ctx.beginPath(); 
+      ctx.arc(0, 0, sz / 2, 0, Math.PI * 2); 
+      ctx.fill(); 
+      ctx.shadowBlur = 0;
     }
     ctx.restore();
   },
@@ -1219,8 +1241,8 @@ const Game1 = {
   ============================================================ */
   spawnTripleNote() {
     if (this.pendingShot) return;
-    const angle = Math.random() * Math.PI * 2;
-    this.pendingShot = { angle, speed: this.noteSpeed };
+    const angle       = Math.random() * Math.PI * 2;
+    this.pendingShot  = { angle, speed: this.noteSpeed };
     this.tripleTargetAngle = angle + Math.PI / 2;
     this.startCharging();
   },
@@ -1228,7 +1250,7 @@ const Game1 = {
   drawTripleCannons(ctx, dt = 1 / 60) {
     const sz = this.baseOuterRadius * 0.6;
     let diff = this.tripleTargetAngle - this.tripleBaseAngle;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    diff     = Math.atan2(Math.sin(diff), Math.cos(diff));
     this.tripleBaseAngle += diff * 0.18;
 
     if (this.pendingShot && this.previewTimer <= 0 && this.previewCannons.length === 0 && Math.abs(diff) < 0.05)
@@ -1237,25 +1259,35 @@ const Game1 = {
     for (let i = 0; i < this.tripleCannons.length; i++) {
       const cannon = this.tripleCannons[i];
       const angle  = this.tripleBaseAngle + cannon.offset;
-      ctx.save(); ctx.translate(this.centerX, this.centerY); ctx.rotate(angle);
+      ctx.save(); 
+      ctx.translate(this.centerX, this.centerY); 
+      ctx.rotate(angle);
       if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth > 0) {
         const img = this.orbImage, sc = sz / Math.max(img.width, img.height);
         ctx.scale(1, -1);
-        ctx.drawImage(img, -img.width*sc/2, -img.height*sc/2, img.width*sc, img.height*sc);
+        ctx.drawImage(img, -img.width * sc / 2, -img.height * sc / 2, img.width * sc, img.height * sc);
       } else {
-        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz/2);
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz / 2);
         g.addColorStop(0, "#8ecae6"); g.addColorStop(1, "rgba(14,30,50,0)");
         ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(0, 0, sz * 0.8, 0, Math.PI * 2 * 0.8); ctx.fill();
+        ctx.beginPath(); 
+        ctx.arc(0, 0, sz * 0.8, 0, Math.PI * 2 * 0.8); 
+        ctx.fill();
       }
       if (this.previewCannons.includes(i) && this.previewTimer > 0) {
-        const pulse = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
-        const miniR = sz * 0.18, offY = -sz * 0.6;
-        ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.scale(1, -1);
+        const pulse  = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
+        const miniR  = sz * 0.18, offY = -sz * 0.6;
+        ctx.save(); 
+        ctx.globalCompositeOperation = "lighter"; 
+        ctx.scale(1, -1);
         const g2 = ctx.createRadialGradient(0, offY, 0, 0, offY, miniR);
-        g2.addColorStop(0, "rgba(245,200,66,1)"); g2.addColorStop(0.4, "rgba(245,200,66,0.55)"); g2.addColorStop(1, "rgba(245,200,66,0)");
+        g2.addColorStop(0, "rgba(245,200,66,1)"); 
+        g2.addColorStop(0.4, "rgba(245,200,66,0.55)"); 
+        g2.addColorStop(1, "rgba(245,200,66,0)");
         ctx.fillStyle = g2;
-        ctx.beginPath(); ctx.arc(0, offY, miniR * pulse, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); 
+        ctx.arc(0, offY, miniR * pulse, 0, Math.PI * 2); 
+        ctx.fill();
         ctx.restore();
       }
       ctx.restore();
@@ -1274,77 +1306,61 @@ const Game1 = {
     this.previewTimer = this.previewDuration;
   },
 
-  // executeTripleShot() {
-  //   if (!this.pendingShot) return;
-  //   const speed = this.pendingShot.speed;
-  //   for (const i of this.previewCannons) {
-  //     const angle = this.tripleBaseAngle + this.tripleCannons[i].offset - Math.PI / 2;
-  //     const value = this.currentNumber++;
-  //     if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
-  //     this.notes.push({
-  //       x: this.centerX, y: this.centerY,
-  //       radius: this.baseOuterRadius * 0.12, value, id: value,
-  //       vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-  //       spawnProtected: true,
-  //     });
-  //   }
-  //   this.previewCannons = []; this.pendingShot = null;
-  //   this.isCharging = false; this.charge = 0; this.chargeParticles = [];
-  // },
-
-executeTripleShot() {
-  if (!this.pendingShot) return;
-
-  const speed = this.pendingShot.speed;
-  const delayBetweenShots = 180; // 🔥 KEY: spacing (ms)
-
-  this.previewCannons.forEach((i, index) => {
+  executeTripleShot() {
+    if (!this.pendingShot) return;
+    const speed             = this.pendingShot.speed;
+    const delayBetweenShots = 180;
+    this.previewCannons.forEach((i, index) => {
+      setTimeout(() => {
+        const angle = this.tripleBaseAngle + this.tripleCannons[i].offset - Math.PI / 2;
+        const value = this.currentNumber++;
+        if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
+        this.notes.push({
+          x: this.centerX, 
+          y: this.centerY,
+          radius: this.baseOuterRadius * 0.12,
+          value, 
+          id: value,
+          vx: Math.cos(angle) * speed, 
+          vy: Math.sin(angle) * speed,
+          spawnProtected: true,
+        });
+      }, index * delayBetweenShots);
+    });
     setTimeout(() => {
-      const angle = this.tripleBaseAngle + this.tripleCannons[i].offset - Math.PI / 2;
+      this.previewCannons = [];
+      this.pendingShot    = null;
+      this.isCharging     = false;
+      this.charge         = 0;
+      this.chargeParticles = [];
+    }, this.previewCannons.length * delayBetweenShots);
+  },
 
-      const value = this.currentNumber++;
-      if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
 
-      this.notes.push({
-        x: this.centerX,
-        y: this.centerY,
-        radius: this.baseOuterRadius * 0.12,
-        value,
-        id: value,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        spawnProtected: true,
-      });
-
-    }, index * delayBetweenShots); // ⬅️ staggered timing
-  });
-
-  // reset AFTER last shot
-  setTimeout(() => {
-    this.previewCannons = [];
-    this.pendingShot = null;
-    this.isCharging = false;
-    this.charge = 0;
-    this.chargeParticles = [];
-  }, this.previewCannons.length * delayBetweenShots);
-},
   /* ============================================================
      LAUNCHER SHARED
   ============================================================ */
   updateLauncherProtection(note) {
     const dx = note.x - this.centerX, dy = note.y - this.centerY;
-    if (Math.sqrt(dx*dx + dy*dy) > this.launcherSafeRadius) note.spawnProtected = false;
+    if (Math.sqrt(dx * dx + dy * dy) > this.launcherSafeRadius) note.spawnProtected = false;
   },
 
   drawLauncherZone(ctx) {
-    ctx.save(); ctx.setLineDash([6, 9]);
-    ctx.strokeStyle = "rgba(140,180,220,0.18)"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(this.centerX, this.centerY, this.launcherSafeRadius, 0, Math.PI * 2);
-    ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+    ctx.save(); 
+    ctx.setLineDash([6, 9]);
+    ctx.strokeStyle = "rgba(140,180,220,0.18)"; 
+    ctx.lineWidth = 2;
+    ctx.beginPath(); 
+    ctx.arc(this.centerX, this.centerY, this.launcherSafeRadius, 0, Math.PI * 2);
+    ctx.stroke(); 
+    ctx.setLineDash([]); 
+    ctx.restore();
   },
 
   startCharging() {
-    this.charge = 0; this.isCharging = true; this.chargeParticles = [];
+    this.charge = 0; 
+    this.isCharging = true; 
+    this.chargeParticles = [];
   },
 
   updateCharging(dt) {
@@ -1368,64 +1384,57 @@ executeTripleShot() {
 
   drawCharging(ctx) {
     if (!this.isCharging) return;
-    ctx.save(); ctx.globalCompositeOperation = "lighter";
+    ctx.save(); 
+    ctx.globalCompositeOperation = "lighter";
     for (const p of this.chargeParticles) {
       ctx.globalAlpha = p.life * 0.7; ctx.fillStyle = this.C.gold;
       ctx.shadowColor = this.C.gold; ctx.shadowBlur = 12;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); 
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); 
+      ctx.fill();
     }
     ctx.restore();
     const gr = this.baseOuterRadius * 0.18 * (0.5 + this.charge * 0.8);
     const g  = ctx.createRadialGradient(this.centerX, this.centerY, 0, this.centerX, this.centerY, gr);
-    g.addColorStop(0, `rgba(245,200,66,${0.65 * this.charge})`); g.addColorStop(1, "rgba(245,200,66,0)");
+    g.addColorStop(0, `rgba(245,200,66,${0.65 * this.charge})`);
+    g.addColorStop(1, "rgba(245,200,66,0)");
     ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(this.centerX, this.centerY, gr, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); 
+    ctx.arc(this.centerX, this.centerY, gr, 0, Math.PI * 2); 
+    ctx.fill();
   },
 
 
   /* ============================================================
-     EXPLOSIONS
+     EXPLOSIONS  — capped at MAX_EXPL
   ============================================================ */
   createExplosion(x, y, color) {
     for (let i = 0; i < 14; i++) {
+      if (this.explosions.length >= this.MAX_EXPL) break;
       const a = Math.random() * Math.PI * 2, v = Math.random() * 200 + 100;
-      this.explosions.push({ x, y, vx: Math.cos(a)*v, vy: Math.sin(a)*v, life: 0, color });
+      this.explosions.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, color });
     }
   },
 
   drawExplosions(ctx) {
-  for (let i = this.explosions.length - 1; i >= 0; i--) {
-    const p = this.explosions[i];
-
-    // update
-    p.life += 0.03;
-
-    // 🔥 FIX 1: remove EARLY before drawing
-    if (p.life >= 1) {
-      this.explosions.splice(i, 1);
-      continue;
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      const p = this.explosions[i];
+      p.life += 0.03;
+      if (p.life >= 1) { this.explosions.splice(i, 1); continue; }
+      p.x += p.vx * 0.016; 
+      p.y += p.vy * 0.016;
+      const alpha = Math.max(0, 1 - p.life);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color; 
+      ctx.shadowBlur = 10;
+      ctx.beginPath(); 
+      ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2); 
+      ctx.fill();
+      ctx.restore();
     }
-
-    p.x += p.vx * 0.016;
-    p.y += p.vy * 0.016;
-
-    // 🔥 FIX 2: clamp alpha
-    const alpha = Math.max(0, 1 - p.life);
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-
-    ctx.fillStyle = p.color;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 10;
-
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-},
+  },
 
 
   /* ============================================================

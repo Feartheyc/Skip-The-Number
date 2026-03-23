@@ -378,8 +378,7 @@ fingerSmoothing: 0.25,
     this.drawInstruction(ctx);
     this.drawToast(ctx);
     this.drawThemeHint(ctx);
-    this.drawFingerDebug(ctx);   // debug dot — on top of everything
-
+    
     this.drawBigBangFlash(ctx);
     this.drawGameOver(ctx);
   },
@@ -1433,32 +1432,6 @@ fingerSmoothing: 0.25,
     ctx.globalAlpha = 1;
   },
 
-  /* ============================================================
-     FINGER DEBUG DOT
-  ============================================================ */
-  drawFingerDebug(ctx) {
-    if (!this.debugFinger) return;
-    if (this.fingerX === null || this.fingerY === null) return;
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(this.fingerX, this.fingerY, 14 * this.scale, 0, Math.PI * 2);
-    ctx.fillStyle   = "rgba(255,50,50,0.85)";
-    ctx.fill();
-    ctx.strokeStyle = "white";
-    ctx.lineWidth   = 2 * this.scale;
-    ctx.stroke();
-    /* Cross-hair lines */
-    const r = 20 * this.scale;
-    ctx.beginPath();
-    ctx.moveTo(this.fingerX - r, this.fingerY);
-    ctx.lineTo(this.fingerX + r, this.fingerY);
-    ctx.moveTo(this.fingerX, this.fingerY - r);
-    ctx.lineTo(this.fingerX, this.fingerY + r);
-    ctx.strokeStyle = "rgba(255,255,255,0.6)";
-    ctx.lineWidth   = 1.5 * this.scale;
-    ctx.stroke();
-    ctx.restore();
-  },
 
 
   spawnCorrectParticles(x, y) {
