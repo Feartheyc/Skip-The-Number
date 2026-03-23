@@ -18,8 +18,8 @@ const Game5 = {
 
   freehandStrokes: [], 
   currentStroke: null,
-  submitTimer: 0,      
-  shakeTimer: 0,       
+  submitTimer: 0,       
+  shakeTimer: 0,        
   
   particles: [],
   isDrawing: false,
@@ -30,13 +30,10 @@ const Game5 = {
   levelFailedTimer: 0, 
   listenersAdded: false,
 
-  tfModel: null,
-  isEvaluating: false, 
-
   isMenuOpen: false,
+  showHelp: true, 
   
-  // ⭐ NEW: Tier Progression System
-  unlockedUntilIndex: 9, // Starts by allowing indices 0-9 (Numbers 1-10)
+  unlockedUntilIndex: 99, 
 
   init() {
     this.running = true;
@@ -44,15 +41,14 @@ const Game5 = {
     this.currentLevel = 0;
     this.mode = "TRACE"; 
     this.isMenuOpen = false;
-    this.unlockedUntilIndex = 100; // Reset unlocks on fresh load
+    this.showHelp = true; 
+    this.unlockedUntilIndex = 99; 
     
     const existingMenu = document.getElementById("game5-level-menu");
     if (existingMenu) existingMenu.style.display = "none";
 
     if (window.stopCamera) window.stopCamera();
     
-    this.loadModel();
-
     const menu = document.getElementById("menu");
     if (menu) menu.style.display = "none";
     const video = document.getElementById("input_video");
@@ -69,13 +65,66 @@ const Game5 = {
     }
   },
 
-  async loadModel() {
-      try {
-          this.tfModel = await tf.loadLayersModel('./tfjs_model/model.json');
-          console.log("Custom Roman Numeral Model loaded successfully!");
-      } catch (error) {
-          console.error("Failed to load TFJS model.", error);
-      }
+  drawHelpPopUp(ctx, w, h, baseUnit) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+    ctx.fillRect(0, 0, w, h);
+
+    const boxW = baseUnit * 0.8, boxH = baseUnit * 0.7;
+    const bx = (w - boxW) / 2, by = (h - boxH) / 2;
+
+    ctx.strokeStyle = "#00FFCC";
+    ctx.lineWidth = 5;
+    ctx.fillStyle = "#1A1A1A";
+    if (ctx.roundRect) {
+        ctx.beginPath();
+        ctx.roundRect(bx, by, boxW, boxH, 20);
+        ctx.fill(); ctx.stroke();
+    } else {
+        ctx.fillRect(bx, by, boxW, boxH);
+        ctx.strokeRect(bx, by, boxW, boxH);
+    }
+
+    ctx.fillStyle = "white";
+    ctx.font = `bold ${baseUnit * 0.06}px Arial`;
+    ctx.textAlign = "center";
+    ctx.fillText("How to Play!", w / 2, by + baseUnit * 0.08);
+
+    ctx.font = `bold ${baseUnit * 0.03}px Arial`;
+    ctx.textAlign = "left";
+    const textX = bx + baseUnit * 0.05;
+    
+    ctx.fillStyle = "#00FFCC";
+    ctx.fillText("1. TRACE MODE", textX, by + baseUnit * 0.18);
+    ctx.fillStyle = "#CCC";
+    ctx.font = `${baseUnit * 0.025}px Arial`;
+    ctx.fillText("• Follow the yellow dots and lines exactly.", textX, by + baseUnit * 0.22);
+    ctx.fillText("• Move in the direction of the arrows.", textX, by + baseUnit * 0.26);
+
+    ctx.fillStyle = "#FF4444";
+    ctx.font = `bold ${baseUnit * 0.03}px Arial`;
+    ctx.fillText("2. FREEHAND MODE", textX, by + baseUnit * 0.35);
+    ctx.fillStyle = "#CCC";
+    ctx.font = `${baseUnit * 0.025}px Arial`;
+    ctx.fillText("• Draw the number anywhere on screen.", textX, by + baseUnit * 0.39);
+    ctx.fillText("• Keep your strokes close together.", textX, by + baseUnit * 0.43);
+    ctx.fillText("• Wait for the bar to fill to submit.", textX, by + baseUnit * 0.47);
+
+    ctx.fillStyle = "#FFCC00";
+    ctx.textAlign = "center";
+    ctx.font = `italic bold ${baseUnit * 0.028}px Arial`;
+    ctx.fillText("Tip: Don't draw too far apart!", w / 2, by + baseUnit * 0.55);
+
+    const btnW = baseUnit * 0.3, btnH = baseUnit * 0.08;
+    const btnX = w / 2 - btnW / 2, btnY = by + boxH - baseUnit * 0.12;
+    ctx.fillStyle = "#00FFCC";
+    if (ctx.roundRect) {
+        ctx.beginPath(); ctx.roundRect(btnX, btnY, btnW, btnH, 10); ctx.fill();
+    } else {
+        ctx.fillRect(btnX, btnY, btnW, btnH);
+    }
+    ctx.fillStyle = "black";
+    ctx.font = `bold ${baseUnit * 0.035}px Arial`;
+    ctx.fillText("START GAME", w / 2, btnY + btnH / 2 + baseUnit * 0.012);
   },
 
   resizeCanvas() {
@@ -109,7 +158,6 @@ const Game5 = {
     this.isDrawing = false;
     this.particles = [];
     this.cursorColor = "white"; 
-    this.isEvaluating = false; 
   },
 
   getPoint(sx, sy, w, h) {
@@ -125,7 +173,7 @@ const Game5 = {
     const startDraw = (e) => {
         this.updateCursor(e);
         if (this.checkButtonClicks()) return;
-        if (this.isMenuOpen) return; 
+        if (this.isMenuOpen || this.showHelp) return; 
 
         this.isDrawing = true;
 
@@ -142,7 +190,7 @@ const Game5 = {
     };
 
     const moveDraw = (e) => {
-        if (this.isDrawing && !this.isMenuOpen) {
+        if (this.isDrawing && !this.isMenuOpen && !this.showHelp) {
             this.updateCursor(e);
             if (this.mode === "FREEHAND" && this.currentStroke) {
                 let lastP = this.currentStroke[this.currentStroke.length - 1];
@@ -191,9 +239,20 @@ const Game5 = {
     const w = this.BASE_WIDTH;
     const h = this.BASE_HEIGHT;
     const baseUnit = Math.min(w, h);
-    
     const x = this.cursor.x;
     const y = this.cursor.y;
+
+    if (this.showHelp) {
+        const boxW = baseUnit * 0.8, boxH = baseUnit * 0.7;
+        const by = (h - boxH) / 2;
+        const btnW = baseUnit * 0.3, btnH = baseUnit * 0.08;
+        const btnX = w / 2 - btnW / 2, btnY = by + boxH - baseUnit * 0.12;
+        if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+            this.showHelp = false;
+            return true;
+        }
+        return true; 
+    }
 
     const btnW = Math.max(140, baseUnit * 0.25);
     const btnH = Math.max(50, baseUnit * 0.08);
@@ -226,11 +285,9 @@ const Game5 = {
   toggleMenu() {
       this.isMenuOpen = !this.isMenuOpen;
       let menuDiv = document.getElementById("game5-level-menu");
-
       if (this.isMenuOpen) {
           if (!menuDiv) menuDiv = this.buildHTMLMenu();
           else {
-              // Rebuild to update locked/unlocked states
               menuDiv.remove(); 
               menuDiv = this.buildHTMLMenu();
           }
@@ -243,7 +300,6 @@ const Game5 = {
   buildHTMLMenu() {
       const menu = document.createElement("div");
       menu.id = "game5-level-menu";
-      
       Object.assign(menu.style, {
           position: "absolute", top: "0", left: "0", width: "100%", height: "100%",
           backgroundColor: "rgba(15, 15, 15, 0.95)", zIndex: "10000",
@@ -283,46 +339,17 @@ const Game5 = {
 
       this.levels.forEach((lvl, index) => {
           const btn = document.createElement("button");
-          const isUnlocked = index <= this.unlockedUntilIndex;
-
-          if (isUnlocked) {
-              // ⭐ Unlocked Button Styling
-              btn.innerHTML = `
-                  <div style="font-size: 24px; font-weight: bold;">${lvl.number}</div>
-                  <div style="font-size: 14px; color: #00FFCC; margin-top: 4px;">${lvl.symbol}</div>
-              `;
-              Object.assign(btn.style, {
-                  padding: "15px 10px", cursor: "pointer",
-                  backgroundColor: "#2A2A2A", color: "white", 
-                  border: index === this.currentLevel ? "3px solid #FFCC00" : "2px solid #555",
-                  borderRadius: "12px", textAlign: "center", transition: "all 0.2s ease"
-              });
-              
-              btn.onmouseover = () => { if (index !== this.currentLevel) btn.style.borderColor = "#00FFCC"; };
-              btn.onmouseout = () => { if (index !== this.currentLevel) btn.style.borderColor = "#555"; };
-              
-              btn.onclick = () => {
-                  this.currentLevel = index;
-                  this.resetLevel();
-                  this.toggleMenu();
-              };
-          } else {
-              // ⭐ Locked Button Styling
-              btn.innerHTML = `
-                  <div style="font-size: 24px; font-weight: bold; color: #555;">${lvl.number}</div>
-                  <div style="font-size: 14px; color: #444; margin-top: 4px;">🔒</div>
-              `;
-              Object.assign(btn.style, {
-                  padding: "15px 10px", cursor: "not-allowed",
-                  backgroundColor: "#111", color: "#555", 
-                  border: "2px solid #222",
-                  borderRadius: "12px", textAlign: "center"
-              });
-          }
-          
+          // Keep all levels unlocked
+          btn.innerHTML = `<div style="font-size: 24px; font-weight: bold;">${lvl.number}</div><div style="font-size: 14px; color: #00FFCC; margin-top: 4px;">${lvl.symbol}</div>`;
+          Object.assign(btn.style, {
+              padding: "15px 10px", cursor: "pointer",
+              backgroundColor: "#2A2A2A", color: "white", 
+              border: index === this.currentLevel ? "3px solid #FFCC00" : "2px solid #555",
+              borderRadius: "12px", textAlign: "center", transition: "all 0.2s ease"
+          });
+          btn.onclick = () => { this.currentLevel = index; this.resetLevel(); this.toggleMenu(); };
           grid.appendChild(btn);
       });
-
       menu.appendChild(grid);
       document.body.appendChild(menu);
       return menu;
@@ -351,7 +378,7 @@ const Game5 = {
     const h = this.BASE_HEIGHT;
     const baseUnit = Math.min(w, h);
 
-    if (this.levelCompleteTimer === 0 && this.levelFailedTimer === 0 && !this.isMenuOpen) {
+    if (this.levelCompleteTimer === 0 && this.levelFailedTimer === 0 && !this.isMenuOpen && !this.showHelp) {
         if (this.mode === "TRACE" && this.isDrawing) {
             this.handleTracing(w, h, baseUnit);
         } else if (this.mode === "FREEHAND") {
@@ -363,8 +390,12 @@ const Game5 = {
     this.drawTemplate(ctx, w, h, baseUnit);
     this.drawUserInk(ctx, baseUnit);
     this.drawParticles(ctx, baseUnit); 
-    if (!this.isMenuOpen) this.drawCursor(ctx, baseUnit); 
+    if (!this.isMenuOpen && !this.showHelp) this.drawCursor(ctx, baseUnit); 
     this.drawUI(ctx, w, h, baseUnit);
+
+    if (this.levelCompleteTimer > 0) {
+      this.drawSuccessEffect(ctx, w, h, baseUnit);
+    }
     
     ctx.restore(); 
 
@@ -375,20 +406,11 @@ const Game5 = {
     if (this.levelCompleteTimer > 0) {
       this.levelCompleteTimer++;
       this.drawSuccessEffect(ctx, w, h, baseUnit);
-      if (this.levelCompleteTimer > 80) { 
-
-        // ⭐ NEW: Tier Unlock Logic
-        // If they just beat the highest unlocked tier threshold (e.g., Level 10)
-        if (this.currentLevel === this.unlockedUntilIndex) {
-            this.unlockedUntilIndex = Math.min(99, this.unlockedUntilIndex + 10);
-            console.log("New numbers unlocked! Playable up to:", this.unlockedUntilIndex + 1);
-        }
-
+      
+      // Speedrun Transition: reduced from 80 to 25
+      if (this.levelCompleteTimer > 25) { 
         this.currentLevel++;
-        if (this.currentLevel > this.unlockedUntilIndex || this.currentLevel >= this.levels.length) {
-            this.currentLevel = 0; // Wrap around if they beat the absolute highest available
-        }
-
+        if (this.currentLevel >= this.levels.length) this.currentLevel = 0;
         this.resetLevel();
       }
     }
@@ -401,6 +423,10 @@ const Game5 = {
             this.freehandStrokes = []; 
         }
     }
+
+    if (this.showHelp) {
+        this.drawHelpPopUp(ctx, w, h, baseUnit);
+    }
     ctx.restore();
   },
 
@@ -408,19 +434,16 @@ const Game5 = {
     const level = this.levels[this.currentLevel];
     const stroke = level.strokes[this.activeStrokeIndex];
     if (!stroke) return;
-
     const p1 = this.getPoint(stroke.x1, stroke.y1, w, h);
     const p2 = this.getPoint(stroke.x2, stroke.y2, w, h);
     const lineLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     const distToStart = Math.hypot(this.cursor.x - p1.x, this.cursor.y - p1.y);
     const distToLine = this.pointToLineDist(this.cursor.x, this.cursor.y, p1.x, p1.y, p2.x, p2.y);
     const snapAllowed = baseUnit * 0.08; 
-
     if (distToLine > snapAllowed) { this.cursorColor = "#FF4444"; return; }
     const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
     if (this.currentStrokeProgress === 0 && newProgress > 0.15) { this.cursorColor = "#FF4444"; return; }
     if (newProgress > this.currentStrokeProgress + 0.15) return; 
-
     if (newProgress > this.currentStrokeProgress) {
       this.currentStrokeProgress = newProgress;
       this.tracePoints.push({ x: this.cursor.x, y: this.cursor.y });
@@ -445,116 +468,11 @@ const Game5 = {
       if (!this.isDrawing && this.freehandStrokes.length > 0) {
           if (this.submitTimer > 0) {
               this.submitTimer--;
-              if (this.submitTimer <= 0 && !this.isEvaluating) {
-                  this.isEvaluating = true; 
-                  this.evaluateWithTFJS(baseUnit);
+              if (this.submitTimer <= 0) {
+                  this.evaluateShapeVector(baseUnit);
               }
           }
       }
-  },
-
-  async evaluateWithTFJS(baseUnit) {
-      if (!this.tfModel) {
-          console.warn("TFJS model not loaded, falling back to vector check.");
-          this.evaluateShapeVector(baseUnit);
-          this.isEvaluating = false;
-          return;
-      }
-
-      const MODEL_IMG_SIZE = 64; 
-      const offCanvas = document.createElement('canvas');
-      offCanvas.width = MODEL_IMG_SIZE;
-      offCanvas.height = MODEL_IMG_SIZE;
-      const offCtx = offCanvas.getContext('2d', { willReadFrequently: true });
-
-      offCtx.fillStyle = "black";
-      offCtx.fillRect(0, 0, MODEL_IMG_SIZE, MODEL_IMG_SIZE);
-
-      let allPts = [];
-      this.freehandStrokes.forEach(s => allPts.push(...s));
-      let minX = Math.min(...allPts.map(p => p.x));
-      let maxX = Math.max(...allPts.map(p => p.x));
-      let minY = Math.min(...allPts.map(p => p.y));
-      let maxY = Math.max(...allPts.map(p => p.y));
-      
-      let drawWidth = Math.max(maxX - minX, 1);
-      let drawHeight = Math.max(maxY - minY, 1);
-      let padding = 8; 
-      
-      let scale = (MODEL_IMG_SIZE - padding * 2) / Math.max(drawWidth, drawHeight);
-      let drawOffsetX = (MODEL_IMG_SIZE - (drawWidth * scale)) / 2;
-      let drawOffsetY = (MODEL_IMG_SIZE - (drawHeight * scale)) / 2;
-
-      offCtx.save();
-      offCtx.translate(drawOffsetX, drawOffsetY);
-      offCtx.scale(scale, scale);
-      offCtx.translate(-minX, -minY);
-
-      offCtx.lineWidth = Math.max(3 / scale, 2); 
-      offCtx.strokeStyle = "white";
-      offCtx.lineCap = "round";
-      offCtx.lineJoin = "round";
-
-      this.freehandStrokes.forEach(stroke => {
-          if(stroke.length < 2) return;
-          offCtx.beginPath();
-          offCtx.moveTo(stroke[0].x, stroke[0].y);
-          for (let i = 1; i < stroke.length; i++) offCtx.lineTo(stroke[i].x, stroke[i].y);
-          offCtx.stroke();
-      });
-      offCtx.restore();
-
-      let debugImg = document.getElementById('debug_model_view');
-      if (!debugImg) {
-          debugImg = document.createElement('img');
-          debugImg.id = 'debug_model_view';
-          debugImg.style.position = 'absolute';
-          debugImg.style.top = '10px';
-          debugImg.style.left = '10px';
-          debugImg.style.width = '128px'; 
-          debugImg.style.height = '128px';
-          debugImg.style.border = '2px solid red';
-          debugImg.style.zIndex = '9999';
-          debugImg.style.backgroundColor = 'black';
-          document.body.appendChild(debugImg);
-      }
-      debugImg.src = offCanvas.toDataURL(); 
-
-      try {
-          const imageData = offCtx.getImageData(0, 0, MODEL_IMG_SIZE, MODEL_IMG_SIZE);
-          
-          const predictionData = tf.tidy(() => {
-              const tensor = tf.browser.fromPixels(imageData, 1)
-                                       .toFloat()
-                                       .expandDims();
-              
-              return this.tfModel.predict(tensor).dataSync(); 
-          });
-
-          const predictedIndex = predictionData.indexOf(Math.max(...predictionData));
-          
-          const classNames = ["C", "I", "L", "V", "X"]; 
-          const predictedSymbol = classNames[predictedIndex];
-          
-          const level = this.levels[this.currentLevel];
-          const targetSymbol = level.symbol; 
-          
-          const isCorrect = (predictedSymbol === targetSymbol);
-
-          if (isCorrect) {
-              this.levelCompleteTimer = 1;
-              this.score += 20;
-              this.cursorColor = "#00FFCC";
-          } else {
-              this.triggerFail();
-          }
-
-      } catch (err) {
-          console.error("TFJS Prediction Error:", err);
-          this.triggerFail();
-      }
-
-      this.isEvaluating = false; 
   },
 
   splitStrokeAtCorners(stroke) {
@@ -585,7 +503,7 @@ const Game5 = {
 
     if (splitStrokes.length === 0) return this.triggerFail();
 
-    const maxGap = 350; 
+    const maxGap = 800; 
     for (let i = 0; i < splitStrokes.length - 1; i++) {
         let p1 = splitStrokes[i][splitStrokes[i].length - 1];
         let p2 = splitStrokes[i+1][0];
@@ -608,7 +526,6 @@ const Game5 = {
             const score = this.strokeMatchScore(u, template[i]);
             if (score > bestScore) { bestScore = score; bestIndex = i; }
         }
-        
         if (bestIndex !== -1 && bestScore > 0.45) {
             usedTemplate[bestIndex] = true;
             totalScore += bestScore;
@@ -702,10 +619,21 @@ const Game5 = {
     ctx.fillText("Number: " + level.number, w / 2, baseUnit * 0.05);
     ctx.shadowBlur = 0;
     
+    // Glowing submission bar redesign
     if (this.mode === "FREEHAND" && this.submitTimer > 0 && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
-        let progress = this.submitTimer / 100; let barW = baseUnit * 0.3; 
-        ctx.fillStyle = "rgba(255, 255, 255, 0.2)"; ctx.fillRect(w/2 - barW/2, baseUnit * 0.12, barW, baseUnit*0.015);
-        ctx.fillStyle = "#00FFCC"; ctx.fillRect(w/2 - barW/2, baseUnit * 0.12, barW * progress, baseUnit*0.015);
+        let progress = this.submitTimer / 100; let barW = baseUnit * 0.35, barH = baseUnit * 0.03;
+        let bx = w/2 - barW/2, by = baseUnit * 0.12;
+        ctx.shadowBlur = 15; ctx.shadowColor = "#00FFCC";
+        ctx.fillStyle = "rgba(255, 255, 255, 0.1)"; 
+        if(ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, barW, barH, 5); ctx.fill(); }
+        const pulse = Math.sin(Date.now() / 100) * 0.2 + 0.8;
+        let grad = ctx.createLinearGradient(bx, by, bx + barW, by);
+        grad.addColorStop(0, "#006655"); grad.addColorStop(1, "#00FFCC");
+        ctx.fillStyle = grad; ctx.globalAlpha = pulse; 
+        if(ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, barW * progress, barH, 5); ctx.fill(); }
+        ctx.globalAlpha = 1.0; ctx.shadowBlur = 0;
+        ctx.font = `bold ${baseUnit * 0.02}px Arial`; ctx.fillStyle = "white";
+        ctx.fillText("ANALYZING...", w/2, by + barH * 2);
     } else if (this.mode === "FREEHAND" && this.freehandStrokes.length === 0 && this.levelFailedTimer === 0) {
         ctx.font = `${Math.max(14, baseUnit * 0.03)}px Arial`; ctx.fillStyle = "#888";
         ctx.fillText("Draw anywhere! Any size!", w / 2, baseUnit * 0.12);
@@ -714,11 +642,9 @@ const Game5 = {
     const btnW = Math.max(140, baseUnit * 0.25), btnH = Math.max(50, baseUnit * 0.08), btnY = h - btnH - (baseUnit * 0.05); 
     const traceX = w / 2 - btnW - (baseUnit * 0.02), freeX = w / 2 + (baseUnit * 0.02);
     ctx.font = `bold ${Math.max(12, baseUnit * 0.025)}px Arial`; ctx.textBaseline = "middle";
-    
     ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#444";
     ctx.fillRect(traceX, btnY, btnW, btnH); ctx.strokeStyle = "white"; ctx.lineWidth = baseUnit * 0.005; ctx.strokeRect(traceX, btnY, btnW, btnH);
     ctx.fillStyle = this.mode === "TRACE" ? "black" : "white"; ctx.fillText("TRACE", traceX + btnW/2, btnY + btnH/2);
-    
     ctx.fillStyle = this.mode === "FREEHAND" ? "#FF4444" : "#444";
     ctx.fillRect(freeX, btnY, btnW, btnH); ctx.strokeRect(freeX, btnY, btnW, btnH);
     ctx.fillStyle = "white"; ctx.fillText("FREEHAND", freeX + btnW/2, btnY + btnH/2);
@@ -733,23 +659,29 @@ const Game5 = {
     if (ctx.roundRect) ctx.roundRect(menuBtnX, menuBtnY, menuBtnW, menuBtnH, 8);
     else ctx.fillRect(menuBtnX, menuBtnY, menuBtnW, menuBtnH);
     ctx.fill();
-
     ctx.strokeStyle = "#555";
-    ctx.lineWidth = Math.max(2, baseUnit * 0.004);
     ctx.stroke();
-
     ctx.fillStyle = "white";
     ctx.font = `bold ${Math.max(14, baseUnit * 0.025)}px Arial`;
     ctx.fillText("MENU", menuBtnX + menuBtnW / 2, menuBtnY + menuBtnH / 2);
   },
 
   drawSuccessEffect(ctx, w, h, baseUnit) {
-    const canvas = ctx.canvas;
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); 
-    ctx.fillStyle = "rgba(0, 255, 100, 0.2)"; ctx.fillRect(0, 0, canvas.width, canvas.height); ctx.restore(); 
-    ctx.fillStyle = "white"; ctx.font = `bold ${baseUnit * 0.1}px Arial`; 
-    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.shadowBlur = 20; ctx.shadowColor = "#00FF66";
-    ctx.fillText("NICE!", w/2, h/2);
+    // ⭐ MODIFIED: Changed color to Gold and added a stroke for visibility
+    ctx.font = `bold ${baseUnit * 0.15}px Arial`; 
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
+    
+    const bounce = Math.sin(this.levelCompleteTimer * 0.3) * 15;
+    
+    // Draw a dark outline first so it doesn't blend with the background
+    ctx.strokeStyle = "black";
+    ctx.lineWidth = baseUnit * 0.02;
+    ctx.strokeText("NICE!", w/2, h/2 + bounce);
+    
+    // Fill with bright Gold
+    ctx.fillStyle = "#FFCC00"; 
+    ctx.fillText("NICE!", w/2, h/2 + bounce);
   },
 
   drawFailEffect(ctx, w, h, baseUnit) {
@@ -827,44 +759,22 @@ const Game5 = {
   buildStrokesFromRoman(roman) {
     const chars = roman.split(""), strokes = [];
     const spacing = 0.3, startX = 0.5 - (chars.length - 1) * spacing / 2;
-    
     chars.forEach((ch, index) => {
       const offset = startX + index * spacing;
-      
-      if (ch === "I") {
-          strokes.push({ x1: offset, y1: 0.2, x2: offset, y2: 0.8 });
-      }
+      if (ch === "I") strokes.push({ x1: offset, y1: 0.2, x2: offset, y2: 0.8 });
       if (ch === "V") {
-          // Perfectly symmetrical V
-          strokes.push(
-              { x1: offset - 0.15, y1: 0.2, x2: offset, y2: 0.8 }, 
-              { x1: offset, y1: 0.8, x2: offset + 0.15, y2: 0.2 }
-          );
+          strokes.push({ x1: offset - 0.15, y1: 0.2, x2: offset, y2: 0.8 }, { x1: offset, y1: 0.8, x2: offset + 0.15, y2: 0.2 });
       }
       if (ch === "X") {
-          // Perfectly symmetrical X
-          strokes.push(
-              { x1: offset - 0.15, y1: 0.2, x2: offset + 0.15, y2: 0.8 }, 
-              { x1: offset + 0.15, y1: 0.2, x2: offset - 0.15, y2: 0.8 }
-          );
+          strokes.push({ x1: offset - 0.15, y1: 0.2, x2: offset + 0.15, y2: 0.8 }, { x1: offset + 0.15, y1: 0.2, x2: offset - 0.15, y2: 0.8 });
       }
       if (ch === "L") {
-          // Shifted slightly left, shortened horizontal line to avoid overlap
-          strokes.push(
-              { x1: offset - 0.1, y1: 0.2, x2: offset - 0.1, y2: 0.8 }, 
-              { x1: offset - 0.1, y1: 0.8, x2: offset + 0.15, y2: 0.8 }
-          );
+          strokes.push({ x1: offset - 0.1, y1: 0.2, x2: offset - 0.1, y2: 0.8 }, { x1: offset - 0.1, y1: 0.8, x2: offset + 0.15, y2: 0.8 });
       }
       if (ch === "C") {
-          // 3-segment "chiseled" block C for a classic look and better tracing
-          strokes.push(
-              { x1: offset + 0.15, y1: 0.2, x2: offset - 0.1, y2: 0.2 }, // Top lip
-              { x1: offset - 0.1, y1: 0.2, x2: offset - 0.1, y2: 0.8 },  // Vertical Spine
-              { x1: offset - 0.1, y1: 0.8, x2: offset + 0.15, y2: 0.8 }  // Bottom lip
-          );
+          strokes.push({ x1: offset + 0.15, y1: 0.2, x2: offset - 0.1, y2: 0.2 }, { x1: offset - 0.1, y1: 0.2, x2: offset - 0.1, y2: 0.8 }, { x1: offset - 0.1, y1: 0.8, x2: offset + 0.15, y2: 0.8 });
       }
     });
-    
     return strokes;
   },
 
@@ -885,34 +795,32 @@ const Game5 = {
   normalizeStrokes(strokes) {
     let allPts = [];
     strokes.forEach(s => allPts.push(...s));
-    
     let minX = Math.min(...allPts.map(p => p.x)), maxX = Math.max(...allPts.map(p => p.x));
     let minY = Math.min(...allPts.map(p => p.y)), maxY = Math.max(...allPts.map(p => p.y));
     let centerX = (minX + maxX) / 2;
     let centerY = (minY + maxY) / 2;
-
-    const FIXED_SCALE = 300; 
-
-    return strokes.map(stroke =>
-        stroke.map(p => ({
-            x: (p.x - centerX) / FIXED_SCALE, 
-            y: (p.y - centerY) / FIXED_SCALE
-        }))
-    );
+    let currentScale = Math.max(maxX - minX, maxY - minY, 100); 
+    return strokes.map(stroke => stroke.map(p => ({ x: (p.x - centerX) / currentScale, y: (p.y - centerY) / currentScale })));
   },
 
   strokeMatchScore(stroke, tmpl) {
     const p1 = stroke[0], p2 = stroke[stroke.length - 1];
     const udx = p2.x - p1.x, udy = p2.y - p1.y, ulen = Math.hypot(udx, udy) + 0.0001;
     const tdx = tmpl.x2 - tmpl.x1, tdy = tmpl.y2 - tmpl.y1, tlen = Math.hypot(tdx, tdy) + 0.0001;
-
     const dirScore = Math.max(0, (udx * tdx + udy * tdy) / (ulen * tlen));
     const lenScore = 1 - Math.min(1, Math.abs(ulen - tlen));
-
     let dist = 0;
     stroke.forEach(p => { dist += this.pointToLineDist(p.x, p.y, tmpl.x1, tmpl.y1, tmpl.x2, tmpl.y2); });
     const distScore = 1 - Math.min(1, (dist / stroke.length) * 1.2);
-
     return (dirScore * 0.6) + (lenScore * 0.2) + (distScore * 0.2);
   },
+
+  roundRect(ctx, x, y, width, height, radius, fill, stroke) {
+    ctx.beginPath(); ctx.moveTo(x + radius, y); ctx.lineTo(x + width - radius, y);
+    ctx.quadraticCurveTo(x + width, y, x + width, y + radius); ctx.lineTo(x + width, y + height - radius);
+    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height); ctx.lineTo(x + radius, y + height);
+    ctx.quadraticCurveTo(x, y + height, x, y + height - radius); ctx.lineTo(x, y + radius);
+    ctx.quadraticCurveTo(x, y, x + radius, y); ctx.closePath();
+    if (fill) ctx.fill(); if (stroke) ctx.stroke();
+  }
 };
