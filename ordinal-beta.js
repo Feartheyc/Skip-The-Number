@@ -16,7 +16,6 @@ const Game9 = {
   },
 
   DOOR_RADIUS: 90,
-  DOOR_DISTANCE: 260,
 
   doors: [],
   score: 0,
@@ -27,28 +26,13 @@ const Game9 = {
   fingerX: null,
   fingerY: null,
 
-  holdDuration: 1500,
-  holdProgress: 0,
-  activeDoorIndex: null,
-  doorLocked: false,
-
-  /* NEW FEEDBACK STATE */
-  feedbackText: "",
-  feedbackTimer: 0,
-  feedbackColor: "white",
-  flashDoorIndex: null,
-  flashTimer: 0,
-
   running: false,
   lastTime: 0,
   
   confettiParticles: [],
-shakeDuration: 0,
-shakeIntensity: 0,
 
   sparkBursts: [],
 
-  
   /* ===== MASCOT SYSTEM ===== */
 gameState: "pickup", // "pickup" | "deliver"
 
@@ -58,7 +42,7 @@ mascot: {
   vx: 0,
   vy: 0,
   speed: 0.6,
-  maxSpeed: 8,
+  maxSpeed: 12,
   size: 140,
   carryingNumber: false
 },
@@ -96,8 +80,6 @@ ordinalMap: {
   "th": "th"
 },
 
-
-
 /* ===== FLOATING NUMBER SYSTEM ===== */
 
 floatTime: 0,
@@ -121,19 +103,6 @@ starCountFar: 80,
 starCountMid: 50,
 starCountNear: 30,
 
-/* ===== COSMIC DUST SYSTEM ===== */
-
-cosmicDust: [],
-dustCount: 120,
-dustDriftAngle: 0.0003,
-dustGlobalTime: 0,
-
-
-/* ===== NEBULA SYSTEM ===== */
-
-nebulaTime: 0,
-nebulaSpeed: 0.0002,
-
 
 /* ===== SHOOTING STAR SYSTEM ===== */
 
@@ -146,79 +115,6 @@ shootingStarSpawnInterval: 2000, // average spawn time (ms)
 shootingStarBursts: [],
 
 
-/* ===== GAME MODE SYSTEM ===== */
-gameMode: 0, // 0 = default (current), 1 = new mode
-
-mode1Numbers: [],
-mode1TargetSuffix: "st",
-mode1SpawnTimer: 0,
-mode1MaxMatches: 3,
-mode1MinMatches: 1,
-mode1Collected: false,
-
-
-/* ===== MODE 1 ROUND STATE ===== */
-mode1CorrectTotal: 0,
-mode1CorrectCollected: 0,
-mode1RoundActive: true,
-mode1Confirming: false,
-mode1PortalTargetX: 0,
-mode1PortalTargetY: 0,
-mode1GameOver: false,
-
-/* ===== MODE 1 SUCTION SYSTEM ===== */
-mode1SuctionActive: false,
-mode1SuctionData: null,
-mode1SuctionDuration: 600,
-
-
-// 🎁 Sticker System
-stickers: [],
-stickerThreshold: 30,
-nextStickerScore: 30,
-newStickerUnlocked: false,
-stickerDisplayTimer: 0,
-
-// 🏆 Level System
-level: 1,
-levelThreshold: 50,
-nextLevelScore: 50,
-levelUpActive: false,
-levelUpTimer: 0,
-
-// 🌈 Background Evolution
-backgroundHueShift: 0,
-
-
-mode1MergeActive: false,
-mode1MergeData: null,
-
-
-
-/* ===== BLACK HOLE COLLAPSE SYSTEM ===== */
-
-blackHoleActive: false,
-blackHoleTime: 0,
-blackHoleDuration: 2200,
-blackHoleStrength: 0,
-accretionAngle : 0,
-collapseMessage: "",
-collapseMessageTimer: 0,
-
-
-/* ===== BIG BANG REBUILD SYSTEM ===== */
-
-bigBangActive: false,
-bigBangTime: 0,
-bigBangDuration: 1400,
-bigBangFlash: 0,
-
-mode1BreakActive: false,
-mode1BreakData: null,
-
-
-
-/* ===== REALITY TEAR SYSTEM ===== */
 
 
 init() {
@@ -242,18 +138,7 @@ init() {
 
   this.gameState = "pickup";
 
-  window.addEventListener("keydown", (e) => {
-  if (e.key === "1") {
-    this.activateGameMode1();
-  }
-
-  window.addEventListener("click", () => {
-
-  if (this.gameMode === 1 && this.mode1GameOver) {
-    this.retryMode1();
-  }
-});
-});
+  
 },
   resize() {
 
@@ -274,21 +159,7 @@ init() {
     this.CENTER_Y = cssH / 2;
   },
 
-  activateGameMode1() {
 
-  this.gameMode = 1;
-
-  // Reset mascot behavior
-  this.mascot.carryingNumber = false;
-  this.numberPosition.picked = true; // hide default floating number
-
-  // Choose random target suffix
-  const suffixes = ["st", "nd", "rd", "th"];
-  this.mode1TargetSuffix = suffixes[Math.floor(Math.random() * 4)];
-
-  // Clear and spawn numbers
-  this.spawnMode1Numbers();
-},
 
   setupDoors() {
 
@@ -365,7 +236,6 @@ getSuffix(num) {
   this.drawStarLayer(ctx, this.starsMid);
   this.drawStarLayer(ctx, this.starsNear);
 
-  this.updateBigBang(delta);
 
   // // 🌫 COSMIC DUST
   // this.updateCosmicDust(delta);
@@ -387,41 +257,19 @@ getSuffix(num) {
   this.updateFloatingNumber(delta);
   this.updatePortalAnimation(delta);
 
-  // this.updateConfetti(delta);
+ 
   this.updateSparkBursts(delta);
 
 
-if (this.gameMode === 0) {
+
 
   // DEFAULT MODE (UNCHANGED)
   this.drawDoors(ctx);
   this.drawNumber(ctx);
   this.drawMascot(ctx);
 
-} else if (this.gameMode === 1) {
 
-  this.updateMode1Logic();
-  
-  this.updateMode1Suction(delta);
-  this.updateMode1Merge(delta);
-  this.updateBlackHole(delta);
-  this.updateMode1Break(delta)
 
-  // Draw portal first (background layer)
-  // this.drawAccretionDisk(ctx);
-  this.drawMode1PortalPlayer(ctx);
-  this.drawMode1Numbers(ctx);
-  this.drawMode1Merge(ctx);
-  this.drawBlackHole(ctx);
-
-  this.drawMode1Instruction(ctx);
-
-  this.drawMode1GameOver(ctx);
-  this.drawMode1Break(ctx);
-  this.drawMode1Break(ctx);
-
-}
-this.drawBigBangFlash(ctx);
 
 
   this.drawScore(ctx);
@@ -639,36 +487,8 @@ drawScore(ctx) {
   ctx.restore();
 },
 
-  drawFingerIndicator(ctx) {
-
-    if (this.fingerX === null ||
-        this.fingerY === null) return;
-
-    ctx.beginPath();
-    ctx.arc(
-      this.fingerX,
-      this.fingerY,
-      18 * this.scale,
-      0,
-      Math.PI * 2
-    );
-    ctx.fillStyle = "rgba(255,255,0,0.3)";
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(
-      this.fingerX,
-      this.fingerY,
-      8 * this.scale,
-      0,
-      Math.PI * 2
-    );
-    ctx.fillStyle = "yellow";
-    ctx.fill();
-  },
-
-
 spawnSparkBurst(x, y) {
+  
 
   this.sparkBursts.push({
     x: x,
@@ -691,12 +511,13 @@ spawnSparkBurst(x, y) {
       type: "particle"
     });
   }
+
 },
 
 updateSparkBursts(delta) {
 
   for (let i = this.sparkBursts.length - 1; i >= 0; i--) {
-
+    
     const s = this.sparkBursts[i];
 
     s.life -= delta;
@@ -722,7 +543,7 @@ updateSparkBursts(delta) {
 },
 
 drawSparkBursts(ctx) {
-
+  if (this.sparkBursts.length === 0) return;
   for (let s of this.sparkBursts) {
 
     if (s.type === "particle") {
@@ -748,11 +569,6 @@ drawSparkBursts(ctx) {
   ctx.globalAlpha = 1;
 },
 
-resetHold() {
-  this.holdProgress = 0;
-  this.activeDoorIndex = null;
-  this.doorLocked = false;
-},
 
 loadMascotSprites() {
 
@@ -780,34 +596,6 @@ loadMascotSprites() {
 
 
 updateMascot(delta) {
-
-  // MODE 1 CONFIRMATION MOVE
-if (this.gameMode === 1 && this.mode1Confirming) {
-
-  const dx = this.mode1PortalTargetX - this.mascot.x;
-  const dy = this.mode1PortalTargetY - this.mascot.y;
-  const dist = Math.sqrt(dx * dx + dy * dy);
-
-  if (dist > 5) {
-
-    this.mascot.x += dx * 0.05;
-    this.mascot.y += dy * 0.05;
-
-  } else {
-
-    // Confirmation reached
-    this.mode1Confirming = false;
-
-    // NEW ROUND
-    const suffixes = ["st", "nd", "rd", "th"];
-    this.mode1TargetSuffix =
-      suffixes[Math.floor(Math.random() * 4)];
-
-    this.spawnMode1Numbers();
-  }
-
-  return;
-}
 
   if (this.fingerX === null || this.fingerY === null) return;
 
@@ -898,7 +686,6 @@ drawMascot(ctx) {
   }
 
   ctx.save();
-
 
   // 🫧 Soft shadow
   ctx.beginPath();
@@ -1053,7 +840,7 @@ createStar(speedFactor) {
 },
 
 updateStarLayer(layer, delta) {
-
+  if (!layer || layer.length === 0) return;
   for (let star of layer) {
 
     star.y += star.speed * delta * 0.02;
@@ -1067,19 +854,28 @@ updateStarLayer(layer, delta) {
 
 drawStarLayer(ctx, layer) {
 
-  for (let star of layer) {
+  ctx.beginPath();
 
-    ctx.beginPath();
-    ctx.arc(star.x, star.y, star.size * this.scale, 0, Math.PI * 2);
-    ctx.fillStyle = "white";
-    ctx.fill();
+  for (let star of layer) {
+    ctx.moveTo(star.x, star.y);
+    ctx.arc(
+      star.x,
+      star.y,
+      star.size * this.scale,
+      0,
+      Math.PI * 2
+    );
   }
+
+  ctx.fillStyle = "white";
+  ctx.fill();
 },
 
 
 
 createShootingStar() {
 
+  if (this.shootingStars.length >= 4) return;
   const startFromLeft = Math.random() < 0.5;
 
   const star = {
@@ -1094,6 +890,9 @@ createShootingStar() {
   };
 
   this.shootingStars.push(star);
+  if (this.shootingStars.length > 4) {
+  this.shootingStars.splice(0, this.shootingStars.length - 4);
+}
 },
 
 updateShootingStars(delta) {
@@ -1207,292 +1006,6 @@ drawStarBursts(ctx) {
   }
 },
 
-spawnMode1Numbers() {
-
-  this.mode1Numbers = [];
-
-  const correctCount =
-    Math.floor(Math.random() *
-      (this.mode1MaxMatches - this.mode1MinMatches + 1)
-    ) + this.mode1MinMatches;
-
-  this.mode1CorrectTotal = correctCount;
-  this.mode1CorrectCollected = 0;
-  this.mode1RoundActive = true;
-  this.mode1Confirming = false;
-
-  let correctSpawned = 0;
-
-  const shuffledDoors = [...this.doors].sort(() => Math.random() - 0.5);
-
-  for (let i = 0; i < shuffledDoors.length; i++) {
-
-    const door = shuffledDoors[i];
-    let num;
-
-    if (correctSpawned < correctCount) {
-
-      num = this.generateNumberWithSuffix(this.mode1TargetSuffix);
-      correctSpawned++;
-
-    } else {
-
-      do {
-        num = Math.floor(Math.random() * 30) + 1;
-      } while (this.getSuffix(num) === this.mode1TargetSuffix);
-    }
-
-    this.mode1Numbers.push({
-      number: num,
-      x: door.x,
-      y: door.y,
-      size: 60 * this.scale
-    });
-  }
-},
-
-generateNumberWithSuffix(suffix) {
-
-  while (true) {
-
-    const num = Math.floor(Math.random() * 30) + 1;
-
-    if (this.getSuffix(num) === suffix) {
-      return num;
-    }
-  }
-},
-
-
-drawMode1PortalPlayer(ctx) {
-
-  const portalImg = this.portalFrames[this.portalFrameIndex];
-  const size = this.portalSize * this.scale;
-
-  if (!portalImg) return;
-
-  const px = this.mascot.x;
-  const py = this.mascot.y;
-
-  // Draw portal sprite
-  ctx.drawImage(
-    portalImg,
-    px - size / 2,
-    py - size / 2,
-    size,
-    size
-  );
-
-  // === DRAW GALAXY SUFFIX TEXT INSIDE PORTAL ===
-
-  const suffix = this.mode1TargetSuffix.toUpperCase();
-
-  ctx.save();
-
-  // glowing text
-  ctx.shadowColor = "#FFFFFF";
-  ctx.shadowBlur = 20;
-
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `bold ${60 * this.scale}px Comic Sans MS`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  ctx.fillText(
-    suffix,
-    px,
-    py
-  );
-
-  ctx.restore();
-},
-
-
-drawMode1Numbers(ctx) {
-
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  for (let n of this.mode1Numbers) {
-
-    const scale = n.renderScale || 1;
-    const rotation = n.renderRotation || 0;
-
-    ctx.save();
-
-    ctx.translate(n.x, n.y);
-    ctx.rotate(rotation);
-    ctx.scale(scale, scale);
-
-    ctx.fillStyle = "#00FFAA";
-    ctx.font = `bold ${60 * this.scale}px Arial`;
-
-    ctx.fillText(n.number, 0, 0);
-
-    ctx.restore();
-  }
-},
-
-updateMode1Logic() {
-
-  if (!this.mode1RoundActive ||
-    this.mode1GameOver ||
-    this.mode1SuctionActive ||
-    this.mode1BreakActive ||
-    this.blackHoleActive) return;
-
-  for (let i = 0; i < this.mode1Numbers.length; i++) {
-
-    const n = this.mode1Numbers[i];
-
-    const dx = this.mascot.x - n.x;
-    const dy = this.mascot.y - n.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-
-    if (dist < 70 * this.scale) {
-
-      this.startMode1Suction(i);
-      break;
-    }
-  }
-},
-
-drawMode1Instruction(ctx) {
-
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `bold ${40 * this.scale}px Arial`;
-  ctx.textAlign = "center";
-
-  ctx.fillText(
-    `You Are Galaxy ${this.mode1TargetSuffix.toUpperCase()}! Collect Matching Numbers`,
-    this.CENTER_X,
-    60 * this.scale
-  );
-},
-
-
-startMode1Confirmation() {
-
-  this.mode1RoundActive = false;
-  this.mode1Confirming = true;
-
-  // Target bottom-left
-  this.mode1PortalTargetX = 120 * this.scale;
-  this.mode1PortalTargetY = this.cssHeight - 120 * this.scale;
-},
-
-drawMode1GameOver(ctx) {
-
-  if (!this.mode1GameOver) return;
-
-  ctx.fillStyle = "black";
-  ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
-
-  ctx.fillStyle = "#FF4444";
-  ctx.font = `bold ${70 * this.scale}px Arial`;
-  ctx.textAlign = "center";
-
-  ctx.fillText(
-    "Universe Destroyed",
-    this.CENTER_X,
-    this.CENTER_Y - 40 * this.scale
-  );
-
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `bold ${40 * this.scale}px Arial`;
-
-  ctx.fillText(
-    "Tap To Rebuild The Galaxy",
-    this.CENTER_X,
-    this.CENTER_Y + 40 * this.scale
-  );
-},
-retryMode1() {
-
-  this.mode1GameOver = false;
-  this.glassFadeOut=true;
-
-  const suffixes = ["st", "nd", "rd", "th"];
-  this.mode1TargetSuffix =
-    suffixes[Math.floor(Math.random() * 4)];
-
-  // ⭐ Start Big Bang rebuild instead of instant reset
-  this.startBigBang();
-
-  this.spawnMode1Numbers();
-},
-
-
-startMode1Suction(index) {
-
-  const n = this.mode1Numbers[index];
-
-  this.mode1SuctionActive = true;
-
-  this.mode1SuctionData = {
-    index: index,
-    startX: n.x,
-    startY: n.y,
-    targetX: this.mascot.x,
-    targetY: this.mascot.y,
-    time: 0,
-    duration: 500
-  };
-},
-
-
-updateMode1Suction(delta) {
-
-  if (!this.mode1SuctionActive) return;
-
-  const s = this.mode1SuctionData;
-  const n = this.mode1Numbers[s.index];
-
-  if (!n) {
-    this.mode1SuctionActive = false;
-    return;
-  }
-
-  s.time += delta;
-
-  const progress = Math.min(1, s.time / s.duration);
-
-  n.x = s.startX + (s.targetX - s.startX) * progress;
-  n.y = s.startY + (s.targetY - s.startY) * progress;
-
-  if (progress >= 1) {
-
-    this.finishMode1Suction();
-  }
-},
-
-finishMode1Suction() {
-
-  const s = this.mode1SuctionData;
-  const n = this.mode1Numbers[s.index];
-
-  if (!n) return;
-
-  const correct = this.getSuffix(n.number) === this.mode1TargetSuffix;
-
-  if (correct) {
-
-    this.score += 10;
-
-    this.startPortalMerge(n.number);
-
-    this.mode1Numbers.splice(s.index, 1);
-
-  } else {
-
-    this.score -= 5;
-
-    this.startNumberBreak(n.number);
-  }
-
-  this.mode1SuctionActive = false;
-  this.mode1SuctionData = null;
-},
 
 drawDreamBackground(ctx) {
   const gradient = ctx.createLinearGradient(
@@ -1525,45 +1038,6 @@ drawDreamBackground(ctx) {
 },
 
 
-// drawDreamBackground(ctx) {
-
-//   const cx = this.mascot.x;
-//   const cy = this.mascot.y;
-
-//   const collapse = this.blackHoleActive
-//     ? this.blackHoleStrength * 0.03
-//     : 0;
-
-//   const gradient = ctx.createRadialGradient(
-//     cx,
-//     cy,
-//     100,
-//     cx,
-//     cy,
-//     this.cssWidth
-//   );
-
-//   gradient.addColorStop(0, "#000000");
-//   gradient.addColorStop(0.3, "#60A5FA");
-//   gradient.addColorStop(0.6, "#A78BFA");
-//   gradient.addColorStop(1, "#F472B6");
-
-//   ctx.save();
-
-//   if (this.blackHoleActive) {
-
-//     ctx.translate(cx, cy);
-//     ctx.scale(1 - collapse, 1 - collapse);
-//     ctx.translate(-cx, -cy);
-
-//   }
-
-//   ctx.fillStyle = gradient;
-//   ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
-
-//   ctx.restore();
-// }
-
 drawFloatingSparkles(ctx, x, y) {
 
   const time = performance.now() * 0.002;
@@ -1582,425 +1056,4 @@ drawFloatingSparkles(ctx, x, y) {
     ctx.fill();
   }
 },
-
-
-updateMode1Merge(delta) {
-
-  if (!this.mode1MergeActive) return;
-
-  const m = this.mode1MergeData;
-
-  m.time += delta;
-
-  const progress = m.time / m.duration;
-
-  // Phase 1 — orbit around portal
-  if (progress < 0.5) {
-
-    m.angle += 0.12;
-
-  }
-
-  // Phase 2 — spiral inward
-  else if (progress < 0.8) {
-
-    m.angle += 0.25;
-    m.radius *= 0.93;
-
-  }
-
-  // Phase 3 — portal suction
-  else {
-
-    m.radius *= 0.75;
-    m.scale = (m.scale || 1) * 0.9;
-
-  }
-
-  if (progress >= 1) {
-
-    this.spawnSparkBurst(this.mascot.x, this.mascot.y);
-
-    this.mode1MergeActive = false;
-
-    this.mode1CorrectCollected++;
-
-    if (this.mode1CorrectCollected === this.mode1CorrectTotal) {
-      this.startMode1Confirmation();
-    }
-  }
-},
-
-drawMode1Merge(ctx) {
-
-  if (!this.mode1MergeActive) return;
-
-  const m = this.mode1MergeData;
-
-  const px = this.mascot.x;
-  const py = this.mascot.y;
-
-  const x = px + Math.cos(m.angle) * m.radius;
-  const y = py + Math.sin(m.angle) * m.radius;
-
-  const scale = m.scale || 1;
-
-  const text = `${m.number}${m.suffix}`;
-
-  ctx.save();
-
-  ctx.translate(x, y);
-
-  ctx.scale(scale, scale);
-
-  ctx.shadowColor = "#FFD700";
-  ctx.shadowBlur = 35;
-
-  ctx.fillStyle = "#FFFFFF";
-  ctx.font = `bold ${70 * this.scale}px Comic Sans MS`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  ctx.fillText(text, 0, 0);
-
-  ctx.restore();
-},
-
-startBlackHoleCollapse() {
-
-  this.blackHoleActive = true;
-  this.blackHoleTime = 0;
-  this.blackHoleStrength = 0;
-  this.accretionAngle = 0;
-  this.collapseMessage = "Your Universe Has Collapsed...";
-  this.collapseMessageTimer = 0;
-  this.blackHoleFlash = false;
-  this.blackHoleFlashAlpha = 0;
-},
-
-updateBlackHole(delta) {
-
-  this.accretionAngle += 0.05 + this.blackHoleStrength * 0.1;
-  if (!this.blackHoleActive) return;
-
-  this.blackHoleTime += delta;
-
-  const progress = this.blackHoleTime / this.blackHoleDuration;
-
-  this.blackHoleStrength = progress * 25;
-
-  const cx = this.mascot.x;
-  const cy = this.mascot.y;
-
-  /* SUCK STARS */
-
-  const suckStars = (layer) => {
-
-  for (let s of layer) {
-
-    const dx = cx - s.x;
-    const dy = cy - s.y;
-
-    const dist = Math.sqrt(dx*dx + dy*dy) + 0.001;
-
-    // inward pull
-    const pull = 0.02 * this.blackHoleStrength;
-
-    // sideways orbit force (gravity bending)
-    const orbit = 0.015 * this.blackHoleStrength;
-
-    s.x += (dx / dist) * pull * dist;
-    s.y += (dy / dist) * pull * dist;
-
-    // perpendicular swirl
-    s.x += (-dy / dist) * orbit * dist;
-    s.y += (dx / dist) * orbit * dist;
-  }
-};
-
-  suckStars(this.starsFar);
-  suckStars(this.starsMid);
-  suckStars(this.starsNear);
-
-  /* SUCK NUMBERS */
-
-  for (let n of this.mode1Numbers) {
-
-    const dx = cx - n.x;
-    const dy = cy - n.y;
-
-    n.x += dx * 0.04 * this.blackHoleStrength;
-    n.y += dy * 0.04 * this.blackHoleStrength;
-
-    n.renderScale = (n.renderScale || 1) * 0.97;
-    n.renderRotation = (n.renderRotation || 0) + 0.4;
-  }
-
-  /* END COLLAPSE */
-
-  if (progress >= 1) {
-
-    this.blackHoleActive = false;
-    this.mode1GameOver = true;
-
-    this.collapseMessageTimer = 2000;
-  }
-},
-
-drawBlackHole(ctx) {
-
-  if (!this.blackHoleActive) return;
-
-  const px = this.mascot.x;
-  const py = this.mascot.y;
-
-  const radius = 120 * this.scale +
-    Math.sin(performance.now() * 0.02) * 20;
-
-  const gradient = ctx.createRadialGradient(
-    px, py, 10,
-    px, py, radius
-  );
-
-  gradient.addColorStop(0, "#000000");
-  gradient.addColorStop(0.4, "#050505");
-  gradient.addColorStop(1, "rgba(0,0,0,0)");
-
-  ctx.fillStyle = gradient;
-
-  ctx.beginPath();
-  ctx.arc(px, py, radius, 0, Math.PI * 2);
-  ctx.fill();
-},
-
-drawAccretionDisk(ctx) {
-
-  if (!this.blackHoleActive) return;
-
-  const cx = this.mascot.x;
-  const cy = this.mascot.y;
-
-  const radius = 70 + this.blackHoleStrength * 120;
-
-  ctx.save();
-
-  ctx.translate(cx, cy);
-  ctx.rotate(this.accretionAngle);
-
-  const gradient = ctx.createRadialGradient(
-    0,0,radius*0.4,
-    0,0,radius
-  );
-
-  gradient.addColorStop(0,"rgba(255,255,255,0)");
-  gradient.addColorStop(0.4,"rgba(255,200,100,0.7)");
-  gradient.addColorStop(0.7,"rgba(255,120,0,0.9)");
-  gradient.addColorStop(1,"rgba(255,0,150,0)");
-
-  ctx.fillStyle = gradient;
-
-  ctx.beginPath();
-  ctx.ellipse(0,0,radius,radius*0.35,0,0,Math.PI*2);
-  ctx.fill();
-
-  ctx.restore();
-},
-
-startBigBang() {
-
-  this.bigBangActive = true;
-  this.bigBangTime = 0;
-  this.bigBangFlash = 1;
-  this.glassFadeOut=true;
-
-  const cx = this.CENTER_X;
-  const cy = this.CENTER_Y;
-
-  const explodeStars = (layer) => {
-
-    for (let s of layer) {
-
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 6 + 3;
-
-      s.x = cx;
-      s.y = cy;
-
-      s.vx = Math.cos(angle) * speed;
-      s.vy = Math.sin(angle) * speed;
-    }
-  };
-
-  explodeStars(this.starsFar);
-  explodeStars(this.starsMid);
-  explodeStars(this.starsNear);
-  
-},
-
-updateBigBang(delta) {
-
-  if (!this.bigBangActive) return;
-
-  this.bigBangTime += delta;
-
-  const progress = this.bigBangTime / this.bigBangDuration;
-
-  const pushStars = (layer) => {
-
-    for (let s of layer) {
-
-      if (s.vx !== undefined) {
-
-        s.x += s.vx * 2;
-        s.y += s.vy * 2;
-
-        s.vx *= 0.98;
-        s.vy *= 0.98;
-      }
-    }
-  };
-
-  pushStars(this.starsFar);
-  pushStars(this.starsMid);
-  pushStars(this.starsNear);
-
-  this.bigBangFlash = Math.max(0, 1 - progress * 2);
-
-  if (progress >= 1) {
-
-    this.bigBangActive = false;
-
-    // restore normal starfield movement
-    this.initStarfield();
-  }
-},
-
-drawBigBangFlash(ctx) {
-
-  if (this.bigBangFlash <= 0) return;
-
-  ctx.fillStyle = `rgba(255,255,255,${this.bigBangFlash})`;
-  ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
-},
-
-startPortalMerge(number) {
-
-  this.mode1MergeActive = true;
-
-  this.mode1MergeData = {
-    number: number,
-    suffix: this.mode1TargetSuffix,
-    angle: 0,
-    radius: 90 * this.scale,
-    time: 0,
-    duration: 900
-  };
-},
-
-startNumberBreak(number) {
-
-  const px = this.mascot.x;
-  const py = this.mascot.y;
-
-  this.mode1BreakActive = true;
-
-  this.mode1BreakData = {
-    number: number,
-    suffix: this.mode1TargetSuffix,
-    x: px,
-    y: py,
-    pieces: [],
-    time: 0,
-    crackPhase: true
-  };
-
-  // create number fragments
-  for (let i = 0; i < 12; i++) {
-
-    const angle = Math.random() * Math.PI * 2;
-    const speed = Math.random()*4 + 2;
-
-    this.mode1BreakData.pieces.push({
-      x: px,
-      y: py,
-      vx: Math.cos(angle)*speed,
-      vy: Math.sin(angle)*speed,
-      rot: Math.random()*Math.PI,
-      vr: (Math.random()-0.5)*0.3
-    });
-  }
-
-this.startBlackHoleCollapse();
-},
-
-updateMode1Break(delta) {
-
-  if (!this.mode1BreakActive) return;
-
-  const b = this.mode1BreakData;
-
-  b.time += delta;
-
-  // Phase 1: number cracking
-  if (b.time < 300) {
-    this.crackAlpha = Math.min(1, b.time/300);
-    return;
-  }
-
-  // Phase 2: fragments flying
-  for (let p of b.pieces) {
-
-    p.x += p.vx;
-    p.y += p.vy;
-
-    p.vx *= 0.97;
-    p.vy *= 0.97;
-
-    p.rot += p.vr;
-  }
-
-  if (b.time > 900) {
-
-    this.mode1BreakActive = false;
-
-    this.startBlackHoleCollapse();
-  }
-},
-
-
-drawMode1Break(ctx) {
-
-  if (!this.mode1BreakActive) return;
-
-  const b = this.mode1BreakData;
-
-  ctx.font = `bold ${70 * this.scale}px Comic Sans MS`;
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-
-  // Phase 1: cracked number
-  if (b.time < 300) {
-
-    ctx.fillStyle = "#FF5555";
-    ctx.fillText(b.number + b.suffix, b.x, b.y);
-
-    return;
-  }
-
-  // Phase 2: shattered pieces
-  for (let p of b.pieces) {
-
-    ctx.save();
-
-    ctx.translate(p.x, p.y);
-    ctx.rotate(p.rot);
-
-    ctx.fillStyle = "#FF4444";
-
-    ctx.fillText(b.number, 0, 0);
-
-    ctx.restore();
-  }
-},
-
 }
