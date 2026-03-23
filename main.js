@@ -75,19 +75,7 @@ window.startGame = function (gameName) {
   document.getElementById("menu").style.display          = "none";
   document.getElementById("input_video").style.opacity   = "1";
 
-<<<<<<< Updated upstream
-  if (gameName === "game1") { window.currentGame = Game1; Game1.init(); }
-  if (gameName === "Game3") { window.currentGame = Game3; Game3.init(); Game3.startDetection(); }
-  if (gameName === "Game5") { window.currentGame = Game5; Game5.init(); }
-  if (gameName === "Game8") { window.currentGame = Game8; Game8.init(); }
-  if (gameName === "Game9") { window.currentGame = Game9; Game9.init(); }
-  if (gameName === "Game10") {
-    if (window.initArmDetection) window.initArmDetection();
-    window.currentGame = Game10;
-    Game10.init();
-  }
-  if (gameName === "Game11") { window.currentGame = Game11; Game11.init(); }
-=======
+
   // Stop any previous game cleanly
   window.currentGame = null;
 
@@ -109,7 +97,6 @@ window.startGame = function (gameName) {
   };
 
   if (map[gameName]) map[gameName]();
->>>>>>> Stashed changes
   resizeCanvas();
 };
 

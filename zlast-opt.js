@@ -1,14 +1,4 @@
 /* ============================================================
-   CHANGES v2:
-   - Default + Pattern modes: two concentric rings now rendered as
-     ONE unified torus (a single glowing space-donut). The gap
-     between them is the hollow core of the torus. Lit from above-
-     left; ambient nebula glow underneath; slow rotation drives the
-     specular highlight around the rim.
-   - Adaptive speed system: starts at speedCap, drops on miss/wrong,
-     recovers on correct hits, gently drifts back toward cap when
-     playing well. Never exceeds speedCap.
-
    skip-number.js  (Game1) — optimised
    Performance changes (design & feel UNCHANGED):
    1. Torus gradients cached in offscreen canvas — rebuilt only
@@ -40,6 +30,10 @@ const Game1 = {
   /* ── Palette ────────────────────────────────────────────── */
   C: {
     bg:          "#0d1b2e",
+    ring1:       "#c9933a",
+    ring1Glow:   "rgba(201,147,58,0.35)",
+    ring2:       "#7ecfb3",
+    ring2Glow:   "rgba(126,207,179,0.25)",
     noteText:    "#f0f4ff",
     correct:     "#6de8b4",
     wrong:       "#e87c6d",
@@ -82,7 +76,7 @@ const Game1 = {
   cannonTargetAngle: 0,
   cannonLength: 0,
   pendingShot: null,
-
+  lastCannonNote: null,
 
   orbImage: null,
   orbAngle: 0,
@@ -137,6 +131,12 @@ const Game1 = {
   _hintChangeTimer: 0,
   _hintChangeMessage: "",
 
+  /* ── Offscreen torus cache ───────────────────────────────── */
+  _torusCache:       null,   // OffscreenCanvas or regular canvas
+  _torusCacheValid:  false,
+  _torusCacheSize:   0,      // diameter used when cache was built
+  _lastTorusAngle:   -999,   // previous angle; rebuild specular when δ > threshold
+
   /* ── Particle caps ───────────────────────────────────────── */
   MAX_POP:  80,
   MAX_EXPL: 80,
@@ -171,7 +171,7 @@ const Game1 = {
     this.noiseTime = 0;
     this.spawnInterval = 1200;
     this.torusAngle = 0;
-   
+    this._torusCacheValid = false;
 
     this.mode       = "default";
     this.skipAmount = this.getRandomSkip();
@@ -224,7 +224,9 @@ const Game1 = {
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
     this._initBgStars();
 
-
+    // Invalidate torus cache on resize
+    this._torusCacheValid = false;
+    this._torusCacheSize  = 0;
   },
 
 
@@ -351,13 +353,10 @@ const Game1 = {
     for (let i = 0; i < 28; i++) {
       const a = Math.random() * Math.PI * 2, v = 180 + Math.random() * 220;
       this.levelUpParticles.push({
-        x: this.centerX, 
-        y: this.centerY,
-        vx: Math.cos(a) * v, 
-        vy: Math.sin(a) * v,
+        x: this.centerX, y: this.centerY,
+        vx: Math.cos(a) * v, vy: Math.sin(a) * v,
         r: 3 + Math.random() * 5,
-        color: cols[i % cols.length], 
-        life: 1,
+        color: cols[i % cols.length], life: 1,
       });
     }
   },
@@ -367,12 +366,8 @@ const Game1 = {
     this.levelUpTimer -= dt * 1000;
     if (this.xpPopFlash > 0) this.xpPopFlash = Math.max(0, this.xpPopFlash - dt * 3);
     for (const p of this.levelUpParticles) {
-      p.x += p.vx * dt; 
-      p.y += p.vy * dt;
-      p.vx *= 0.94; 
-      p.vy *= 0.94; 
-      p.vy += 120 * dt; 
-      p.life -= dt * 1.1;
+      p.x += p.vx * dt; p.y += p.vy * dt;
+      p.vx *= 0.94; p.vy *= 0.94; p.vy += 120 * dt; p.life -= dt * 1.1;
     }
     this.levelUpParticles = this.levelUpParticles.filter(p => p.life > 0);
     if (this.levelUpTimer <= 0) this.levelUpActive = false;
@@ -385,9 +380,7 @@ const Game1 = {
       ctx.globalAlpha = Math.max(0, p.life) * 0.9;
       ctx.fillStyle   = p.color;
       ctx.shadowColor = p.color; ctx.shadowBlur = 12;
-      ctx.beginPath(); 
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
     }
     ctx.shadowBlur = 0; ctx.globalAlpha = 1;
     if (prog > 0.05 && prog < 0.8) {
@@ -403,8 +396,7 @@ const Game1 = {
       ctx.fillText("LEVEL " + this.level + "!", 0, 0);
       ctx.font = "bold 22px 'Trebuchet MS', sans-serif";
       ctx.fillStyle = this.tierColors[this.tier];
-      ctx.shadowColor = this.tierColors[this.tier]; 
-      ctx.shadowBlur = 14;
+      ctx.shadowColor = this.tierColors[this.tier]; ctx.shadowBlur = 14;
       ctx.fillText(this.tierNames[this.tier], 0, 46);
       ctx.restore();
     }
@@ -430,25 +422,14 @@ const Game1 = {
     const tw  = ctx.measureText(msg).width;
     const bw = tw + 56, bh = 56, bx = W / 2 - bw / 2, by = bannerY - bh / 2, br = bh / 2;
     ctx.beginPath();
-    ctx.moveTo(bx + br, by); 
-    ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
-    ctx.arcTo(bx + bw, by + bh, bx, by + bh, br); 
-    ctx.arcTo(bx, by + bh, bx, by, br);
-    ctx.arcTo(bx, by, bx + bw, by, br); 
-    ctx.closePath();
-    ctx.fillStyle = "rgba(8,14,28,0.88)"; 
-    ctx.fill();
-    ctx.strokeStyle = col; 
-    ctx.lineWidth = 2;
-    ctx.shadowColor = col; 
-    ctx.shadowBlur = 16; 
-    ctx.stroke(); 
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = col; 
-    ctx.textAlign = "center"; 
-    ctx.textBaseline = "middle";
-    ctx.shadowColor = col; 
-    ctx.shadowBlur = 10;
+    ctx.moveTo(bx + br, by); ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
+    ctx.arcTo(bx + bw, by + bh, bx, by + bh, br); ctx.arcTo(bx, by + bh, bx, by, br);
+    ctx.arcTo(bx, by, bx + bw, by, br); ctx.closePath();
+    ctx.fillStyle = "rgba(8,14,28,0.88)"; ctx.fill();
+    ctx.strokeStyle = col; ctx.lineWidth = 2;
+    ctx.shadowColor = col; ctx.shadowBlur = 16; ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.fillStyle = col; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.shadowColor = col; ctx.shadowBlur = 10;
     ctx.fillText(msg, W / 2, bannerY);
     ctx.restore();
   },
@@ -457,28 +438,21 @@ const Game1 = {
     const fill      = this.level >= this.maxLevel ? 1 : this.xp / this.xpToNext;
     const tierColor = this.tierColors[this.tier];
     const start     = -Math.PI / 2;
-    ctx.beginPath(); 
-    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = this.C.xpTrack; 
-    ctx.lineWidth = 6; 
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = this.C.xpTrack; ctx.lineWidth = 6; ctx.stroke();
     if (fill > 0.01) {
-      ctx.beginPath(); 
-      ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
-      ctx.strokeStyle = tierColor; 
-      ctx.lineWidth = 6;
-      ctx.shadowColor = tierColor; 
-      ctx.shadowBlur = 12 + this.xpPopFlash * 20;
-      ctx.stroke(); 
-      ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
+      ctx.strokeStyle = tierColor; ctx.lineWidth = 6;
+      ctx.shadowColor = tierColor; ctx.shadowBlur = 12 + this.xpPopFlash * 20;
+      ctx.stroke(); ctx.shadowBlur = 0;
     }
     if (this.xpPopFlash > 0) {
-      ctx.beginPath(); 
-      ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
+      ctx.beginPath(); ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
       ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash * 0.55})`;
       ctx.lineWidth   = 5 * this.xpPopFlash; ctx.stroke();
     }
   },
+
 
   /* ============================================================
      HUD
@@ -486,17 +460,11 @@ const Game1 = {
   _pill(ctx, x, y, w, h) {
     const r = h / 2;
     ctx.beginPath();
-    ctx.moveTo(x + r, y); 
-    ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r); 
-    ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r); 
-    ctx.closePath();
-    ctx.fillStyle = this.C.hudBg; 
-    ctx.fill();
-    ctx.strokeStyle = this.C.hudBorder; 
-    ctx.lineWidth = 1; 
-    ctx.stroke();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+    ctx.fillStyle = this.C.hudBg; ctx.fill();
+    ctx.strokeStyle = this.C.hudBorder; ctx.lineWidth = 1; ctx.stroke();
   },
 
   _drawHUD(ctx, isLauncher, dt) {
@@ -504,21 +472,13 @@ const Game1 = {
     const f = "bold 20px 'Trebuchet MS', sans-serif";
 
     if (isLauncher) {
-      ctx.fillStyle = this.C.hudBg; 
-      ctx.fillRect(0, 0, W, 50);
-      ctx.strokeStyle = this.C.hudBorder; 
-      ctx.lineWidth = 1;
-      ctx.beginPath(); 
-      ctx.moveTo(0, 50); 
-      ctx.lineTo(W, 50); 
-      ctx.stroke();
-      ctx.font = f; 
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = "#e8f4ff"; 
-      ctx.textAlign = "left";
+      ctx.fillStyle = this.C.hudBg; ctx.fillRect(0, 0, W, 50);
+      ctx.strokeStyle = this.C.hudBorder; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, 50); ctx.lineTo(W, 50); ctx.stroke();
+      ctx.font = f; ctx.textBaseline = "middle";
+      ctx.fillStyle = "#e8f4ff"; ctx.textAlign = "left";
       ctx.fillText("⭐ " + this.score, 16, 25);
-      ctx.fillStyle = this.C.gold; 
-      ctx.textAlign = "center";
+      ctx.fillStyle = this.C.gold; ctx.textAlign = "center";
       ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
       ctx.fillText(this.gameTitle, W / 2, 25);
       ctx.textAlign = "right";
@@ -527,45 +487,32 @@ const Game1 = {
       ctx.fillText("x" + this.combo + " combo", W - 16, 25);
     } else {
       this._pill(ctx, 14, 14, 155, 42);
-      ctx.font = f; 
-      ctx.fillStyle = "#e8f4ff"; 
-      ctx.textAlign = "left"; 
-      ctx.textBaseline = "middle";
+      ctx.font = f; ctx.fillStyle = "#e8f4ff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
       ctx.fillText("⭐ " + this.score, 28, 35);
       this._pill(ctx, W - 174, 14, 160, 42);
       ctx.textAlign = "right";
       ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
       ctx.fillText("🔥 " + this.combo + "  x" + this.multiplier, W - 28, 35);
-      ctx.textAlign = "center"; 
-      ctx.textBaseline = "middle";
-      ctx.fillStyle = this.C.gold; 
-      ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
-      ctx.shadowColor = "rgba(245,200,66,0.4)"; 
-      ctx.shadowBlur = 14;
-      ctx.fillText(this.gameTitle, W / 2, 34); 
-      ctx.shadowBlur = 0;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillStyle = this.C.gold; ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
+      ctx.shadowColor = "rgba(245,200,66,0.4)"; ctx.shadowBlur = 14;
+      ctx.fillText(this.gameTitle, W / 2, 34); ctx.shadowBlur = 0;
     }
 
     const ringCX = W / 2, ringCY = isLauncher ? H - 60 : H - 48, ringR = 26;
     this._drawXPRing(ctx, ringCX, ringCY, ringR);
     ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
-    ctx.textAlign = "center"; 
-    ctx.textBaseline = "middle";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillStyle = this.tierColors[this.tier];
-    ctx.shadowColor = this.tierColors[this.tier]; 
-    ctx.shadowBlur = 8;
-    ctx.fillText("Lv." + this.level, ringCX, ringCY); 
-    ctx.shadowBlur = 0;
+    ctx.shadowColor = this.tierColors[this.tier]; ctx.shadowBlur = 8;
+    ctx.fillText("Lv." + this.level, ringCX, ringCY); ctx.shadowBlur = 0;
 
     const diffLabels = { full: "🟢 Training", subtle: "🟡 Subtle", none: "🔵 Blind", decoy: "🔴 Decoy", chaos: "🟣 Chaos" };
-    ctx.textAlign = "right"; 
-    ctx.textBaseline = "bottom";
+    ctx.textAlign = "right"; ctx.textBaseline = "bottom";
     ctx.font = "13px 'Trebuchet MS', sans-serif";
     ctx.globalAlpha = 0.7;
-    ctx.fillStyle = this.tierColors[this.tier]; 
-    ctx.fillText(this.tierNames[this.tier], W - 12, H - 8);
-    ctx.fillStyle = "#c8dff0"; 
-    ctx.fillText(diffLabels[this.hintState] || "", W - 12, H - 26);
+    ctx.fillStyle = this.tierColors[this.tier]; ctx.fillText(this.tierNames[this.tier], W - 12, H - 8);
+    ctx.fillStyle = "#c8dff0"; ctx.fillText(diffLabels[this.hintState] || "", W - 12, H - 26);
     ctx.globalAlpha = 1;
   },
 
@@ -626,7 +573,9 @@ const Game1 = {
     this.drawHitText(ctx);
   },
 
-
+  drawTitle(ctx) {},
+  drawScore(ctx) {},
+  drawCombo(ctx)  {},
 
 
   /* ============================================================
@@ -636,47 +585,46 @@ const Game1 = {
     ctx.save();
     ctx.beginPath();
     ctx.arc(x, y, this.baseOuterRadius * 0.065, 0, Math.PI * 2);
-    ctx.shadowColor = "rgba(126,207,179,0.7)"; 
-    ctx.shadowBlur = 28;
-    ctx.fillStyle = "rgba(94,180,150,0.45)"; 
-    ctx.fill();
+    ctx.shadowColor = "rgba(126,207,179,0.7)"; ctx.shadowBlur = 28;
+    ctx.fillStyle = "rgba(94,180,150,0.45)"; ctx.fill();
     ctx.beginPath();
     ctx.arc(x, y, this.baseOuterRadius * 0.030, 0, Math.PI * 2);
-    ctx.shadowBlur = 12; 
-    ctx.fillStyle = "#b0f0da"; 
-    ctx.fill();
+    ctx.shadowBlur = 12; ctx.fillStyle = "#b0f0da"; ctx.fill();
     ctx.restore();
   },
 
 
   /* ============================================================
-     TORUS RINGS  — cached offscreen canvas for static layers
-     Dynamic layers (specular dot, shimmer band) still drawn live
-     but only when the angle has changed enough to matter.
+     TORUS RINGS — drawn directly on main canvas every frame.
+     The offscreen-cache approach caused clipping and jitter on
+     Android tablets so we draw everything live instead.
+     The 8 gradient objects are lightweight — the real cost was
+     the drawImage composite step, not the gradient math.
   ============================================================ */
   drawRings(ctx, dt) {
-    this.pulseTime += this.pulseSpeed * dt;
-    this.torusAngle = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
+    this.pulseTime  += this.pulseSpeed * dt;
+    this.torusAngle  = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
 
+    // Smooth pulse — both radii grow/shrink together gently
     const outerOff = Math.sin(this.pulseTime) * this.pulseAmountOuter;
     const innerOff = Math.sin(this.pulseTime) * this.pulseAmountInner;
     this.currentOuterRadius = this.baseOuterRadius + Math.max(0, outerOff);
     this.currentInnerRadius = this.baseInnerRadius + Math.max(0, innerOff);
 
     const cx = this.centerX, cy = this.centerY;
-    const Ro = this.currentOuterRadius;   // outer edge of torus
-    const Ri = this.currentInnerRadius;   // inner edge of torus
-    const Rm = (Ro + Ri) / 2;             // tube centreline radius
-    const r  = (Ro - Ri) / 2;             // tube cross-section radius
+    const Ro = this.currentOuterRadius;
+    const Ri = this.currentInnerRadius;
+    const Rm = (Ro + Ri) / 2;
+    const r  = (Ro - Ri) / 2;
 
-    // Light direction (orbits slowly)
+    // Light direction orbits with the torus angle
     const lx = Math.cos(this.torusAngle);
     const ly = Math.sin(this.torusAngle);
 
     ctx.save();
     ctx.translate(cx, cy);
 
-    /* ── 1. Ambient nebula bloom ──────────────────────────── */
+    // ── 1. Ambient nebula bloom ──────────────────────────────────
     const bloom = ctx.createRadialGradient(0, 0, Ri - r * 2.5, 0, 0, Ro + r * 3.5);
     bloom.addColorStop(0,    "rgba(0,0,0,0)");
     bloom.addColorStop(0.30, "rgba(126,207,179,0.07)");
@@ -688,33 +636,28 @@ const Game1 = {
     ctx.arc(0, 0, Ro + r * 3.5, 0, Math.PI * 2);
     ctx.fill();
 
-    /* ── 2. Tube body — fill the annulus with a light-direction gradient ─
-       The gradient axis points from the shadow side toward the lit side,
-       giving the illusion that the tube is catching light at one angle   */
-    const gx0 = -lx * (Ro + r), gy0 = -ly * (Ro + r);
-    const gx1 =  lx * (Ro + r), gy1 =  ly * (Ro + r);
-
-    const tubeGrad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
-    tubeGrad.addColorStop(0,    "#0a1525");          // deep shadow
-    tubeGrad.addColorStop(0.22, "#1c3a2a");          // shadow-side dark mint
-    tubeGrad.addColorStop(0.40, "#5a3010");          // warm mid-tone (gold shadow)
-    tubeGrad.addColorStop(0.55, "#c9933a");          // main gold
-    tubeGrad.addColorStop(0.68, "#e8c87a");          // bright lit face
-    tubeGrad.addColorStop(0.80, "#7ecfb3");          // mint sheen on far side
-    tubeGrad.addColorStop(1,    "#0a1525");          // wrap back to shadow
-
-    // Draw annulus (evenodd rule creates the hole)
+    // ── 2. Tube body — evenodd so hole stays transparent ─────────
+    const tubeGrad = ctx.createLinearGradient(
+      -lx * (Ro + r), -ly * (Ro + r),
+       lx * (Ro + r),  ly * (Ro + r)
+    );
+    tubeGrad.addColorStop(0,    "#0a1525");
+    tubeGrad.addColorStop(0.22, "#1c3a2a");
+    tubeGrad.addColorStop(0.40, "#5a3010");
+    tubeGrad.addColorStop(0.55, "#c9933a");
+    tubeGrad.addColorStop(0.68, "#e8c87a");
+    tubeGrad.addColorStop(0.80, "#7ecfb3");
+    tubeGrad.addColorStop(1,    "#0a1525");
     ctx.beginPath();
     ctx.arc(0, 0, Ro, 0, Math.PI * 2);
     ctx.arc(0, 0, Ri, 0, Math.PI * 2, true);
-    ctx.fillStyle = tubeGrad;
+    ctx.fillStyle   = tubeGrad;
     ctx.shadowColor = "rgba(201,147,58,0.4)";
     ctx.shadowBlur  = 36;
     ctx.fill("evenodd");
     ctx.shadowBlur  = 0;
 
-    /* ── 3. Inner hole darkness — makes the hole look deep ── */
-    // A subtle radial fade from just inside Ri inward
+    // ── 3. Inner hole darkness ───────────────────────────────────
     const holeDark = ctx.createRadialGradient(0, 0, Ri * 0.65, 0, 0, Ri);
     holeDark.addColorStop(0,   "rgba(4,10,20,0.82)");
     holeDark.addColorStop(0.6, "rgba(4,10,20,0.45)");
@@ -724,7 +667,7 @@ const Game1 = {
     ctx.fillStyle = holeDark;
     ctx.fill();
 
-    /* ── 4. Outer edge stroke — crisp gold rim ───────────── */
+    // ── 4. Outer edge stroke — gold rim ─────────────────────────
     ctx.beginPath();
     ctx.arc(0, 0, Ro, 0, Math.PI * 2);
     ctx.strokeStyle = "#d4a44a";
@@ -734,7 +677,7 @@ const Game1 = {
     ctx.stroke();
     ctx.shadowBlur  = 0;
 
-    /* ── 5. Inner edge stroke — faint mint ──────────────── */
+    // ── 5. Inner edge stroke — mint rim ─────────────────────────
     ctx.beginPath();
     ctx.arc(0, 0, Ri, 0, Math.PI * 2);
     ctx.strokeStyle = "rgba(126,207,179,0.38)";
@@ -744,12 +687,9 @@ const Game1 = {
     ctx.stroke();
     ctx.shadowBlur  = 0;
 
-    /* ── 6. Iridescent shimmer band along lit arc ────────── */
-    //  A semi-transparent arc on the lit half — like the sheen
-    //  you see on a glossy torus where the surface curves away
+    // ── 6. Iridescent shimmer band ───────────────────────────────
     const shimStart = this.torusAngle - Math.PI * 0.35;
     const shimEnd   = this.torusAngle + Math.PI * 0.35;
-
     ctx.beginPath();
     ctx.arc(0, 0, Rm + r * 0.3, shimStart, shimEnd);
     ctx.arc(0, 0, Rm - r * 0.3, shimEnd, shimStart, true);
@@ -767,8 +707,7 @@ const Game1 = {
     ctx.fillStyle = shimGrad;
     ctx.fill();
 
-    /* ── 7. Specular highlight — small bright dot on rim ─── */
-    //  The dot orbits at the light angle, sitting on the outer edge
+    // ── 7. Specular highlight dot ────────────────────────────────
     const sx = Math.cos(this.torusAngle) * Ro;
     const sy = Math.sin(this.torusAngle) * Ro;
     const specGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.8);
@@ -780,7 +719,7 @@ const Game1 = {
     ctx.arc(sx, sy, r * 1.8, 0, Math.PI * 2);
     ctx.fill();
 
-    /* ── 8. Secondary specular on inner rim (mint tint) ──── */
+    // ── 8. Secondary specular on inner rim ──────────────────────
     const sx2 = Math.cos(this.torusAngle + Math.PI * 0.18) * Ri;
     const sy2 = Math.sin(this.torusAngle + Math.PI * 0.18) * Ri;
     const specGrad2 = ctx.createRadialGradient(sx2, sy2, 0, sx2, sy2, r * 1.2);
@@ -817,20 +756,14 @@ const Game1 = {
   drawNotes(ctx, dt) {
     for (let i = this.notes.length - 1; i >= 0; i--) {
       const note = this.notes[i];
-      const dx = this.centerX - note.x;
-      const dy = this.centerY - note.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
-
-      // Cap step to remaining distance — prevents overshoot jitter
+      const dx   = this.centerX - note.x;
+      const dy   = this.centerY - note.y;
+      const len  = Math.sqrt(dx * dx + dy * dy);
       const step = Math.min(this.noteSpeed * dt, len);
       note.x += (dx / len) * step;
       note.y += (dy / len) * step;
-
       this._drawNoteCircle(ctx, note);
-
-      if (len <= step + 1) {
-        this.notes.splice(i, 1);
-      }
+      if (len <= step + 1) this.notes.splice(i, 1);
     }
   },
 
@@ -857,12 +790,9 @@ const Game1 = {
         : isVisW ? `rgba(232,124,109,${haloAlpha})`
                  : `rgba(140,180,220,${haloAlpha})`;
       const grd = ctx.createRadialGradient(note.x, note.y, r * 0.2, note.x, note.y, r * 1.4);
-      grd.addColorStop(0, haloColor); 
-      grd.addColorStop(1, "rgba(0,0,0,0)");
+      grd.addColorStop(0, haloColor); grd.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = grd;
-      ctx.beginPath(); 
-      ctx.arc(note.x, note.y, r * 1.4, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(note.x, note.y, r * 1.4, 0, Math.PI * 2); ctx.fill();
     }
 
     // Circle body
@@ -877,39 +807,29 @@ const Game1 = {
       shadowCol = `rgba(90,150,200,${0.25 + vis.shimmerAmt * 0.2})`;
     }
 
-    ctx.shadowColor = shadowCol; 
-    ctx.shadowBlur = 20;
-    ctx.beginPath(); 
-    ctx.arc(note.x, note.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = bodyFill; 
-    ctx.fill();
-    ctx.strokeStyle = rimColor; 
-    ctx.lineWidth = 2.5; 
-    ctx.stroke();
+    ctx.shadowColor = shadowCol; ctx.shadowBlur = 20;
+    ctx.beginPath(); ctx.arc(note.x, note.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = bodyFill; ctx.fill();
+    ctx.strokeStyle = rimColor; ctx.lineWidth = 2.5; ctx.stroke();
     ctx.shadowBlur = 0;
 
     // Inner shine
-    ctx.beginPath(); 
-    ctx.arc(note.x - r * 0.27, note.y - r * 0.27, r * 0.20, 0, Math.PI * 2);
+    ctx.beginPath(); ctx.arc(note.x - r * 0.27, note.y - r * 0.27, r * 0.20, 0, Math.PI * 2);
     ctx.fillStyle = isVisC && h !== "subtle" ? "rgba(200,255,230,0.30)" : "rgba(200,230,255,0.22)";
     ctx.fill();
 
     // Subtle hint
     if (h === "subtle" && !isC) {
-      ctx.globalAlpha = 0.18; 
-      ctx.fillStyle = "#aac8e0";
+      ctx.globalAlpha = 0.18; ctx.fillStyle = "#aac8e0";
       ctx.font = `bold ${Math.round(r * 0.42)}px 'Trebuchet MS', sans-serif`;
-      ctx.textAlign = "center"; 
-      ctx.textBaseline = "middle";
-      ctx.fillText("?", note.x, note.y - r * 0.55); 
-      ctx.globalAlpha = 1;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("?", note.x, note.y - r * 0.55); ctx.globalAlpha = 1;
     }
 
     // Number text
     ctx.fillStyle = this.C.noteText;
     ctx.font      = `bold ${Math.round(r * 0.72)}px 'Trebuchet MS', sans-serif`;
-    ctx.textAlign = "center"; 
-    ctx.textBaseline = "middle";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(note.value, note.x, note.y);
 
     ctx.restore();
@@ -1004,11 +924,8 @@ const Game1 = {
       ctx.translate(p.x, p.y);
       ctx.scale(scale, scale);
       ctx.fillStyle   = p.color;
-      ctx.shadowColor = p.color; 
-      ctx.shadowBlur = 16;
-      ctx.beginPath(); 
-      ctx.arc(0, 0, 32, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.shadowColor = p.color; ctx.shadowBlur = 16;
+      ctx.beginPath(); ctx.arc(0, 0, 32, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
   },
@@ -1031,13 +948,10 @@ const Game1 = {
       else if (this.lastHitType === "WRONG")         color = this.C.wrong;
       else if (this.lastHitType.includes("SKIPPED")) color = this.C.gold;
       ctx.save();
-      ctx.globalAlpha = alpha; 
-      ctx.fillStyle = color;
+      ctx.globalAlpha = alpha; ctx.fillStyle = color;
       ctx.font = "bold 34px 'Trebuchet MS', sans-serif";
-      ctx.textAlign = "center"; 
-      ctx.textBaseline = "middle";
-      ctx.shadowColor = color; 
-      ctx.shadowBlur = 18;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.shadowColor = color; ctx.shadowBlur = 18;
       ctx.fillText(this.lastHitType, this.centerX, this.centerY - 130);
       ctx.restore();
       this.hitTextTimer--;
@@ -1076,15 +990,11 @@ const Game1 = {
   },
 
   _resetLauncherState() {
-    this.notes = []; 
-    this.explosions = [];
-    this.combo = 0; 
-    this.multiplier = 1;
-    this.cannonAngle = 0; 
-    this.cannonTargetAngle = 0;
-    this.pendingShot = null; 
-    this.previewCannons = []; 
-    this.previewTimer = 0;
+    this.notes = []; this.explosions = [];
+    this.combo = 0; this.multiplier = 1;
+    this.cannonAngle = 0; this.cannonTargetAngle = 0;
+    this.pendingShot = null; this.lastCannonNote = null;
+    this.previewCannons = []; this.previewTimer = 0;
     this.skipAmount = this.getRandomSkip();
     this.noteSpeed  = this.speedCap;
   },
@@ -1132,33 +1042,21 @@ const Game1 = {
     this.cannonAngle += diff * 0.18;
     if (this.pendingShot && Math.abs(diff) < 0.05) this.fireCannon();
 
-    ctx.save(); 
-    ctx.translate(this.centerX, this.centerY); 
-    ctx.rotate(this.cannonAngle);
+    ctx.save(); ctx.translate(this.centerX, this.centerY); ctx.rotate(this.cannonAngle);
     const bg = ctx.createRadialGradient(0, 0, size * 0.1, 0, 0, size * 0.6);
     bg.addColorStop(0, "#2a4a6e"); bg.addColorStop(1, "#152035");
-    ctx.beginPath(); 
-    ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
-    ctx.fillStyle = bg; 
-    ctx.shadowColor = this.C.accent; 
-    ctx.shadowBlur = 18;
-    ctx.fill(); 
-    ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = bg; ctx.shadowColor = this.C.accent; ctx.shadowBlur = 18;
+    ctx.fill(); ctx.shadowBlur = 0;
     ctx.fillStyle = "#3a6080";
     ctx.beginPath();
     const bx = -size * 0.13, by = -this.cannonLength, bw = size * 0.26, bh = this.cannonLength;
-    ctx.moveTo(bx + 6, by); 
-    ctx.lineTo(bx + bw - 6, by);
+    ctx.moveTo(bx + 6, by); ctx.lineTo(bx + bw - 6, by);
     ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + 6);
-    ctx.lineTo(bx + bw, by + bh); 
-    ctx.lineTo(bx, by + bh);
-    ctx.lineTo(bx, by + 6); 
-    ctx.quadraticCurveTo(bx, by, bx + 6, by);
-    ctx.closePath(); 
-    ctx.fill();
-    ctx.strokeStyle = this.C.accent; 
-    ctx.lineWidth = 1.5; 
-    ctx.stroke();
+    ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx, by + bh);
+    ctx.lineTo(bx, by + 6); ctx.quadraticCurveTo(bx, by, bx + 6, by);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = this.C.accent; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.restore();
   },
 
@@ -1166,18 +1064,12 @@ const Game1 = {
     if (!this.pendingShot) return;
     const { angle, speed, value, id } = this.pendingShot;
     this.notes.push({
-      x: this.centerX, 
-      y: this.centerY,
-      radius: this.baseOuterRadius * 0.12, value, 
-      id: id || value,
-      vx: Math.cos(angle) * speed, 
-      vy: Math.sin(angle) * speed,
+      x: this.centerX, y: this.centerY,
+      radius: this.baseOuterRadius * 0.12, value, id: id || value,
+      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
       spawnProtected: true,
     });
-    this.pendingShot = null; 
-    this.isCharging = false; 
-    this.charge = 0; 
-    this.chargeParticles = [];
+    this.pendingShot = null; this.isCharging = false; this.charge = 0; this.chargeParticles = [];
   },
 
 
@@ -1192,12 +1084,9 @@ const Game1 = {
     const speed = this.noteSpeed;
     setTimeout(() => {
       this.notes.push({
-        x: this.centerX, 
-        y: this.centerY,
-        radius: this.baseOuterRadius * 0.12, 
-        value: num, id: num,
-        vx: Math.cos(angle) * speed, 
-        vy: Math.sin(angle) * speed,
+        x: this.centerX, y: this.centerY,
+        radius: this.baseOuterRadius * 0.12, value: num, id: num,
+        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
         spawnProtected: true,
       });
     }, 120);
@@ -1208,9 +1097,7 @@ const Game1 = {
     let diff = this.orbTargetAngle - this.orbAngle;
     diff     = Math.atan2(Math.sin(diff), Math.cos(diff));
     this.orbAngle += diff * 0.18;
-    ctx.save(); 
-    ctx.translate(this.centerX, this.centerY); 
-    ctx.rotate(this.orbAngle);
+    ctx.save(); ctx.translate(this.centerX, this.centerY); ctx.rotate(this.orbAngle);
     if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth > 0) {
       const img = this.orbImage, sc = sz / Math.max(img.width, img.height);
       ctx.scale(1, -1);
@@ -1218,13 +1105,8 @@ const Game1 = {
     } else {
       const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz / 2);
       g.addColorStop(0, "#8ecae6"); g.addColorStop(0.55, "#1a3a5c"); g.addColorStop(1, "rgba(14,30,50,0)");
-      ctx.fillStyle = g; 
-      ctx.shadowColor = this.C.accent;
-      ctx.shadowBlur = 28;
-      ctx.beginPath(); 
-      ctx.arc(0, 0, sz / 2, 0, Math.PI * 2); 
-      ctx.fill(); 
-      ctx.shadowBlur = 0;
+      ctx.fillStyle = g; ctx.shadowColor = this.C.accent; ctx.shadowBlur = 28;
+      ctx.beginPath(); ctx.arc(0, 0, sz / 2, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
     }
     ctx.restore();
   },
@@ -1253,9 +1135,7 @@ const Game1 = {
     for (let i = 0; i < this.tripleCannons.length; i++) {
       const cannon = this.tripleCannons[i];
       const angle  = this.tripleBaseAngle + cannon.offset;
-      ctx.save(); 
-      ctx.translate(this.centerX, this.centerY); 
-      ctx.rotate(angle);
+      ctx.save(); ctx.translate(this.centerX, this.centerY); ctx.rotate(angle);
       if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth > 0) {
         const img = this.orbImage, sc = sz / Math.max(img.width, img.height);
         ctx.scale(1, -1);
@@ -1264,24 +1144,16 @@ const Game1 = {
         const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz / 2);
         g.addColorStop(0, "#8ecae6"); g.addColorStop(1, "rgba(14,30,50,0)");
         ctx.fillStyle = g;
-        ctx.beginPath(); 
-        ctx.arc(0, 0, sz * 0.8, 0, Math.PI * 2 * 0.8); 
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(0, 0, sz * 0.8, 0, Math.PI * 2 * 0.8); ctx.fill();
       }
       if (this.previewCannons.includes(i) && this.previewTimer > 0) {
         const pulse  = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
         const miniR  = sz * 0.18, offY = -sz * 0.6;
-        ctx.save(); 
-        ctx.globalCompositeOperation = "lighter"; 
-        ctx.scale(1, -1);
+        ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.scale(1, -1);
         const g2 = ctx.createRadialGradient(0, offY, 0, 0, offY, miniR);
-        g2.addColorStop(0, "rgba(245,200,66,1)"); 
-        g2.addColorStop(0.4, "rgba(245,200,66,0.55)"); 
-        g2.addColorStop(1, "rgba(245,200,66,0)");
+        g2.addColorStop(0, "rgba(245,200,66,1)"); g2.addColorStop(0.4, "rgba(245,200,66,0.55)"); g2.addColorStop(1, "rgba(245,200,66,0)");
         ctx.fillStyle = g2;
-        ctx.beginPath(); 
-        ctx.arc(0, offY, miniR * pulse, 0, Math.PI * 2); 
-        ctx.fill();
+        ctx.beginPath(); ctx.arc(0, offY, miniR * pulse, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
       }
       ctx.restore();
@@ -1310,13 +1182,10 @@ const Game1 = {
         const value = this.currentNumber++;
         if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
         this.notes.push({
-          x: this.centerX, 
-          y: this.centerY,
+          x: this.centerX, y: this.centerY,
           radius: this.baseOuterRadius * 0.12,
-          value, 
-          id: value,
-          vx: Math.cos(angle) * speed, 
-          vy: Math.sin(angle) * speed,
+          value, id: value,
+          vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
           spawnProtected: true,
         });
       }, index * delayBetweenShots);
@@ -1340,21 +1209,14 @@ const Game1 = {
   },
 
   drawLauncherZone(ctx) {
-    ctx.save(); 
-    ctx.setLineDash([6, 9]);
-    ctx.strokeStyle = "rgba(140,180,220,0.18)"; 
-    ctx.lineWidth = 2;
-    ctx.beginPath(); 
-    ctx.arc(this.centerX, this.centerY, this.launcherSafeRadius, 0, Math.PI * 2);
-    ctx.stroke(); 
-    ctx.setLineDash([]); 
-    ctx.restore();
+    ctx.save(); ctx.setLineDash([6, 9]);
+    ctx.strokeStyle = "rgba(140,180,220,0.18)"; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(this.centerX, this.centerY, this.launcherSafeRadius, 0, Math.PI * 2);
+    ctx.stroke(); ctx.setLineDash([]); ctx.restore();
   },
 
   startCharging() {
-    this.charge = 0; 
-    this.isCharging = true; 
-    this.chargeParticles = [];
+    this.charge = 0; this.isCharging = true; this.chargeParticles = [];
   },
 
   updateCharging(dt) {
@@ -1378,14 +1240,11 @@ const Game1 = {
 
   drawCharging(ctx) {
     if (!this.isCharging) return;
-    ctx.save(); 
-    ctx.globalCompositeOperation = "lighter";
+    ctx.save(); ctx.globalCompositeOperation = "lighter";
     for (const p of this.chargeParticles) {
       ctx.globalAlpha = p.life * 0.7; ctx.fillStyle = this.C.gold;
       ctx.shadowColor = this.C.gold; ctx.shadowBlur = 12;
-      ctx.beginPath(); 
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
     const gr = this.baseOuterRadius * 0.18 * (0.5 + this.charge * 0.8);
@@ -1393,9 +1252,7 @@ const Game1 = {
     g.addColorStop(0, `rgba(245,200,66,${0.65 * this.charge})`);
     g.addColorStop(1, "rgba(245,200,66,0)");
     ctx.fillStyle = g;
-    ctx.beginPath(); 
-    ctx.arc(this.centerX, this.centerY, gr, 0, Math.PI * 2); 
-    ctx.fill();
+    ctx.beginPath(); ctx.arc(this.centerX, this.centerY, gr, 0, Math.PI * 2); ctx.fill();
   },
 
 
@@ -1415,17 +1272,13 @@ const Game1 = {
       const p = this.explosions[i];
       p.life += 0.03;
       if (p.life >= 1) { this.explosions.splice(i, 1); continue; }
-      p.x += p.vx * 0.016; 
-      p.y += p.vy * 0.016;
+      p.x += p.vx * 0.016; p.y += p.vy * 0.016;
       const alpha = Math.max(0, 1 - p.life);
       ctx.save();
       ctx.globalAlpha = alpha;
       ctx.fillStyle   = p.color;
-      ctx.shadowColor = p.color; 
-      ctx.shadowBlur = 10;
-      ctx.beginPath(); 
-      ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2); 
-      ctx.fill();
+      ctx.shadowColor = p.color; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2); ctx.fill();
       ctx.restore();
     }
   },
