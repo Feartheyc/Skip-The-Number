@@ -1,29 +1,26 @@
 /* ============================================================
    CHANGES v2:
-   - Default + Pattern modes: two concentric rings now rendered as
-     ONE unified torus (a single glowing space-donut). The gap
-     between them is the hollow core of the torus. Lit from above-
-     left; ambient nebula glow underneath; slow rotation drives the
-     specular highlight around the rim.
+   - level 1-3 :- correct number will be visually able to classified in right and wring numbers to be collected
+   - level 4-6 :- correct number will have a slight hint halo effect on it
+   - level 7-9 :- no visual difference between right and wrong numbers
+   - level 10-12 :- wong number will have green colour and right number will have red colours 
+   - level 13-15 :- the effect will be randomised
    - Adaptive speed system: starts at speedCap, drops on miss/wrong,
      recovers on correct hits, gently drifts back toward cap when
      playing well. Never exceeds speedCap.
 
    skip-number.js  (Game1) — optimised
-   Performance changes (design & feel UNCHANGED):
-   1. Torus gradients cached in offscreen canvas — rebuilt only
-      on resize, not every frame.  Biggest single win.
-   2. shadowBlur set once per ctx.save/restore block, not per note.
-   3. Note circle drawing uses a single ctx.save/restore with
-      batched state — avoids redundant property writes.
-   4. Background star layer uses integer coordinates (Math.round)
-      to stay on pixel grid → GPU rasterises faster.
-   5. Particle / explosion arrays capped at 80 items each to
-      prevent memory growth on slow devices.
-   6. spawnNote no longer allocates a new object for id/value
-      (minor GC reduction).
-   7. Torus specular gradient rebuilt only when torusAngle changes
-      enough (>0.02 rad) rather than every frame.
+   1. Particle + explosion arrays capped at 80 each — prevents
+      unbounded growth on slow devices causing frame spikes.
+   2. Cannon collision now correctly tracks combo + multiplier
+      (was missing from the original).
+   3. Background stars use Math.round for integer pixel coords —
+      stays on pixel grid so GPU rasterises faster.
+   4. xxxshadowBlur on torus fills removed — only applied on the
+      two strokes where it's visible. Fills with shadowBlur force
+      a full compositing pass on Android which is expensive.xxx
+   5. Single ctx.save/restore per note circle draw instead of
+      multiple scattered state changes.
 ============================================================ */
 
 const Game1 = {
@@ -653,6 +650,15 @@ const Game1 = {
      TORUS RINGS  — cached offscreen canvas for static layers
      Dynamic layers (specular dot, shimmer band) still drawn live
      but only when the angle has changed enough to matter.
+     Visual layers (drawn back-to-front):
+       1. Wide ambient nebula bloom under the whole donut
+       2. Bottom-half shadow arc  (dark, behind the hole)
+       3. Tube fill — angled gradient following the light angle
+       4. Top-half highlight arc  (bright, catches the "light")
+       5. Outer edge stroke (crisp gold rim)
+       6. Inner edge stroke (faint mint rim — the hole's near edge)
+       7. Animated specular highlight dot that orbits the ring
+       8. Thin iridescent shimmer band along the top arc
   ============================================================ */
   drawRings(ctx, dt) {
     this.pulseTime += this.pulseSpeed * dt;
@@ -982,6 +988,7 @@ const Game1 = {
           this.createExplosion(note.x, note.y, this.C.wrong);
         }
         this.hitTextTimer = 30;
+        
         this.notes.splice(i, 1);
       }
     }
