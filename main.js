@@ -1,13 +1,9 @@
 /* ============================================================
-   main.js  — optimised game loop
-   Key changes:
-   • deltaTime is clamped to 50 ms max (prevents spiral-of-death
-     on tab-switch / slow devices)
-   • DPR is cached and only re-applied on actual resize
-   • resizeCanvas debounced so rapid orientation changes don't
-     thrash layout
-   • currentGame reference checked once per loop, not twice
-   • clearRect uses logical px (after setTransform) — correct
+   main.js  — with ModeSelector integrated for Game1
+   Changes vs original:
+   • startGame("game1") now shows ModeSelector first, then
+     calls the appropriate Game1 mode activator after selection.
+   • Everything else is identical to the optimised original.
 ============================================================ */
 
 window.currentGame = null;
@@ -24,16 +20,19 @@ window.pauseGame = function () {
 
 window.resumeGame = function () {
   window.isPaused  = false;
-  lastTime         = performance.now();   // reset clock so dt=0 on resume
+  lastTime         = performance.now();
   document.getElementById("pauseOverlay").style.display = "none";
 };
 
 window.goToMainMenu = function () {
   window.isPaused = false;
   document.getElementById("pauseOverlay").style.display = "none";
-  document.getElementById("menu").style.display         = "flex";
+  /* Hide camera BEFORE nulling currentGame so the loop doesn't
+     clear to transparent while the feed is still visible */
   document.getElementById("input_video").style.opacity  = "0";
+  blackoutCanvas();
   window.currentGame = null;
+  document.getElementById("menu").style.display         = "flex";
 };
 
 /* ── Canvas resize (debounced) ────────────────────────────── */
@@ -44,7 +43,6 @@ function resizeCanvas() {
   const h   = window.innerHeight;
   const dpr = window.devicePixelRatio || 1;
 
-  // Only resize if dimensions actually changed
   if (
     canvasElement.width  === Math.round(w * dpr) &&
     canvasElement.height === Math.round(h * dpr)
@@ -68,19 +66,64 @@ function debouncedResize() {
 
 window.addEventListener("resize",            debouncedResize);
 window.addEventListener("orientationchange", debouncedResize);
-resizeCanvas(); // immediate on load
+resizeCanvas();
+
+/* ── Solid dark fill on the game canvas — covers camera ────── */
+function blackoutCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const w   = window.innerWidth;
+  const h   = window.innerHeight;
+  canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  canvasCtx.fillStyle = "#0d1b2e";
+  canvasCtx.fillRect(0, 0, w, h);
+}
+
+/* ── Game1 mode launcher (called after ModeSelector) ─────── */
+function launchGame1WithMode(modeKey) {
+  /* Paint dark bg immediately so there's no camera flash
+     between the selector disappearing and the first game frame */
+  blackoutCanvas();
+
+  Game1.init();
+  window.currentGame = Game1;
+  resizeCanvas();
+
+  switch (modeKey) {
+    case "pattern": Game1.activatePatternMode();      break;
+    case "cannon":  Game1.activateCannonMode();       break;
+    case "orb":     Game1.activateOrbMode();          break;
+    case "triple":  Game1.activateTripleCannonMode(); break;
+    default: break;
+  }
+}
 
 /* ── Start game ───────────────────────────────────────────── */
 window.startGame = function (gameName) {
-  document.getElementById("menu").style.display          = "none";
-  document.getElementById("input_video").style.opacity   = "1";
-
-
-  // Stop any previous game cleanly
+  document.getElementById("menu").style.display = "none";
   window.currentGame = null;
 
+  /* Game1 gets the mode selector before starting.
+     We do NOT reveal the camera yet — the selector paints its
+     own dark background.  The camera opacity is set to 1 only
+     after the mode is chosen and the game loop takes over. */
+  if (gameName === "game1") {
+    /* Paint dark bg on the game canvas before the selector
+       overlay appears, so there is zero visible gap */
+    blackoutCanvas();
+    ModeSelector.show((modeKey) => {
+      /* Now it's safe to show the camera feed — the game loop
+         will immediately start drawing over it */
+      document.getElementById("input_video").style.opacity = "1";
+      launchGame1WithMode(modeKey);
+    });
+    return;
+  }
+
+  /* All other games: reveal camera then start as normal */
+  document.getElementById("input_video").style.opacity = "1";
+
+  /* All other games start directly as before */
   const map = {
-    game1:  () => { window.currentGame = Game1;  Game1.init(); },
     game2:  () => { window.currentGame = Game2;  Game2.init(); },
     Game3:  () => { window.currentGame = Game3;  Game3.init(); Game3.startDetection(); },
     Game4:  () => { window.currentGame = Game4;  Game4.init(); },
@@ -102,9 +145,8 @@ window.startGame = function (gameName) {
 
 /* ── Game loop ────────────────────────────────────────────── */
 function gameLoop(currentTime) {
-  requestAnimationFrame(gameLoop);   // schedule next frame first (smoother)
+  requestAnimationFrame(gameLoop);
 
-  // Delta in seconds, hard-capped at 50 ms to stop spiral-of-death
   let dt = (currentTime - lastTime) / 1000;
   if (dt > 0.05) dt = 0.05;
   if (dt < 0)    dt = 0;
@@ -112,12 +154,10 @@ function gameLoop(currentTime) {
 
   if (window.isPaused) return;
 
-  // Clear using logical resolution (setTransform already handles DPR)
-  canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-
   const game = window.currentGame;
-  if (!game || !game.update) return;
+  if (!game || !game.update) return;   // leave blackout in place, don't clear
 
+  canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
   game.update(canvasCtx, window.fingerPositions || [], dt);
 }
 
