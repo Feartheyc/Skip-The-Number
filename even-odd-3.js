@@ -57,6 +57,7 @@ const Game8 = {
   MIN_ARM_LENGTH: 25,
 
   init() {
+    this.elbowMissing = false;
     // initial center in CSS coordinates; resize() will recompute
     const dpr = window.devicePixelRatio || 1;
     this.CENTER_X = (canvasElement.width / dpr) / 2;
@@ -118,8 +119,14 @@ const Game8 = {
   },
 
   onPoseResults(results) {
-    if (!results.poseLandmarks) return;
+    if (!results.poseLandmarks) {
+      this.elbowMissing = true;
+      return;
+    }
     const lm = results.poseLandmarks;
+
+    const rightElbow = lm[14];
+    this.elbowMissing = !rightElbow || rightElbow.visibility < 0.4 || rightElbow.x < 0 || rightElbow.x > 1 || rightElbow.y < 0 || rightElbow.y > 1;
 
     const mapPoint = (p) => ({
       x: (1 - p.x) * this.cssWidth,
@@ -243,7 +250,7 @@ const Game8 = {
       const otherModes = allModes.filter(m => m !== this.spawnMode);
       this.spawnMode = otherModes[Math.floor(Math.random() * otherModes.length)];
       this.modeTimer = 0;
-      this.spawnFloatingText(this.CENTER_X, this.CENTER_Y - 150 * this.scale, `Spawn Mode: ${this.spawnMode.toUpperCase()}`, "white", 0, -1);
+      this.spawnFloatingText(this.CENTER_X, this.CENTER_Y - 150 * this.scale, `Spawn Mode: ${this.spawnMode.toUpperCase()}`, "white", 0, -0.2, 5.0);
     }
 
     if (this.spawnTimer > this.spawnRate && this.balls.length < this.MAX_BALLS) {
@@ -255,7 +262,7 @@ const Game8 = {
   spawnBall() {
     const number = Math.floor(Math.random() * 100) + 1;
     const isOdd = number % 2 !== 0;
-    const speed = (1.5 + (2000 - this.spawnRate) / 2000) * this.scale;
+    const speed = (1 + (2000 - this.spawnRate) / 2000) * this.scale;
 
     let sides = [];
     if (this.spawnMode === "top-bottom") sides = [0, 1];
@@ -499,11 +506,11 @@ const Game8 = {
 
         if (scoreType === "good") {
           this.updateScore(10, true);
-          this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", nx * 4, ny * 4);
+          this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", nx * 1.5, ny * 1.5, 2.5);
           this.spawnExplosion(b.x, b.y, "#00FF00", 15, nx * 3, ny * 3);
         } else {
           this.updateScore(-5, false);
-          this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", nx * 4, ny * 4);
+          this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", nx * 1.5, ny * 1.5, 2.5);
           this.spawnExplosion(b.x, b.y, "#FF0000", 10, nx * 3, ny * 3);
           this.shakeTimer = 25;
         }
@@ -572,8 +579,8 @@ const Game8 = {
     }
   },
 
-  spawnFloatingText(x, y, text, color, dx = 0, dy = -2) {
-    this.floaters.push({ x, y, text, color, life: 1.0, dx, dy });
+  spawnFloatingText(x, y, text, color, dx = 0, dy = -2, life = 1.0) {
+    this.floaters.push({ x, y, text, color, life, dx, dy });
   },
 
   updateParticles() {
@@ -682,12 +689,12 @@ const Game8 = {
         ctx.lineWidth = this.ballRadius * 1.5; // Increased from 1.2
         ctx.lineCap = "round";
         ctx.globalAlpha = 0.25; // Slightly lower alpha for longer trail
-        
+
         let tIdx = b.trailIdx || 0;
         ctx.moveTo(b.trail[tIdx].x, b.trail[tIdx].y);
         for (let j = 1; j < b.trail.length; j++) {
-            let idx = (tIdx + j) % b.trail.length;
-            ctx.lineTo(b.trail[idx].x, b.trail[idx].y);
+          let idx = (tIdx + j) % b.trail.length;
+          ctx.lineTo(b.trail[idx].x, b.trail[idx].y);
         }
         ctx.stroke();
         ctx.globalAlpha = 1.0;
@@ -793,7 +800,7 @@ const Game8 = {
     ctx.textAlign = "center";
     for (let i = 0; i < this.floaters.length; i++) {
       let f = this.floaters[i];
-      ctx.globalAlpha = f.life;
+      ctx.globalAlpha = Math.max(0, Math.min(1, f.life)); // Ensure alpha is between 0 and 1
       ctx.fillStyle = f.color;
       ctx.fillText(f.text, f.x, f.y);
     }
@@ -846,6 +853,12 @@ const Game8 = {
     // Bottom Right (Red/Even)
     ctx.fillStyle = "#FF0000";
     ctx.fillText("Even", w * 0.92, bh);
+
+    if (this.elbowMissing) {
+      ctx.fillStyle = "red";
+      ctx.font = `bold ${30 * this.scale}px Orbitron`;
+      ctx.fillText("BRING ELBOW IN CAMERA VIEW", this.CENTER_X, this.CENTER_Y + 150 * this.scale);
+    }
   },
 
   pointToLineDistance(px, py, x1, y1, x2, y2) {

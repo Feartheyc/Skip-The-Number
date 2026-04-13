@@ -48,6 +48,7 @@ const Game11 = {
   get T() { return this.themes[this.theme]; },
 
   running: false,
+  gameStarted: false,
   lastTime: 0,
 
   confettiParticles: [],
@@ -135,8 +136,8 @@ const Game11 = {
   mode1SuctionDuration: 600,
 
   /* ===== GALAXY LIFE SYSTEM ===== */
-  galaxyMaxLife: 10000, // 7 seconds
-  galaxyLife: 10000,
+  galaxyMaxLife: 20000,
+  galaxyLife: 20000,
   galaxyShrinkTimer: 0,
 
   galaxyCollapsed: false,
@@ -193,8 +194,6 @@ const Game11 = {
     this.mascot.x = this.CENTER_X;
     this.mascot.y = this.CENTER_Y + 100 * this.scale;
 
-    this.activateGameMode1();
-
     window.addEventListener("keydown", (e) => {
       if (e.key === "1") {
         this.activateGameMode1();
@@ -240,11 +239,24 @@ const Game11 = {
     };
 
 
-    window.addEventListener("click", handleRestart);
+    window.addEventListener("click", (e) => {
+      if (!this.gameStarted) {
+        this.handleStartClick(e);
+      } else {
+        handleRestart();
+      }
+    });
+
     window.addEventListener("touchstart", (e) => {
       // Prevent double trigger if both touch and click fire
-      handleRestart();
-    }, { passive: true });
+      if (!this.gameStarted) {
+        if (e.touches && e.touches.length > 0) {
+          this.handleStartClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+        }
+      } else {
+        handleRestart();
+      }
+    }, { passive: false });
   },
   resize() {
 
@@ -395,6 +407,12 @@ const Game11 = {
     this.drawStars(ctx);
     this.updateShootingStars(delta);
     this.drawShootingStars(ctx);
+
+    if (!this.gameStarted) {
+      this.drawFingerImages(ctx);
+      this.drawStartScreen(ctx);
+      return;
+    }
 
     // 💥 Global Screen Shake
     ctx.save();
@@ -573,13 +591,13 @@ const Game11 = {
     this.sparkBursts.push(burst);
 
     for (let i = 0; i < 15; i++) {
-        const p = this.pools.sparkBursts.pop() || {};
-        p.x = x; p.y = y;
-        p.vx = (Math.random() - 0.5) * 10;
-        p.vy = (Math.random() - 0.5) * 10;
-        p.size = (Math.random() * 4 + 2) * this.scale;
-        p.life = 500; p.type = "particle";
-        this.sparkBursts.push(p);
+      const p = this.pools.sparkBursts.pop() || {};
+      p.x = x; p.y = y;
+      p.vx = (Math.random() - 0.5) * 10;
+      p.vy = (Math.random() - 0.5) * 10;
+      p.size = (Math.random() * 4 + 2) * this.scale;
+      p.life = 500; p.type = "particle";
+      this.sparkBursts.push(p);
     }
   },
 
@@ -1162,14 +1180,19 @@ const Game11 = {
     /* Suffix label (match ordinal2.js style) */
     ctx.save();
     ctx.translate(this.mascot.x, this.mascot.y);
-    ctx.shadowColor = this.T.accentGlow;
+    ctx.shadowColor = "black";
     ctx.shadowBlur = 15;
     ctx.fillStyle = "#ffffff";
     const fontSize = Math.round(62 * this.scale * lifeRatio);
     ctx.font = `bold ${fontSize}px 'Comic Sans MS', cursive`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
+    const textStr = this.mode1TargetSuffix.toUpperCase();
+    ctx.fillText(textStr, 0, 0);
+    ctx.fillText(textStr, 0, 0);
+    ctx.fillText(textStr, 0, 0);
+    ctx.fillText(textStr, 0, 0);
+    ctx.fillText(textStr, 0, 0);
     ctx.restore();
   },
 
@@ -1302,7 +1325,7 @@ const Game11 = {
 
     ctx.save();
 
-    const text = `Show Fingers to Choose Ordinals Suffix`;
+    const text = `Show Fingers to Choose Ordinals Suffix: ${this.mode1TargetSuffix.toUpperCase()}`;
     ctx.font = this.fInstruction;
     const textWidth = ctx.measureText(text).width;
 
@@ -1482,14 +1505,14 @@ const Game11 = {
       this.mode1CorrectCollected++;
 
       // ⭐ Add 3 seconds life
-      this.galaxyLife += 3000;
+      this.galaxyLife += 5000;
 
       if (this.galaxyLife > this.galaxyMaxLife)
         this.galaxyLife = this.galaxyMaxLife;
 
       this.spawnSparkBurst(this.mascot.x, this.mascot.y);
       const ordinalNum = n.number + this.getSuffix(n.number);
-      this.spawnFloatingText(this.mascot.x, this.mascot.y - 100 * this.scale, `${ordinalNum}! +3s`, "#00FFAA");
+      this.spawnFloatingText(this.mascot.x, this.mascot.y - 100 * this.scale, `${ordinalNum}! +5s`, "#00FFAA");
 
       this.mode1Numbers.splice(s.index, 1);
 
@@ -1616,7 +1639,7 @@ const Game11 = {
         this.blackHoleSuctionParticles.pop();
         continue;
       }
-      
+
       const dist = Math.sqrt(dSq) || 1;
       const pull = Math.min(1200 / dist, 30);
       p.x += (dx / dist) * pull * (delta / 16);
@@ -1791,6 +1814,80 @@ const Game11 = {
     ctx.arc(this.mascot.x, this.mascot.y, radius, 0, Math.PI * 2);
     ctx.fillStyle = grad;
     ctx.fill();
+
+    ctx.restore();
+  },
+
+  handleStartClick(e) {
+    const btnW = 220 * this.scale;
+    const btnH = 70 * this.scale;
+    const btnX = this.CENTER_X - btnW / 2;
+    const btnY = this.CENTER_Y + 150 * this.scale;
+
+    if (e.clientX >= btnX && e.clientX <= btnX + btnW &&
+      e.clientY >= btnY && e.clientY <= btnY + btnH) {
+      this.gameStarted = true;
+      this.activateGameMode1();
+      this.lastTime = performance.now();
+    }
+  },
+
+  drawStartScreen(ctx) {
+    ctx.save();
+
+    const boxW = 1000 * this.scale;
+    const boxH = 350 * this.scale;
+    const boxX = this.CENTER_X - boxW / 2;
+    const boxY = this.CENTER_Y - boxH / 2 - 40 * this.scale;
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+    ctx.strokeStyle = "rgba(124, 58, 237, 0.9)";
+    ctx.lineWidth = 4 * this.scale;
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, boxW, boxH, 20 * this.scale);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${28 * this.scale}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    const line1 = "Make the hand shape as shown on the left";
+    const line2 = "to get the necessary ordinal suffix on the galaxy";
+    const line3 = "(Remember to show your palm towards the camera)";
+    const line4 = "Collect numbers with correct suffix to increase score and life duration";
+    const line5 = "Wrong answer will lead to decrease in score";
+
+    ctx.fillText(line1, this.CENTER_X, boxY + 50 * this.scale);
+    ctx.fillText(line2, this.CENTER_X, boxY + 100 * this.scale);
+
+    ctx.fillStyle = "#60a5fa"; // blueish color for emphasis on the new instruction
+    ctx.fillText(line3, this.CENTER_X, boxY + 150 * this.scale);
+
+    ctx.fillStyle = "#34d399"; // greenish color 
+    ctx.fillText(line4, this.CENTER_X, boxY + 220 * this.scale);
+
+    ctx.fillStyle = "#f87171"; // reddish color
+    ctx.fillText(line5, this.CENTER_X, boxY + 290 * this.scale);
+
+    const btnW = 220 * this.scale;
+    const btnH = 70 * this.scale;
+    const btnX = this.CENTER_X - btnW / 2;
+    const btnY = this.CENTER_Y + 150 * this.scale;
+
+    ctx.shadowColor = "rgba(124, 58, 237, 0.8)";
+    ctx.shadowBlur = 15;
+
+    ctx.fillStyle = "#7c3aed";
+    ctx.beginPath();
+    ctx.roundRect(btnX, btnY, btnW, btnH, 15 * this.scale);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${32 * this.scale}px Arial`;
+    ctx.fillText("START", this.CENTER_X, btnY + btnH / 2 + 2 * this.scale);
 
     ctx.restore();
   }
