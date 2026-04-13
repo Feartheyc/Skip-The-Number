@@ -60,10 +60,28 @@ const Game3 = {
     { grade: 4, label: "Grade 4: Advanced", color: "#F44336" }
   ],
 
+  // ⚡ ADDITIVE: SFX Dictionary (located in sfx-yc/)
+  sfx: {
+    correct: new Audio('sfx-yc/correct.mp3'),
+    wrong: new Audio('sfx-yc/wrong.mp3'),
+    tick: new Audio('sfx-yc/tick.mp3'),
+    cheer: new Audio('sfx-yc/cheer.mp3')
+  },
+
   uiCache: null,
   fps: 0,
   frameCounter: 0,
   fpsTimer: 0,
+
+  // ⚡ ADDITIVE: SFX Play Helper
+  playSFX(name, vol = 0.5) {
+    const s = this.sfx[name];
+    if (s) {
+      s.currentTime = 0;
+      s.volume = vol;
+      s.play().catch(() => { /* Interaction required */ });
+    }
+  },
 
   init() {
     const w = window.innerWidth;
@@ -90,13 +108,9 @@ const Game3 = {
         }
       });
 
-      // ⚡ ADDITIVE: Handle orientation and window resizing
       window.addEventListener('resize', () => {
-        // We use a small timeout to ensure the browser has finished 
-        // updating its internal width/height values
         clearTimeout(this.resizeTimeout);
         this.resizeTimeout = setTimeout(() => {
-          console.log("Orientation/Size changed. Restarting...");
           this.reset();
         }, 200);
       });
@@ -108,7 +122,6 @@ const Game3 = {
           const mouseX = e.clientX - rect.left;
           const mouseY = e.clientY - rect.top;
 
-          // ⚡ ADDITIVE: Check Grade Button Hit (Top Left)
           const gDx = mouseX - this.gradeBtn.x;
           const gDy = mouseY - this.gradeBtn.y;
           if (gDx * gDx + gDy * gDy <= (this.gradeBtn.r + 20) ** 2) {
@@ -116,7 +129,6 @@ const Game3 = {
             return;
           }
 
-          // ⚡ ADDITIVE: Check Menu Item Clicks
           if (this.difficultyMenuOpen) {
             this.menuOptions.forEach((opt, i) => {
               const btnW = 320 * this.scale;
@@ -135,7 +147,6 @@ const Game3 = {
             const dx = mouseX - this.helpBtn.x;
             const dy = mouseY - this.helpBtn.y;
             const hitRadius = this.helpBtn.r + 15;
-
             if (dx * dx + dy * dy <= hitRadius * hitRadius) {
               this.showTutorial = true;
               this.tutorialHoldTime = 0;
@@ -170,7 +181,6 @@ const Game3 = {
       r: 20 * this.scale
     };
 
-    // ⚡ ADDITIVE: Define Grade Button Area
     this.gradeBtn = {
       x: 120 * this.scale,
       y: 60 * this.scale,
@@ -304,7 +314,7 @@ const Game3 = {
     }
 
     if (this.showTutorial) this.drawTutorialWindow(ctx);
-    if (this.difficultyMenuOpen) this.drawDifficultyMenu(ctx); // ⚡ ADDITIVE
+    if (this.difficultyMenuOpen) this.drawDifficultyMenu(ctx);
 
     ctx.restore();
 
@@ -314,7 +324,6 @@ const Game3 = {
     }
   },
 
-  // ⚡ ADDITIVE: Draw the Menu overlay
   drawDifficultyMenu(ctx) {
     ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
     ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
@@ -335,7 +344,6 @@ const Game3 = {
       ctx.roundRect(x, y, btnW, btnH, 15 * this.scale);
       ctx.fill();
 
-      // Border for current grade
       if (this.currentGrade === opt.grade) {
         ctx.strokeStyle = "white";
         ctx.lineWidth = 5 * this.scale;
@@ -352,13 +360,11 @@ const Game3 = {
     ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
     ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
-    // Box dimensions
     const boxW = 850 * this.scale;
     const boxH = 580 * this.scale;
     const boxX = this.centerX - boxW / 2;
     const boxY = this.centerY - boxH / 2;
 
-    // Main Background Box
     ctx.fillStyle = "#1A1A1A";
     ctx.beginPath();
     ctx.roundRect(boxX, boxY, boxW, boxH, 30 * this.scale);
@@ -367,40 +373,33 @@ const Game3 = {
     ctx.lineWidth = 4 * this.scale;
     ctx.stroke();
 
-    // Title
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillStyle = "#FFFFFF";
     ctx.font = `bold ${45 * this.scale}px Arial`;
     ctx.fillText("How to Play!", this.centerX, boxY + 40 * this.scale);
 
-    // Layout Constants
     const leftMargin = boxX + 60 * this.scale;
     const contentStartY = boxY + 140 * this.scale;
     const verticalSpacing = 85 * this.scale;
-    const textSafeWidth = boxW - 220 * this.scale; // Leaves room for icons on the right
+    const textSafeWidth = boxW - 220 * this.scale;
 
     ctx.textAlign = "left";
     ctx.font = `bold ${26 * this.scale}px Arial`;
 
-    // 1. Instructions
     ctx.fillStyle = "#FFFFFF";
     ctx.fillText("1. Look at the numbers on the screen.", leftMargin, contentStartY);
 
-    // 2. Hand Gesture + Icon
     ctx.fillText("2. Make a 'V' shape with your hand.", leftMargin, contentStartY + verticalSpacing);
     this.drawHandIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing + 10 * this.scale);
 
-    // 3. Logic + Icon
     ctx.fillText("3. Point at the BIGGER number!", leftMargin, contentStartY + verticalSpacing * 2);
     this.drawComparisonIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing * 2 + 10 * this.scale);
 
-    // 4. Difficulty Switch (Wrapped properly inside the box)
     ctx.fillStyle = "#00FFCC";
     const line4 = "4. Tap the 'Grade' button in the top-left corner to change the difficulty level.";
     this.wrapText(ctx, line4, leftMargin, contentStartY + verticalSpacing * 3, textSafeWidth, 36 * this.scale);
 
-    // Start Hold Bar
     ctx.textAlign = "center";
     const barY = boxY + boxH - 80 * this.scale;
     if (this.tutorialHoldTime > 0) {
@@ -488,6 +487,11 @@ const Game3 = {
     const isWrong = this.detectedSymbol === (this.currentRelation === ">" ? "<" : ">");
 
     if (isCorrect) {
+      // ⚡ ADDITIVE: Tick sound trigger
+      if (Math.floor(this.winHoldTime * 10) !== Math.floor((this.winHoldTime + dt) * 10)) {
+        this.playSFX('tick', 0.2);
+      }
+
       this.winHoldTime += dt;
       this.failHoldTime = 0;
       this.drawProgressBar(ctx, this.winHoldTime / this.winHoldThreshold, "#00FFCC");
@@ -512,6 +516,25 @@ const Game3 = {
     this.gameState = "SUCCESS";
     this.score += 10;
     this.combo++;
+
+    // ⚡ ADDITIVE: Check for combo milestones (5, 10, 15...)
+    if (this.combo > 0 && this.combo % 5 === 0) {
+      this.playSFX('cheer', 0.7); // Play the cheer sound at every 5th combo
+    } else {
+      this.playSFX('correct', 0.5); // Otherwise play standard success
+    }
+
+    // ⚡ ADDITIVE: Update popup text for milestones
+    const popupText = (this.combo % 5 === 0) ? `AMAZING! x${this.combo}` : "Correct!";
+    this.popups.push({
+      text: popupText,
+      x: this.centerX,
+      y: this.centerY,
+      vy: -40,
+      life: 1,
+      color: (this.combo % 5 === 0) ? "#FFD700" : "#00FF66"
+    });
+
     for (let i = 0; i < 15; i++) {
       this.particles.push({
         x: this.centerX, y: this.centerY,
@@ -519,11 +542,14 @@ const Game3 = {
         life: 1, color: this.getBrightColor()
       });
     }
-    this.popups.push({ text: "Correct!", x: this.centerX, y: this.centerY, vy: -40, life: 1, color: "#00FF66" });
+    this.popups.push({ text: this.combo >= 5 ? `Combo x${this.combo}` : "Correct!", x: this.centerX, y: this.centerY, vy: -40, life: 1, color: "#00FF66" });
     setTimeout(() => this.spawnNumbers(), 800);
   },
 
   handleFail() {
+    // ⚡ ADDITIVE: Fail sound trigger
+    this.playSFX('wrong', 0.5);
+
     this.gameState = "GAME_OVER";
     this.score = Math.max(0, this.score - 5);
     this.combo = 0;
