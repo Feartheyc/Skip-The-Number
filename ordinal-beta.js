@@ -117,20 +117,31 @@ const Game9 = {
     this.mascot.vx = 0;
     this.mascot.vy = 0;
     this.gameState = "pickup";
+    window.addEventListener("orientationchange", () => {
+  this.fullReset();
+});
+
+window.addEventListener("resize", () => {
+  this.fullReset();
+});
   },
 
   resize() {
-    const cssW = window.innerWidth;
-    const cssH = window.innerHeight;
-    const dpr  = window.devicePixelRatio || 1;
-    canvasElement.width  = cssW * dpr;
-    canvasElement.height = cssH * dpr;
-    canvasElement.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.scale    = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT) || 1;
-    this.CENTER_X = cssW / 2;
-    this.CENTER_Y = cssH / 2;
-  },
+  const cssW = window.innerWidth;
+  const cssH = window.innerHeight;
+  const dpr  = window.devicePixelRatio || 1;
 
+  canvasElement.width  = cssW * dpr;
+  canvasElement.height = cssH * dpr;
+  canvasElement.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  this.scale    = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT) || 1;
+  this.CENTER_X = cssW / 2;
+  this.CENTER_Y = cssH / 2;
+
+  // 🔥 ADD THIS
+  this.initStarfield();
+},
 
   /* ============================================================
      DOORS
@@ -797,4 +808,60 @@ const Game9 = {
     ctx.fillStyle = "#FFFACD";
     ctx.fill();
   },
+
+
+  fullReset() {
+  // ===== CORE GAME RESET =====
+  this.score = 0;
+
+  // Restart number system properly
+  this.currentNumber = 1;
+  this.correctSuffix = "st";
+
+  // Reset game state
+  this.gameState = "pickup";
+  this.selectionLocked = false;
+
+  // Reset number
+  this.numberPosition = {
+    x: this.CENTER_X,
+    y: this.CENTER_Y - 230 * this.scale,
+    picked: false
+  };
+
+  // Reset mascot
+  this.mascot.x = this.CENTER_X;
+  this.mascot.y = this.CENTER_Y + 100 * this.scale;
+  this.mascot.vx = 0;
+  this.mascot.vy = 0;
+  this.mascot.carryingNumber = false;
+  this.mascotState = "idle";
+
+  // Reset finger smoothing
+  this._fingerSmoothX = null;
+  this._fingerSmoothY = null;
+  this.fingerX = null;
+  this.fingerY = null;
+
+  // Reset animations
+  this.floatTime = 0;
+  this.numberRotation = 0;
+  this.numberScalePulse = 0;
+
+  // Reset effects
+  this.sparkBursts = [];
+  this.shootingStars = [];
+  this.shootingStarBursts = [];
+  this.shootingStarSpawnTimer = 0;
+
+  // Reset portal animation
+  this.portalFrameIndex = 0;
+  this.portalFrameTimer = 0;
+
+  // Rebuild doors (important on resize too)
+  this.setupDoors();
+
+  // Spawn fresh number
+  this.spawnNumber();
+}
 };
