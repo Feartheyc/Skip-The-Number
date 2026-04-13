@@ -189,25 +189,38 @@ fingerSmoothing: 0.12,
     this.mascot.vx = 0; this.mascot.vy = 0;
 
     this.activateGameMode1();
+    window.addEventListener("orientationchange", () => {
+  this.fullReset();
+});
 
+window.addEventListener("resize", () => {
+  this.fullReset();
+});
     canvasElement.addEventListener("click", () => {
       if (this.mode1GameOver) this.retryMode1();
     });
   },
 
   resize() {
-    const cssW = window.innerWidth;
-    const cssH = window.innerHeight;
-    const dpr  = window.devicePixelRatio || 1;
-    canvasElement.width  = cssW * dpr;
-    canvasElement.height = cssH * dpr;
-    canvasElement.style.width  = cssW + "px";
-    canvasElement.style.height = cssH + "px";
-    canvasElement.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.scale    = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT) || 1;
-    this.CENTER_X = cssW / 2;
-    this.CENTER_Y = cssH / 2;
-  },
+  const cssW = window.innerWidth;
+  const cssH = window.innerHeight;
+  const dpr  = window.devicePixelRatio || 1;
+
+  canvasElement.width  = cssW * dpr;
+  canvasElement.height = cssH * dpr;
+
+  canvasElement.style.width  = cssW + "px";
+  canvasElement.style.height = cssH + "px";
+
+  canvasElement.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  this.scale    = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT) || 1;
+  this.CENTER_X = cssW / 2;
+  this.CENTER_Y = cssH / 2;
+
+  /* 🔥 CRITICAL FIX */
+  this.fullResetOnResize();
+},
 
   toggleTheme() {
     this.theme = this.theme === "space" ? "minimal" : "space";
@@ -1629,4 +1642,40 @@ ctx.fillText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
     ctx.closePath();
   },
 
+
+  fullResetOnResize() {
+
+  /* 🌌 Rebuild background systems */
+  this.initStarfield();
+  this.initDustMotes();
+
+  /* ✨ Clear dynamic visuals */
+  this.shootingStars = [];
+  this.particles = [];
+  this.sparkBursts = [];
+  this.floatNumbers = [];
+
+  /* 🎯 Reset mascot to center (prevents drift bugs) */
+  this.mascot.x = this.CENTER_X;
+  this.mascot.y = this.CENTER_Y;
+  this.mascot.vx = 0;
+  this.mascot.vy = 0;
+
+  /* 👆 Reset finger smoothing (VERY IMPORTANT) */
+  this.fingerX = null;
+  this.fingerY = null;
+  this.fingerSmoothX = null;
+  this.fingerSmoothY = null;
+
+  /* 🔢 Re-layout numbers cleanly */
+  if (!this.mode1GameOver) {
+    this.spawnMode1Numbers();
+  }
+
+  /* ⚠️ Cancel unstable states */
+  this.mode1SuctionActive = false;
+  this.mode1MergeActive = false;
+  this.mode1BreakActive = false;
+  this.blackHoleActive = false;
+}
 };
