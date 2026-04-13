@@ -534,6 +534,7 @@ const Game3 = {
       life: 1,
       color: (this.combo % 5 === 0) ? "#FFD700" : "#00FF66"
     });
+    
 
     for (let i = 0; i < 15; i++) {
       this.particles.push({
