@@ -1,3 +1,7 @@
+const sfxButtonClick_11 = new Audio('SFX-Bhavya/buttonclick.mp3');
+const sfxCorrect_11 = new Audio('SFX-Bhavya/Correct.mp3');
+const sfxWrong_11 = new Audio('SFX-Bhavya/Wrong.mp3');
+
 const Game11 = {
 
   lastFingerPattern: "",
@@ -175,6 +179,7 @@ const Game11 = {
   // 🌈 Background Evolution
   backgroundHueShift: 0,
   init() {
+    try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock("landscape").catch(e => console.log("Orientation lock failed:", e)); } } catch (e) {}
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -240,6 +245,8 @@ const Game11 = {
 
 
     window.addEventListener("click", (e) => {
+      sfxButtonClick_11.currentTime = 0;
+      sfxButtonClick_11.play().catch(() => {});
       if (!this.gameStarted) {
         this.handleStartClick(e);
       } else {
@@ -248,6 +255,8 @@ const Game11 = {
     });
 
     window.addEventListener("touchstart", (e) => {
+      sfxButtonClick_11.currentTime = 0;
+      sfxButtonClick_11.play().catch(() => {});
       // Prevent double trigger if both touch and click fire
       if (!this.gameStarted) {
         if (e.touches && e.touches.length > 0) {
@@ -1500,6 +1509,8 @@ const Game11 = {
     }
 
     if (this.getSuffix(n.number) === this.mode1TargetSuffix) {
+      sfxCorrect_11.currentTime = 0;
+      sfxCorrect_11.play().catch(() => {});
 
       this.score += 10;
       this.mode1CorrectCollected++;
@@ -1520,6 +1531,8 @@ const Game11 = {
       this.spawnMode1Numbers();
 
     } else {
+      sfxWrong_11.currentTime = 0;
+      sfxWrong_11.play().catch(() => {});
 
       this.score -= 5;
       const ordinalNum = n.number + this.getSuffix(n.number);
