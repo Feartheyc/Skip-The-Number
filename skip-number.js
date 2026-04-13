@@ -212,8 +212,8 @@ const Game1 = {
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
 
-    this.speedCap  = this.baseOuterRadius * 0.6;
-    this.speedMin  = this.speedCap * 0.40;
+    this.speedCap  = this.baseOuterRadius * 0.4;
+    this.speedMin  = this.speedCap * 0.20;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) {
       this.noteSpeed = this.speedCap;
     }
@@ -1442,7 +1442,7 @@ const Game1 = {
      UTILITY
   ============================================================ */
   getRandomSkip() {
-    const w = [2,2,2,2,3,3,3,3,3,3,4,4,4,5,5,6,7,8,9];
+    const w = [2,2,2,2,3,3,3,3,3,3,4,4,4,5,5,];
     return w[Math.floor(Math.random() * w.length)];
   },
 };
