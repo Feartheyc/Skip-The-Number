@@ -27,15 +27,6 @@ const Game10 = {
       cardBg: "rgba(255,255,255,0.07)", cardBorder: "rgba(255,255,255,0.15)",
       scoreBg: "rgba(124,58,237,0.3)", heartColor: "#f472b6", streakColor: "#fbbf24",
     },
-    minimal: {
-      bg1: "#faf7f2", bg2: "#f0ebe0", bg3: "#e8e0d0",
-      accent: "#6366f1", accentGlow: "rgba(99,102,241,0.25)",
-      textPrimary: "#1e1b18", textAccent: "#6366f1",
-      correct: "#10b981", wrong: "#ef4444",
-      numberColor: "#f59e0b", numberGlow: "rgba(245,158,11,0.4)",
-      cardBg: "rgba(0,0,0,0.06)", cardBorder: "rgba(0,0,0,0.12)",
-      scoreBg: "rgba(99,102,241,0.12)", heartColor: "#f43f5e", streakColor: "#f59e0b",
-    }
   },
 
   get T() { return this.themes[this.theme]; },
@@ -199,9 +190,6 @@ fingerSmoothing: 0.12,
 
     this.activateGameMode1();
 
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "q" || e.key === "Q") this.toggleTheme();
-    });
     canvasElement.addEventListener("click", () => {
       if (this.mode1GameOver) this.retryMode1();
     });
@@ -376,9 +364,7 @@ fingerSmoothing: 0.12,
 
     this.drawHUD(ctx);
     this.drawInstruction(ctx);
-    this.drawToast(ctx);
-    this.drawThemeHint(ctx);
-    
+    this.drawToast(ctx);  
     this.drawBigBangFlash(ctx);
     this.drawGameOver(ctx);
   },
@@ -1479,18 +1465,6 @@ ctx.fillText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
   /* ============================================================
      THEME HINT
   ============================================================ */
-  drawThemeHint(ctx) {
-    ctx.globalAlpha  = 0.32;
-    ctx.fillStyle    = this.T.textPrimary;
-    ctx.font         = `${Math.round(15 * this.scale)}px 'Fredoka', cursive`;
-    ctx.textAlign    = "right"; ctx.textBaseline = "bottom";
-    ctx.fillText(
-      `Press Q → ${this.theme === "space" ? "🌸 Minimal" : "🚀 Space"} theme`,
-      this.cssWidth - 14 * this.scale,
-      this.cssHeight - 10 * this.scale
-    );
-    ctx.globalAlpha = 1;
-  },
 
 
 
