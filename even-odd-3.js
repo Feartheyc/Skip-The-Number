@@ -62,10 +62,10 @@ const Game8 = {
   MIN_ARM_LENGTH: 25,
 
   init() {
-    try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock("landscape").catch(e => console.log("Orientation lock failed:", e)); } } catch (e) {}
+    try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock("landscape").catch(e => console.log("Orientation lock failed:", e)); } } catch (e) { }
     window.addEventListener('click', () => {
       sfxButtonClick_8.currentTime = 0;
-      sfxButtonClick_8.play().catch(() => {});
+      sfxButtonClick_8.play().catch(() => { });
     });
     this.elbowMissing = false;
     // initial center in CSS coordinates; resize() will recompute
@@ -257,7 +257,7 @@ const Game8 = {
     // Rotate spawn mode every 12 seconds
     if (this.modeTimer > 12000) {
       sfxLevel_8.currentTime = 0;
-      sfxLevel_8.play().catch(() => {});
+      sfxLevel_8.play().catch(() => { });
       const allModes = ["top-bottom", "left-right", "all", "random-one"];
       const otherModes = allModes.filter(m => m !== this.spawnMode);
       this.spawnMode = otherModes[Math.floor(Math.random() * otherModes.length)];
@@ -535,10 +535,10 @@ const Game8 = {
   updateScore(amount, isGood) {
     if (isGood) {
       sfxCorrect_8.currentTime = 0;
-      sfxCorrect_8.play().catch(() => {});
+      sfxCorrect_8.play().catch(() => { });
     } else {
       sfxWrong_8.currentTime = 0;
-      sfxWrong_8.play().catch(() => {});
+      sfxWrong_8.play().catch(() => { });
     }
     this.score += amount;
     this.scoreScale = 2.0;
