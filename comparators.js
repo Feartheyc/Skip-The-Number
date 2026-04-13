@@ -46,11 +46,20 @@ const Game3 = {
 
   showTutorial: true,
   tutorialHoldTime: 0,
-  
+
   eventsBound: false,
   helpBtn: null,
 
-  // ⚡ ADDITIVE: Performance Caching
+  // ⚡ ADDITIVE: Menu State & Toggle Button
+  difficultyMenuOpen: false,
+  gradeBtn: null,
+  menuOptions: [
+    { grade: 1, label: "Grade 1: 1-20", color: "#4CAF50" },
+    { grade: 2, label: "Grade 2: Negatives", color: "#2196F3" },
+    { grade: 3, label: "Grade 3: Fractions", color: "#FF9800" },
+    { grade: 4, label: "Grade 4: Advanced", color: "#F44336" }
+  ],
+
   uiCache: null,
   fps: 0,
   frameCounter: 0,
@@ -62,8 +71,9 @@ const Game3 = {
     this.onResize(w, h);
     this.score = 0;
     this.running = true;
-    this.showTutorial = true; 
+    this.showTutorial = true;
     this.tutorialHoldTime = 0;
+    this.difficultyMenuOpen = false;
 
     if (!this.eventsBound) {
       this.eventsBound = true;
@@ -73,25 +83,59 @@ const Game3 = {
         if (e.key === '2') this.setDifficulty(2);
         if (e.key === '3') this.setDifficulty(3);
         if (e.key === '4') this.setDifficulty(4);
-        
+
         if (e.key === ' ' && this.showTutorial) {
-            this.showTutorial = false;
-            this.spawnNumbers();
+          this.showTutorial = false;
+          this.spawnNumbers();
         }
+      });
+
+      // ⚡ ADDITIVE: Handle orientation and window resizing
+      window.addEventListener('resize', () => {
+        // We use a small timeout to ensure the browser has finished 
+        // updating its internal width/height values
+        clearTimeout(this.resizeTimeout);
+        this.resizeTimeout = setTimeout(() => {
+          console.log("Orientation/Size changed. Restarting...");
+          this.reset();
+        }, 200);
       });
 
       const canvas = document.getElementById("game_canvas") || document.querySelector("canvas");
       if (canvas) {
         canvas.addEventListener('pointerdown', (e) => {
+          const rect = canvas.getBoundingClientRect();
+          const mouseX = e.clientX - rect.left;
+          const mouseY = e.clientY - rect.top;
+
+          // ⚡ ADDITIVE: Check Grade Button Hit (Top Left)
+          const gDx = mouseX - this.gradeBtn.x;
+          const gDy = mouseY - this.gradeBtn.y;
+          if (gDx * gDx + gDy * gDy <= (this.gradeBtn.r + 20) ** 2) {
+            this.difficultyMenuOpen = !this.difficultyMenuOpen;
+            return;
+          }
+
+          // ⚡ ADDITIVE: Check Menu Item Clicks
+          if (this.difficultyMenuOpen) {
+            this.menuOptions.forEach((opt, i) => {
+              const btnW = 320 * this.scale;
+              const btnH = 60 * this.scale;
+              const x = this.centerX - btnW / 2;
+              const y = this.centerY - 100 * this.scale + (i * 80 * this.scale);
+              if (mouseX >= x && mouseX <= x + btnW && mouseY >= y && mouseY <= y + btnH) {
+                this.setDifficulty(opt.grade);
+                this.difficultyMenuOpen = false;
+              }
+            });
+            return;
+          }
+
           if (this.helpBtn) {
-            const rect = canvas.getBoundingClientRect();
-            const mouseX = e.clientX - rect.left;
-            const mouseY = e.clientY - rect.top;
-            
             const dx = mouseX - this.helpBtn.x;
             const dy = mouseY - this.helpBtn.y;
-            const hitRadius = this.helpBtn.r + 15; 
-            
+            const hitRadius = this.helpBtn.r + 15;
+
             if (dx * dx + dy * dy <= hitRadius * hitRadius) {
               this.showTutorial = true;
               this.tutorialHoldTime = 0;
@@ -120,13 +164,19 @@ const Game3 = {
     this.scale = base / 600;
     this.margin = 80 * this.scale;
 
-    this.helpBtn = { 
-      x: width - 100 * this.scale, 
-      y: 40 * this.scale, 
-      r: 20 * this.scale 
+    this.helpBtn = {
+      x: width - 100 * this.scale,
+      y: 40 * this.scale,
+      r: 20 * this.scale
     };
 
-    // ⚡ ADDITIVE: Pre-render UI elements that don't change every frame
+    // ⚡ ADDITIVE: Define Grade Button Area
+    this.gradeBtn = {
+      x: 120 * this.scale,
+      y: 60 * this.scale,
+      r: 40 * this.scale
+    };
+
     this.preRenderUI();
   },
 
@@ -135,19 +185,18 @@ const Game3 = {
     this.uiCache.width = window.innerWidth;
     this.uiCache.height = 120 * this.scale;
     const cctx = this.uiCache.getContext('2d');
-    
-    // Draw Grade/Score Background Pills once
+
     const drawPill = (x, text, color) => {
       cctx.font = `bold ${36 * this.scale}px Arial`;
       const tw = cctx.measureText(text).width + 50 * this.scale;
       const th = 56 * this.scale;
       cctx.fillStyle = "rgba(0, 0, 0, 0.5)";
       cctx.beginPath();
-      cctx.roundRect(x - tw/2, 60 * this.scale - th/2, tw, th, 20 * this.scale);
+      cctx.roundRect(x - tw / 2, 60 * this.scale - th / 2, tw, th, 20 * this.scale);
       cctx.fill();
     };
 
-    drawPill(120 * this.scale, "Grade: 8", ""); // Template size
+    drawPill(120 * this.scale, "Grade: 8", "");
     drawPill(this.centerX, "Score: 0000", "");
   },
 
@@ -219,10 +268,9 @@ const Game3 = {
     const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
     if (isPaused) dt = 0;
 
-    // ⚡ ADDITIVE: FPS Monitor
     this.frameCounter++;
     this.fpsTimer += dt;
-    if(this.fpsTimer >= 1) { this.fps = this.frameCounter; this.frameCounter = 0; this.fpsTimer = 0; }
+    if (this.fpsTimer >= 1) { this.fps = this.frameCounter; this.frameCounter = 0; this.fpsTimer = 0; }
 
     ctx.save();
     if (this.shakeTime > 0) {
@@ -237,7 +285,7 @@ const Game3 = {
     this.drawPopups(ctx, dt);
     this.drawParticles(ctx, dt);
 
-    const isPlaying = !this.showTutorial && this.gameState === "PLAYING";
+    const isPlaying = !this.showTutorial && !this.difficultyMenuOpen && this.gameState === "PLAYING";
 
     if (this.gameState === "PLAYING" || this.showTutorial) {
       if (!landmarks || landmarks.length < 3) {
@@ -256,6 +304,8 @@ const Game3 = {
     }
 
     if (this.showTutorial) this.drawTutorialWindow(ctx);
+    if (this.difficultyMenuOpen) this.drawDifficultyMenu(ctx); // ⚡ ADDITIVE
+
     ctx.restore();
 
     if (typeof PauseArea !== 'undefined') {
@@ -264,46 +314,160 @@ const Game3 = {
     }
   },
 
-  drawTutorialWindow(ctx) {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+  // ⚡ ADDITIVE: Draw the Menu overlay
+  drawDifficultyMenu(ctx) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
     ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
-    const boxW = 750 * this.scale;
-    const boxH = 400 * this.scale;
+    ctx.textAlign = "center";
+    ctx.fillStyle = "white";
+    ctx.font = `bold ${42 * this.scale}px Arial`;
+    ctx.fillText("Select Difficulty", this.centerX, this.centerY - 180 * this.scale);
+
+    this.menuOptions.forEach((opt, i) => {
+      const btnW = 340 * this.scale;
+      const btnH = 65 * this.scale;
+      const x = this.centerX - btnW / 2;
+      const y = this.centerY - 100 * this.scale + (i * 85 * this.scale);
+
+      ctx.fillStyle = opt.color;
+      ctx.beginPath();
+      ctx.roundRect(x, y, btnW, btnH, 15 * this.scale);
+      ctx.fill();
+
+      // Border for current grade
+      if (this.currentGrade === opt.grade) {
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 5 * this.scale;
+        ctx.stroke();
+      }
+
+      ctx.fillStyle = "white";
+      ctx.font = `bold ${26 * this.scale}px Arial`;
+      ctx.fillText(opt.label, this.centerX, y + 40 * this.scale);
+    });
+  },
+
+  drawTutorialWindow(ctx) {
+    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
+
+    // Box dimensions
+    const boxW = 850 * this.scale;
+    const boxH = 580 * this.scale;
     const boxX = this.centerX - boxW / 2;
     const boxY = this.centerY - boxH / 2;
 
+    // Main Background Box
     ctx.fillStyle = "#1A1A1A";
     ctx.beginPath();
-    ctx.roundRect(boxX, boxY, boxW, boxH, 25 * this.scale);
+    ctx.roundRect(boxX, boxY, boxW, boxH, 30 * this.scale);
     ctx.fill();
     ctx.strokeStyle = "#00FFCC";
     ctx.lineWidth = 4 * this.scale;
     ctx.stroke();
 
+    // Title
     ctx.textAlign = "center";
+    ctx.textBaseline = "top";
     ctx.fillStyle = "#FFFFFF";
     ctx.font = `bold ${45 * this.scale}px Arial`;
-    ctx.fillText("How to Play!", this.centerX, boxY + 60 * this.scale);
+    ctx.fillText("How to Play!", this.centerX, boxY + 40 * this.scale);
 
-    ctx.font = `bold ${24 * this.scale}px Arial`;
-    ctx.fillStyle = "#DDDDDD";
-    const lines = [
-        "1. Look at the two numbers.",
-        "2. Make a shape with your thumb & index finger.",
-        "3. Point at the BIGGER number!"
-    ];
-    lines.forEach((line, i) => ctx.fillText(line, this.centerX, boxY + 130 * this.scale + i * 45 * this.scale));
+    // Layout Constants
+    const leftMargin = boxX + 60 * this.scale;
+    const contentStartY = boxY + 140 * this.scale;
+    const verticalSpacing = 85 * this.scale;
+    const textSafeWidth = boxW - 220 * this.scale; // Leaves room for icons on the right
 
-    const progressY = boxY + 350 * this.scale;
+    ctx.textAlign = "left";
+    ctx.font = `bold ${26 * this.scale}px Arial`;
+
+    // 1. Instructions
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillText("1. Look at the numbers on the screen.", leftMargin, contentStartY);
+
+    // 2. Hand Gesture + Icon
+    ctx.fillText("2. Make a 'V' shape with your hand.", leftMargin, contentStartY + verticalSpacing);
+    this.drawHandIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing + 10 * this.scale);
+
+    // 3. Logic + Icon
+    ctx.fillText("3. Point at the BIGGER number!", leftMargin, contentStartY + verticalSpacing * 2);
+    this.drawComparisonIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing * 2 + 10 * this.scale);
+
+    // 4. Difficulty Switch (Wrapped properly inside the box)
+    ctx.fillStyle = "#00FFCC";
+    const line4 = "4. Tap the 'Grade' button in the top-left corner to change the difficulty level.";
+    this.wrapText(ctx, line4, leftMargin, contentStartY + verticalSpacing * 3, textSafeWidth, 36 * this.scale);
+
+    // Start Hold Bar
+    ctx.textAlign = "center";
+    const barY = boxY + boxH - 80 * this.scale;
     if (this.tutorialHoldTime > 0) {
       let progress = Math.min(1, this.tutorialHoldTime / 1.5);
+      ctx.fillStyle = "#333";
+      ctx.beginPath();
+      ctx.roundRect(this.centerX - 150 * this.scale, barY, 300 * this.scale, 16 * this.scale, 8 * this.scale);
+      ctx.fill();
       ctx.fillStyle = "#00FFCC";
-      ctx.fillRect(this.centerX - 150 * this.scale, progressY + 10 * this.scale, 300 * this.scale * progress, 10 * this.scale);
+      ctx.beginPath();
+      ctx.roundRect(this.centerX - 150 * this.scale, barY, 300 * this.scale * progress, 16 * this.scale, 8 * this.scale);
+      ctx.fill();
     } else {
       ctx.fillStyle = "#FFD700";
-      ctx.fillText("Hold hand up to Start!", this.centerX, progressY);
+      ctx.font = `bold ${30 * this.scale}px Arial`;
+      ctx.fillText("Hold hand up to Start!", this.centerX, barY);
     }
+  },
+
+  drawHandIcon(ctx, x, y) {
+    ctx.save();
+    ctx.strokeStyle = "#00FFCC";
+    ctx.lineWidth = 8 * this.scale;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(x - 25 * this.scale, y - 35 * this.scale);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x + 30 * this.scale, y - 15 * this.scale);
+    ctx.stroke();
+    ctx.fillStyle = "white";
+    ctx.beginPath(); ctx.arc(x, y, 6 * this.scale, 0, 7); ctx.fill();
+    ctx.restore();
+  },
+
+  drawComparisonIcon(ctx, x, y) {
+    ctx.save();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+    ctx.beginPath();
+    ctx.roundRect(x - 45 * this.scale, y - 22 * this.scale, 90 * this.scale, 44 * this.scale, 10 * this.scale);
+    ctx.fill();
+    ctx.font = `bold ${22 * this.scale}px Arial`;
+    ctx.fillStyle = "#00FFCC";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("< | >", x, y);
+    ctx.restore();
+  },
+
+  wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+    ctx.save();
+    const words = text.split(' ');
+    let line = '';
+    ctx.textBaseline = "top";
+
+    for (let n = 0; n < words.length; n++) {
+      let testLine = line + words[n] + ' ';
+      let testWidth = ctx.measureText(testLine).width;
+      if (testWidth > maxWidth && n > 0) {
+        ctx.fillText(line, x, y);
+        line = words[n] + ' ';
+        y += lineHeight;
+      } else {
+        line = testLine;
+      }
+    }
+    ctx.fillText(line, x, y);
+    ctx.restore();
   },
 
   checkPose(ctx, indexTip, thumbTip, wrist, dt) {
@@ -397,7 +561,7 @@ const Game3 = {
   drawArmSymbol(ctx, indexTip, thumbTip, wrist) {
     const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
     if (angle < 20) return;
-    
+
     let color = "#00FFCC";
     if (this.detectedSymbol === ">") color = "#FFFF00";
     else if (this.detectedSymbol === "<") color = "#00AAFF";
@@ -418,8 +582,7 @@ const Game3 = {
   },
 
   drawUI(ctx) {
-    // ⚡ ADDITIVE: Draw cached backgrounds
-    if(this.uiCache) ctx.drawImage(this.uiCache, 0, 0);
+    if (this.uiCache) ctx.drawImage(this.uiCache, 0, 0);
 
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
@@ -431,15 +594,14 @@ const Game3 = {
     ctx.globalAlpha = this.fadeAlpha;
 
     const drawCard = (x, color, text) => {
-      // ⚡ OPTIMIZED: Cheap shadow instead of Gaussian Blur
       ctx.fillStyle = "rgba(0,0,0,0.3)";
       ctx.beginPath();
-      ctx.roundRect(x - cardW/2 + 5, this.centerY - cardH/2 + 10, cardW, cardH, 20 * this.scale);
+      ctx.roundRect(x - cardW / 2 + 5, this.centerY - cardH / 2 + 10, cardW, cardH, 20 * this.scale);
       ctx.fill();
 
       ctx.fillStyle = color;
       ctx.beginPath();
-      ctx.roundRect(x - cardW/2, this.centerY - cardH/2, cardW, cardH, 20 * this.scale);
+      ctx.roundRect(x - cardW / 2, this.centerY - cardH / 2, cardW, cardH, 20 * this.scale);
       ctx.fill();
 
       ctx.font = `bold ${80 * this.scale * this.popScale}px Arial`;
@@ -455,7 +617,6 @@ const Game3 = {
     ctx.fillStyle = "white";
     ctx.fillText("?", this.centerX, this.centerY);
 
-    // Dynamic Text over cached backgrounds
     ctx.font = `bold ${36 * this.scale}px Arial`;
     ctx.fillStyle = "#00FFCC";
     ctx.fillText(`Grade: ${this.currentGrade}`, 120 * this.scale, 60 * this.scale);
@@ -468,8 +629,7 @@ const Game3 = {
     }
 
     this.drawHelpButton(ctx);
-    
-    // ⚡ ADDITIVE: Performance overlay
+
     ctx.font = `12px Arial`; ctx.fillStyle = "lime";
     ctx.fillText(`FPS: ${this.fps}`, 50, window.innerHeight - 20);
   },
@@ -517,16 +677,16 @@ const Game3 = {
     const { width, height } = canvas.getBoundingClientRect();
 
     const smooth = (p, x, y) => {
-        if(!this.prevPoints) this.prevPoints = {};
-        if(!this.prevPoints[p]) return this.prevPoints[p] = {x, y};
-        const f = 0.7;
-        return this.prevPoints[p] = { x: this.prevPoints[p].x * f + x * (1-f), y: this.prevPoints[p].y * f + y * (1-f) };
+      if (!this.prevPoints) this.prevPoints = {};
+      if (!this.prevPoints[p]) return this.prevPoints[p] = { x, y };
+      const f = 0.7;
+      return this.prevPoints[p] = { x: this.prevPoints[p].x * f + x * (1 - f), y: this.prevPoints[p].y * f + y * (1 - f) };
     };
 
     window.fingerPositions = [
-        smooth("idx", (1 - hand[8].x) * width, hand[8].y * height),
-        smooth("thm", (1 - hand[4].x) * width, hand[4].y * height),
-        smooth("wst", (1 - hand[0].x) * width, hand[0].y * height)
+      smooth("idx", (1 - hand[8].x) * width, hand[8].y * height),
+      smooth("thm", (1 - hand[4].x) * width, hand[4].y * height),
+      smooth("wst", (1 - hand[0].x) * width, hand[0].y * height)
     ];
   },
 
@@ -534,7 +694,7 @@ const Game3 = {
     const v1 = { x: p1.x - wrist.x, y: p1.y - wrist.y };
     const v2 = { x: p2.x - wrist.x, y: p2.y - wrist.y };
     const dot = v1.x * v2.x + v1.y * v2.y;
-    const mag = Math.sqrt(v1.x**2 + v1.y**2) * Math.sqrt(v2.x**2 + v2.y**2);
+    const mag = Math.sqrt(v1.x ** 2 + v1.y ** 2) * Math.sqrt(v2.x ** 2 + v2.y ** 2);
     return mag === 0 ? 0 : Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180 / Math.PI;
   },
 
