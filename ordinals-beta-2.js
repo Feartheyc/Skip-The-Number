@@ -1180,14 +1180,19 @@ const Game11 = {
     /* Suffix label (match ordinal2.js style) */
     ctx.save();
     ctx.translate(this.mascot.x, this.mascot.y);
-    ctx.shadowColor = this.T.accentGlow;
+    ctx.shadowColor = "black";
     ctx.shadowBlur = 15;
     ctx.fillStyle = "#ffffff";
     const fontSize = Math.round(62 * this.scale * lifeRatio);
     ctx.font = `bold ${fontSize}px 'Comic Sans MS', cursive`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
+    const textStr = this.mode1TargetSuffix.toUpperCase();
+    ctx.fillText(textStr, 0, 0);
+    ctx.fillText(textStr, 0, 0);
+    ctx.fillText(textStr, 0, 0);
+    ctx.fillText(textStr, 0, 0);
+    ctx.fillText(textStr, 0, 0);
     ctx.restore();
   },
 
@@ -1320,7 +1325,7 @@ const Game11 = {
 
     ctx.save();
 
-    const text = `Show Fingers to Choose Ordinals Suffix`;
+    const text = `Show Fingers to Choose Ordinals Suffix: ${this.mode1TargetSuffix.toUpperCase()}`;
     ctx.font = this.fInstruction;
     const textWidth = ctx.measureText(text).width;
 
@@ -1831,7 +1836,7 @@ const Game11 = {
     ctx.save();
 
     const boxW = 1000 * this.scale;
-    const boxH = 300 * this.scale;
+    const boxH = 350 * this.scale;
     const boxX = this.CENTER_X - boxW / 2;
     const boxY = this.CENTER_Y - boxH / 2 - 40 * this.scale;
 
@@ -1849,18 +1854,22 @@ const Game11 = {
     ctx.textBaseline = "middle";
 
     const line1 = "Make the hand shape as shown on the left";
-    const line2 = "to get the necessary ordinal surfix on the galaxy";
-    const line3 = "Collect numbers with correct surfix to increase score and life duration";
-    const line4 = "Wrong answer will lead to decrease in score";
+    const line2 = "to get the necessary ordinal suffix on the galaxy";
+    const line3 = "(Remember to show your palm towards the camera)";
+    const line4 = "Collect numbers with correct suffix to increase score and life duration";
+    const line5 = "Wrong answer will lead to decrease in score";
 
-    ctx.fillText(line1, this.CENTER_X, boxY + 60 * this.scale);
-    ctx.fillText(line2, this.CENTER_X, boxY + 110 * this.scale);
+    ctx.fillText(line1, this.CENTER_X, boxY + 50 * this.scale);
+    ctx.fillText(line2, this.CENTER_X, boxY + 100 * this.scale);
+
+    ctx.fillStyle = "#60a5fa"; // blueish color for emphasis on the new instruction
+    ctx.fillText(line3, this.CENTER_X, boxY + 150 * this.scale);
 
     ctx.fillStyle = "#34d399"; // greenish color 
-    ctx.fillText(line3, this.CENTER_X, boxY + 170 * this.scale);
+    ctx.fillText(line4, this.CENTER_X, boxY + 220 * this.scale);
 
     ctx.fillStyle = "#f87171"; // reddish color
-    ctx.fillText(line4, this.CENTER_X, boxY + 230 * this.scale);
+    ctx.fillText(line5, this.CENTER_X, boxY + 290 * this.scale);
 
     const btnW = 220 * this.scale;
     const btnH = 70 * this.scale;
