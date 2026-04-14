@@ -71,8 +71,8 @@ const Game11 = {
     y: 0,
     vx: 0,
     vy: 0,
-    speed: 2,
-    maxSpeed: 8,
+    speed: 10,
+    maxSpeed: 10,
     size: 140,
     carryingNumber: false
   },
@@ -85,7 +85,7 @@ const Game11 = {
 
   mascotFrame: 0,
   mascotFrameTimer: 0,
-  mascotFrameSpeed: 120,
+  mascotFrameSpeed: 200,
   mascotState: "idle", // idle | happy | confused
 
   /* ===== FINGERS SYSTEM ===== */
@@ -97,7 +97,7 @@ const Game11 = {
   portalFrames: [],
   portalFrameIndex: 0,
   portalFrameTimer: 0,
-  portalFrameSpeed: 80, // lower = faster animation
+  portalFrameSpeed: 400, // lower = faster animation
 
   portalSize: 260,
 
@@ -248,6 +248,7 @@ const Game11 = {
 
 
     window.addEventListener("click", (e) => {
+      if (window.currentGame !== Game11) return;
       sfxButtonClick_11.currentTime = 0;
       sfxButtonClick_11.play().catch(() => { });
       if (!this.gameStarted) {
@@ -258,6 +259,7 @@ const Game11 = {
     });
 
     window.addEventListener("touchstart", (e) => {
+      if (window.currentGame !== Game11) return;
       sfxButtonClick_11.currentTime = 0;
       sfxButtonClick_11.play().catch(() => { });
       // Prevent double trigger if both touch and click fire
