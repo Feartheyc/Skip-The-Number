@@ -27,15 +27,6 @@ const Game10 = {
       cardBg: "rgba(255,255,255,0.07)", cardBorder: "rgba(255,255,255,0.15)",
       scoreBg: "rgba(124,58,237,0.3)", heartColor: "#f472b6", streakColor: "#fbbf24",
     },
-    minimal: {
-      bg1: "#faf7f2", bg2: "#f0ebe0", bg3: "#e8e0d0",
-      accent: "#6366f1", accentGlow: "rgba(99,102,241,0.25)",
-      textPrimary: "#1e1b18", textAccent: "#6366f1",
-      correct: "#10b981", wrong: "#ef4444",
-      numberColor: "#f59e0b", numberGlow: "rgba(245,158,11,0.4)",
-      cardBg: "rgba(0,0,0,0.06)", cardBorder: "rgba(0,0,0,0.12)",
-      scoreBg: "rgba(99,102,241,0.12)", heartColor: "#f43f5e", streakColor: "#f59e0b",
-    }
   },
 
   get T() { return this.themes[this.theme]; },
@@ -55,7 +46,7 @@ const Game10 = {
   /* Hand tracking smoothing */
 fingerSmoothX: null,
 fingerSmoothY: null,
-fingerSmoothing: 0.25,
+fingerSmoothing: 0.12,
 
   /*
    * Mascot physics in px/ms:
@@ -198,28 +189,38 @@ fingerSmoothing: 0.25,
     this.mascot.vx = 0; this.mascot.vy = 0;
 
     this.activateGameMode1();
+    window.addEventListener("orientationchange", () => {
+  this.fullReset();
+});
 
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "q" || e.key === "Q") this.toggleTheme();
-    });
+window.addEventListener("resize", () => {
+  this.fullReset();
+});
     canvasElement.addEventListener("click", () => {
       if (this.mode1GameOver) this.retryMode1();
     });
   },
 
   resize() {
-    const cssW = window.innerWidth;
-    const cssH = window.innerHeight;
-    const dpr  = window.devicePixelRatio || 1;
-    canvasElement.width  = cssW * dpr;
-    canvasElement.height = cssH * dpr;
-    canvasElement.style.width  = cssW + "px";
-    canvasElement.style.height = cssH + "px";
-    canvasElement.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
-    this.scale    = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT) || 1;
-    this.CENTER_X = cssW / 2;
-    this.CENTER_Y = cssH / 2;
-  },
+  const cssW = window.innerWidth;
+  const cssH = window.innerHeight;
+  const dpr  = window.devicePixelRatio || 1;
+
+  canvasElement.width  = cssW * dpr;
+  canvasElement.height = cssH * dpr;
+
+  canvasElement.style.width  = cssW + "px";
+  canvasElement.style.height = cssH + "px";
+
+  canvasElement.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  this.scale    = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT) || 1;
+  this.CENTER_X = cssW / 2;
+  this.CENTER_Y = cssH / 2;
+
+  /* 🔥 CRITICAL FIX */
+  this.fullResetOnResize();
+},
 
   toggleTheme() {
     this.theme = this.theme === "space" ? "minimal" : "space";
@@ -376,15 +377,13 @@ fingerSmoothing: 0.25,
 
     this.drawHUD(ctx);
     this.drawInstruction(ctx);
-    this.drawToast(ctx);
-    this.drawThemeHint(ctx);
-    
+    this.drawToast(ctx);  
     this.drawBigBangFlash(ctx);
     this.drawGameOver(ctx);
   },
 
 
-  updateFingerPosition() {
+updateFingerPosition() {
 
   if (
     !window.fingerPositions ||
@@ -393,12 +392,13 @@ fingerSmoothing: 0.25,
   ) {
     this.fingerX = null;
     this.fingerY = null;
+    this.fingerSmoothX = null;
+    this.fingerSmoothY = null;
     return;
   }
 
   const fp = window.fingerPositions[0];
 
-  /* Raw finger position */
   const rawX = fp.x;
   const rawY = fp.y;
 
@@ -408,74 +408,92 @@ fingerSmoothing: 0.25,
     this.fingerSmoothY = rawY;
   }
 
-  /* Smooth movement */
-  this.fingerSmoothX += (rawX - this.fingerSmoothX) * this.fingerSmoothing;
-  this.fingerSmoothY += (rawY - this.fingerSmoothY) * this.fingerSmoothing;
+  /* 🔧 Better smoothing (less jitter) */
+  const smoothing = 0.12; // lower = smoother
+  this.fingerSmoothX += (rawX - this.fingerSmoothX) * smoothing;
+  this.fingerSmoothY += (rawY - this.fingerSmoothY) * smoothing;
+
+  /* 🧠 Deadzone to ignore tiny noise */
+  const DEADZONE = 3; // tweak 2–5
+
+  if (this.fingerX !== null && this.fingerY !== null) {
+    const dx = this.fingerSmoothX - this.fingerX;
+    const dy = this.fingerSmoothY - this.fingerY;
+
+    if (Math.hypot(dx, dy) < DEADZONE) {
+      return; // ignore micro movement
+    }
+  }
 
   this.fingerX = this.fingerSmoothX;
   this.fingerY = this.fingerSmoothY;
 },
 
-
   updateMascot(delta) {
 
-    /* Auto-move during round confirmation */
-    if (this.gameMode === 1 && this.mode1Confirming) {
-      const dx = this.mode1PortalTargetX - this.mascot.x;
-      const dy = this.mode1PortalTargetY - this.mascot.y;
-      if (Math.hypot(dx, dy) > 4) {
-        /* Framerate-independent lerp: approach factor = 1 - k^delta */
-        const f = 1 - Math.pow(0.92, delta / 16.67);
-        this.mascot.x += dx * f;
-        this.mascot.y += dy * f;
-      } else {
-        this.mascot.x = this.mode1PortalTargetX;
-        this.mascot.y = this.mode1PortalTargetY;
-        this.mode1Confirming = false;
-        this.startNewRound();
-      }
-      this.mascot.vx = 0;
-      this.mascot.vy = 0;
-      return;
+  /* Auto-move during round confirmation */
+  if (this.gameMode === 1 && this.mode1Confirming) {
+    const dx = this.mode1PortalTargetX - this.mascot.x;
+    const dy = this.mode1PortalTargetY - this.mascot.y;
+
+    if (Math.hypot(dx, dy) > 4) {
+      const f = 1 - Math.pow(0.92, delta / 16.67);
+      this.mascot.x += dx * f;
+      this.mascot.y += dy * f;
+    } else {
+      this.mascot.x = this.mode1PortalTargetX;
+      this.mascot.y = this.mode1PortalTargetY;
+      this.mode1Confirming = false;
+      this.startNewRound();
     }
 
-    /* Chase finger */
-    if (this.fingerX !== null && this.fingerY !== null) {
-      const dx   = this.fingerX - this.mascot.x;
-      const dy   = this.fingerY - this.mascot.y;
-      const dist = Math.hypot(dx, dy);
+    this.mascot.vx = 0;
+    this.mascot.vy = 0;
+    return;
+  }
 
-      if (dist > 2) {
+  /* 🎯 Follow finger */
+  if (this.fingerX !== null && this.fingerY !== null) {
+    const dx = this.fingerX - this.mascot.x;
+    const dy = this.fingerY - this.mascot.y;
+    const dist = Math.hypot(dx, dy);
 
-        const force = Math.min(dist * this.mascot.accel * delta, this.mascot.maxSpeed);
-        this.mascot.vx += (dx / dist) * force;
-        this.mascot.vy += (dy / dist) * force;
-      }
+    /* 🔧 Bigger threshold removes vibration */
+    if (dist > 8) {
+
+      const force = Math.min(dist * this.mascot.accel * delta, this.mascot.maxSpeed);
+
+      this.mascot.vx += (dx / dist) * force;
+      this.mascot.vy += (dy / dist) * force;
     }
+  }
 
-    /* Friction — true exponential decay, framerate-independent */
-    const fr = Math.pow(this.mascot.friction, delta);
-    this.mascot.vx *= fr;
-    this.mascot.vy *= fr;
+  /* 🧊 Friction (smooth decay) */
+  const fr = Math.pow(this.mascot.friction, delta);
+  this.mascot.vx *= fr;
+  this.mascot.vy *= fr;
 
-    /* Speed cap (compare in px/ms space) */
-    const spd = Math.hypot(this.mascot.vx, this.mascot.vy);
-    if (spd > this.mascot.maxSpeed) {
-      const ratio = this.mascot.maxSpeed / spd;
-      this.mascot.vx *= ratio;
-      this.mascot.vy *= ratio;
-    }
+  /* 🚫 Speed cap */
+  const spd = Math.hypot(this.mascot.vx, this.mascot.vy);
+  if (spd > this.mascot.maxSpeed) {
+    const ratio = this.mascot.maxSpeed / spd;
+    this.mascot.vx *= ratio;
+    this.mascot.vy *= ratio;
+  }
 
-    /* Integrate position */
-    this.mascot.x += this.mascot.vx * delta;
-    this.mascot.y += this.mascot.vy * delta;
+  /* 📍 Apply movement */
+  this.mascot.x += this.mascot.vx * delta;
+  this.mascot.y += this.mascot.vy * delta;
 
-    /* Screen bounds */
-    const pad = 70 * this.scale;
-    this.mascot.x = Math.max(pad, Math.min(this.cssWidth  - pad, this.mascot.x));
-    this.mascot.y = Math.max(pad, Math.min(this.cssHeight - pad, this.mascot.y));
-  },
+  /* 🛑 Kill micro jitter completely */
+  if (Math.abs(this.mascot.vx) < 0.01) this.mascot.vx = 0;
+  if (Math.abs(this.mascot.vy) < 0.01) this.mascot.vy = 0;
 
+  /* 🧱 Screen bounds */
+  const pad = 70 * this.scale;
+  this.mascot.x = Math.max(pad, Math.min(this.cssWidth - pad, this.mascot.x));
+  this.mascot.y = Math.max(pad, Math.min(this.cssHeight - pad, this.mascot.y));
+},
   /* ============================================================
      SPRITE LOADING
   ============================================================ */
@@ -709,10 +727,18 @@ fingerSmoothing: 0.25,
 
     /* Suffix label */
     ctx.shadowColor = T.accentGlow; ctx.shadowBlur = 20;
-    ctx.fillStyle   = "#ffffff";
-    ctx.font        = `bold ${Math.round(52 * this.scale)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
+    ctx.font = `bold ${Math.round(52 * this.scale)}px 'Fredoka', cursive`;
+ctx.textAlign = "center";
+ctx.textBaseline = "middle";
+
+/* 🔥 Thin black outline */
+ctx.lineWidth = 2 * this.scale;   // VERY thin
+ctx.strokeStyle = "black";
+ctx.strokeText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
+
+/* Fill text */
+ctx.fillStyle = "#ffffff";
+ctx.fillText(this.mode1TargetSuffix.toUpperCase(), 0, 0);
     ctx.shadowBlur = 0;
 
     if (this.mascotState === "happy") {
@@ -798,7 +824,7 @@ fingerSmoothing: 0.25,
 
       ctx.shadowColor  = T.numberGlow; ctx.shadowBlur = 12 + glow * 18;
       ctx.fillStyle    = T.numberColor;
-      ctx.font         = `bold ${Math.round(46 * this.scale)}px 'Comic Sans MS', cursive`;
+      ctx.font         = `bold ${Math.round(46 * this.scale)}px 'Fredoka', cursive`;
       ctx.textAlign    = "center"; ctx.textBaseline = "middle";
       ctx.fillText(n.number, 0, 0);
       ctx.shadowBlur = 0;
@@ -928,7 +954,7 @@ fingerSmoothing: 0.25,
       ctx.save(); 
       ctx.globalAlpha = f.alpha;
       ctx.fillStyle    = this.T.wrong;
-      ctx.font         = `bold ${Math.round(38 * this.scale)}px 'Comic Sans MS', cursive`;
+      ctx.font         = `bold ${Math.round(38 * this.scale)}px 'Fredoka', cursive`;
       ctx.textAlign    = "center"; ctx.textBaseline = "middle";
       ctx.shadowColor  = this.T.wrong; ctx.shadowBlur = 12;
       ctx.fillText(f.text, f.x, f.y);
@@ -984,7 +1010,7 @@ fingerSmoothing: 0.25,
     ctx.save(); ctx.translate(x, y); ctx.scale(m.scale, m.scale);
     ctx.shadowColor = this.T.correct; ctx.shadowBlur = 28;
     ctx.fillStyle   = "#ffffff";
-    ctx.font        = `bold ${Math.round(60 * this.scale)}px 'Comic Sans MS', cursive`;
+    ctx.font        = `bold ${Math.round(60 * this.scale)}px 'Fredoka', cursive`;
     ctx.textAlign   = "center"; ctx.textBaseline = "middle";
     ctx.fillText(`${m.number}${m.suffix}`, 0, 0);
     ctx.restore();
@@ -1048,7 +1074,7 @@ fingerSmoothing: 0.25,
       ctx.translate(this.CENTER_X, this.CENTER_Y - 160 * this.scale);
       ctx.scale(0.7 + alpha * 0.4, 0.7 + alpha * 0.4);
       ctx.fillStyle = this.T.correct;
-      ctx.font      = `bold ${Math.round(56 * this.scale)}px 'Comic Sans MS', cursive`;
+      ctx.font      = `bold ${Math.round(56 * this.scale)}px 'Fredoka', cursive`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.shadowColor = this.T.correct; ctx.shadowBlur = 20;
       ctx.fillText("⭐ Round Clear!", 0, 0);
@@ -1109,7 +1135,7 @@ fingerSmoothing: 0.25,
       ctx.save(); ctx.globalAlpha = p.alpha;
       ctx.translate(p.x, p.y); ctx.rotate(p.rot);
       ctx.fillStyle    = this.T.wrong;
-      ctx.font         = `bold ${Math.round(40 * this.scale)}px 'Comic Sans MS', cursive`;
+      ctx.font         = `bold ${Math.round(40 * this.scale)}px 'Fredoka', cursive`;
       ctx.textAlign    = "center"; ctx.textBaseline = "middle";
       ctx.fillText(this.mode1BreakData.number, 0, 0);
       ctx.restore();
@@ -1187,7 +1213,7 @@ fingerSmoothing: 0.25,
     const msgs  = ["🌀 Uh oh!", "⚠️ Collapsing!", "💀 Oh no!"];
     ctx.globalAlpha = Math.min(1, this.blackHoleTime / 400);
     ctx.fillStyle   = "#fbbf24";
-    ctx.font        = `bold ${Math.round(44 * this.scale)}px 'Comic Sans MS', cursive`;
+    ctx.font        = `bold ${Math.round(44 * this.scale)}px 'Fredoka', cursive`;
     ctx.textAlign   = "center"; ctx.textBaseline = "middle";
     ctx.fillText(msgs[Math.floor(this.blackHoleTime / 900) % msgs.length], px, py - r - 28 * this.scale);
     ctx.globalAlpha = 1;
@@ -1248,18 +1274,18 @@ fingerSmoothing: 0.25,
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
 
     ctx.fillStyle   = this.T.wrong;
-    ctx.font        = `bold ${Math.round(Math.min(50 * s, 50))}px 'Comic Sans MS', cursive`;
+    ctx.font        = `bold ${Math.round(Math.min(50 * s, 50))}px 'Fredoka', cursive`;
     ctx.shadowColor = this.T.wrong; ctx.shadowBlur = 14;
     ctx.fillText("💥 Oops! Try Again!", mx, cy + ch * 0.24); ctx.shadowBlur = 0;
 
     ctx.fillStyle = this.T.textPrimary;
-    ctx.font      = `bold ${Math.round(Math.min(28 * s, 28))}px 'Comic Sans MS', cursive`;
+    ctx.font      = `bold ${Math.round(Math.min(28 * s, 28))}px 'Fredoka', cursive`;
     ctx.fillText(`⭐ Score: ${this.score}   |   🔥 Best Streak: ${this.bestStreak}`, mx, cy + ch * 0.52);
 
     const pulse = 0.82 + Math.sin(performance.now() * 0.004) * 0.18;
     ctx.globalAlpha = pulse;
     ctx.fillStyle   = this.T.correct;
-    ctx.font        = `bold ${Math.round(Math.min(24 * s, 24))}px 'Comic Sans MS', cursive`;
+    ctx.font        = `bold ${Math.round(Math.min(24 * s, 24))}px 'Fredoka', cursive`;
     ctx.fillText("👆 Tap anywhere to rebuild the galaxy!", mx, cy + ch * 0.8);
     ctx.globalAlpha = 1;
   },
@@ -1296,91 +1322,124 @@ fingerSmoothing: 0.25,
      HUD
   ============================================================ */
   drawHUD(ctx) {
-    const T = this.T, s = this.scale;
-    const W = this.cssWidth, H = this.cssHeight;
+  const T = this.T, s = this.scale;
+  const W = this.cssWidth, H = this.cssHeight;
 
-    /* Score */
-    const sw = 175 * s, sh = 54 * s, sx = 18 * s, sy = 16 * s;
-    ctx.fillStyle = T.scoreBg;
-    this._rrect(ctx, sx, sy, sw, sh, 18 * s); 
-    ctx.fill();
-    ctx.fillStyle    = T.numberColor;
-    ctx.font         = `bold ${Math.round(26 * s)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign    = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(`⭐ ${this.score}`, sx + sw / 2, sy + sh / 2);
+  /* Score */
+  const sw = 175 * s, sh = 54 * s, sx = 18 * s, sy = 16 * s;
+  ctx.fillStyle = T.scoreBg;
+  this._rrect(ctx, sx, sy, sw, sh, 18 * s); 
+  ctx.fill();
+  ctx.fillStyle = T.numberColor;
+  ctx.font = `bold ${Math.round(26 * s)}px 'Fredoka', cursive`;
+  ctx.textAlign = "center"; 
+  ctx.textBaseline = "middle";
+  ctx.fillText(`⭐ ${this.score}`, sx + sw / 2, sy + sh / 2);
 
-    /* Hearts */
-    const hSz = 32 * s, hGap = 8 * s;
-    const totalHW = this.maxHearts * (hSz + hGap) - hGap;
-    const hx0 = W - 18 * s - totalHW, hy0 = 18 * s;
-    const shk = this.heartShakeTime > 0 ? Math.sin(this.heartShakeTime * 0.055) * 5 * s : 0;
-    for (let i = 0; i < this.maxHearts; i++) {
-      const filled = i < this.hearts;
-      ctx.globalAlpha  = filled ? 1 : 0.2;
-      ctx.font         = `${Math.round(hSz)}px serif`;
-      ctx.textAlign    = "left"; ctx.textBaseline = "top";
-      ctx.fillText("❤️", hx0 + i * (hSz + hGap), hy0 + (filled ? shk : 0));
-    }
-    ctx.globalAlpha = 1;
+  /* Hearts */
+  const hSz = 32 * s, hGap = 8 * s;
+  const totalHW = this.maxHearts * (hSz + hGap) - hGap;
+  const hx0 = W - 18 * s - totalHW, hy0 = 18 * s;
+  const shk = this.heartShakeTime > 0 ? Math.sin(this.heartShakeTime * 0.055) * 5 * s : 0;
 
-    /* Streak */
-    if (this.streak >= 2) {
-      const ps = 1 + this.streakPulse * 0.3;
-      ctx.save();
-      ctx.translate(W / 2, 34 * s); 
-      ctx.scale(ps, ps);
-      ctx.globalAlpha  = 0.88 + this.streakPulse * 0.12;
-      ctx.fillStyle    = T.streakColor;
-      ctx.font         = `bold ${Math.round(24 * s)}px 'Comic Sans MS', cursive`;
-      ctx.textAlign    = "center"; ctx.textBaseline = "middle";
-      ctx.shadowColor  = T.streakColor; ctx.shadowBlur = 10;
-      ctx.fillText(`🔥 ${this.streak} in a row!`, 0, 0);
-      ctx.shadowBlur = 0; 
-      ctx.restore();
-    }
+  for (let i = 0; i < this.maxHearts; i++) {
+    const filled = i < this.hearts;
+    ctx.globalAlpha = filled ? 1 : 0.2;
+    ctx.font = `${Math.round(hSz)}px serif`;
+    ctx.textAlign = "left"; 
+    ctx.textBaseline = "top";
+    ctx.fillText("❤️", hx0 + i * (hSz + hGap), hy0 + (filled ? shk : 0));
+  }
+  ctx.globalAlpha = 1;
 
-    /* Level badge */
-    const lw = 200 * s, lh = 40 * s;
-    const lx = W / 2 - lw / 2, ly = H - 58 * s;
-    ctx.fillStyle = T.scoreBg;
-    this._rrect(ctx, lx, ly, lw, lh, 13 * s); 
-    ctx.fill();
-    ctx.fillStyle    = T.textAccent;
-    ctx.font         = `bold ${Math.round(18 * s)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign    = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(
-      `Level ${this.level}  ·  ${this.roundsCompleted} round${this.roundsCompleted !== 1 ? "s" : ""}`,
-      lx + lw / 2, ly + lh / 2
-    );
-  },
+  /* 🔥 FIXED STREAK POSITION */
+  if (this.streak >= 2) {
+    const ps = 1 + this.streakPulse * 0.3;
+
+    /* 👇 SAME HEIGHT AS INSTRUCTION + OFFSET */
+    const instructionTop = 20 * s;
+    const instructionHeight = 48 * s;
+    const gap = 20 * s;
+
+    const streakY = instructionTop + instructionHeight + gap;
+
+    ctx.save();
+    ctx.translate(W / 2, streakY);
+    ctx.scale(ps, ps);
+
+    ctx.globalAlpha = 0.88 + this.streakPulse * 0.12;
+    ctx.fillStyle = T.streakColor;
+    ctx.font = `bold ${Math.round(24 * s)}px 'Fredoka', cursive`;
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
+
+    ctx.shadowColor = T.streakColor;
+    ctx.shadowBlur = 10;
+
+    ctx.fillText(`🔥 ${this.streak} in a row!`, 0, 0);
+
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  /* Level badge */
+  const lw = 200 * s, lh = 40 * s;
+  const lx = W / 2 - lw / 2, ly = H - 58 * s;
+
+  ctx.fillStyle = T.scoreBg;
+  this._rrect(ctx, lx, ly, lw, lh, 13 * s);
+  ctx.fill();
+
+  ctx.fillStyle = T.textAccent;
+  ctx.font = `bold ${Math.round(18 * s)}px 'Fredoka', cursive`;
+  ctx.textAlign = "center"; 
+  ctx.textBaseline = "middle";
+
+  ctx.fillText(
+    `Level ${this.level}  ·  ${this.roundsCompleted} round${this.roundsCompleted !== 1 ? "s" : ""}`,
+    lx + lw / 2,
+    ly + lh / 2
+  );
+},
 
   /* ============================================================
      INSTRUCTION BANNER
   ============================================================ */
   drawInstruction(ctx) {
-    if (this.mode1GameOver || this.blackHoleActive) return;
-    const T = this.T, s = this.scale;
-    const W = this.cssWidth, H = this.cssHeight;
-    const suf = this.mode1TargetSuffix;
+  if (this.mode1GameOver || this.blackHoleActive) return;
 
-    const maxW = Math.min(W - 44 * s, 700 * s);
-    const bh = 48 * s, bx = W / 2 - maxW / 2, by = H - 114 * s;
+  const T = this.T, s = this.scale;
+  const W = this.cssWidth, H = this.cssHeight;
+  const suf = this.mode1TargetSuffix;
 
-    ctx.fillStyle   = T.cardBg;
-    this._rrect(ctx, bx, by, maxW, bh, 13 * s); 
-    ctx.fill();
-    ctx.strokeStyle = T.cardBorder; ctx.lineWidth = 1.5 * s;
-    this._rrect(ctx, bx, by, maxW, bh, 13 * s); 
-    ctx.stroke();
+  /* 🔼 Position at TOP CENTER */
+  const maxW = Math.min(W - 44 * s, 700 * s);
+  const bh = 48 * s;
+  const bx = W / 2 - maxW / 2;
+  const by = 20 * s;   // 👈 moved to TOP (was bottom)
 
-    ctx.fillStyle    = T.textPrimary;
-    ctx.font         = `bold ${Math.round(19 * s)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign    = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(
-      `You are the ${suf.toUpperCase()} Galaxy! Collect numbers ending in "${suf}"`,
-      W / 2, by + bh / 2
-    );
-  },
+  /* Background */
+  ctx.fillStyle = T.cardBg;
+  this._rrect(ctx, bx, by, maxW, bh, 13 * s);
+  ctx.fill();
+
+  ctx.strokeStyle = T.cardBorder;
+  ctx.lineWidth = 1.5 * s;
+  this._rrect(ctx, bx, by, maxW, bh, 13 * s);
+  ctx.stroke();
+
+  /* Text */
+  ctx.fillStyle = T.textPrimary;
+  ctx.font = `bold ${Math.round(19 * s)}px 'Fredoka', cursive`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.fillText(
+    `You are the ${suf.toUpperCase()} Galaxy! Collect numbers ending in "${suf}"`,
+    W / 2,
+    by + bh / 2
+  );
+},
 
   /* ============================================================
      TOAST
@@ -1407,7 +1466,7 @@ fingerSmoothing: 0.25,
     if (this.toast.timer <= 0 || this.toast.alpha <= 0) return;
     ctx.save(); ctx.globalAlpha = this.toast.alpha;
     ctx.fillStyle    = this.toast.color;
-    ctx.font         = `bold ${Math.round(36 * this.scale)}px 'Comic Sans MS', cursive`;
+    ctx.font         = `bold ${Math.round(36 * this.scale)}px 'Fredoka', cursive`;
     ctx.textAlign    = "center"; 
     ctx.textBaseline = "middle";
     ctx.shadowColor  = this.toast.color; 
@@ -1419,18 +1478,6 @@ fingerSmoothing: 0.25,
   /* ============================================================
      THEME HINT
   ============================================================ */
-  drawThemeHint(ctx) {
-    ctx.globalAlpha  = 0.32;
-    ctx.fillStyle    = this.T.textPrimary;
-    ctx.font         = `${Math.round(15 * this.scale)}px 'Comic Sans MS', cursive`;
-    ctx.textAlign    = "right"; ctx.textBaseline = "bottom";
-    ctx.fillText(
-      `Press Q → ${this.theme === "space" ? "🌸 Minimal" : "🚀 Space"} theme`,
-      this.cssWidth - 14 * this.scale,
-      this.cssHeight - 10 * this.scale
-    );
-    ctx.globalAlpha = 1;
-  },
 
 
 
@@ -1595,4 +1642,40 @@ fingerSmoothing: 0.25,
     ctx.closePath();
   },
 
+
+  fullResetOnResize() {
+
+  /* 🌌 Rebuild background systems */
+  this.initStarfield();
+  this.initDustMotes();
+
+  /* ✨ Clear dynamic visuals */
+  this.shootingStars = [];
+  this.particles = [];
+  this.sparkBursts = [];
+  this.floatNumbers = [];
+
+  /* 🎯 Reset mascot to center (prevents drift bugs) */
+  this.mascot.x = this.CENTER_X;
+  this.mascot.y = this.CENTER_Y;
+  this.mascot.vx = 0;
+  this.mascot.vy = 0;
+
+  /* 👆 Reset finger smoothing (VERY IMPORTANT) */
+  this.fingerX = null;
+  this.fingerY = null;
+  this.fingerSmoothX = null;
+  this.fingerSmoothY = null;
+
+  /* 🔢 Re-layout numbers cleanly */
+  if (!this.mode1GameOver) {
+    this.spawnMode1Numbers();
+  }
+
+  /* ⚠️ Cancel unstable states */
+  this.mode1SuctionActive = false;
+  this.mode1MergeActive = false;
+  this.mode1BreakActive = false;
+  this.blackHoleActive = false;
+}
 };

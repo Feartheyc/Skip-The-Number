@@ -180,6 +180,14 @@ const Game1 = {
 
     this._initBgStars();
     this._restartSpawnTimer();
+    window.addEventListener("orientationchange", () => {
+  this.fullReset();
+});
+
+// Also handle desktop resize (important!)
+window.addEventListener("resize", () => {
+  this.fullReset();
+});
 
     window.addEventListener("keydown", (e) => {
       if (e.key === "1") this.activatePatternMode();
@@ -212,8 +220,8 @@ const Game1 = {
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
 
-    this.speedCap  = this.baseOuterRadius * 0.6;
-    this.speedMin  = this.speedCap * 0.40;
+    this.speedCap  = this.baseOuterRadius * 0.4;
+    this.speedMin  = this.speedCap * 0.20;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) {
       this.noteSpeed = this.speedCap;
     }
@@ -1436,13 +1444,60 @@ const Game1 = {
       ctx.restore();
     }
   },
+  
+  fullReset() {
+   // Core gameplay reset
+  this.notes = [];
+  this.popEffects = [];
+  this.explosions = [];
+  this.missQueue = [];
 
+  this.currentNumber = 1;   // ✅ FIX: restart numbering
+  this.score = 0;
+  this.combo = 0;
+  this.multiplier = 1;
+
+  // XP + level
+  this.xp = 0;
+  this.level = 1;
+  this.xpToNext = 8;
+  this.tier = 0;
+
+  // Speed reset
+  this.noteSpeed = this.speedCap;
+
+  // Reset hint system
+  this.hintState = "full";
+  this.noiseTime = 0;
+
+  // Reset spawn timing
+  this.spawnInterval = 1200;
+
+  // Reset launcher states
+  this.pendingShot = null;
+  this.previewCannons = [];
+  this.previewTimer = 0;
+  this.isCharging = false;
+  this.charge = 0;
+  this.chargeParticles = [];
+
+  // Reset visuals
+  this.torusAngle = 0;
+  this.pulseTime = 0;
+
+  // Reset mode logic
+  this.skipAmount = this.getRandomSkip();
+  this.gameTitle = "SKIP " + this.skipAmount;
+
+  // IMPORTANT: restart spawning fresh
+  this._restartSpawnTimer();
+},
 
   /* ============================================================
      UTILITY
   ============================================================ */
   getRandomSkip() {
-    const w = [2,2,2,2,3,3,3,3,3,3,4,4,4,5,5,6,7,8,9];
+    const w = [2,2,2,2,3,3,3,3,3,3,4,4,4,5,5,];
     return w[Math.floor(Math.random() * w.length)];
   },
 };

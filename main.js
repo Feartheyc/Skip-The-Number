@@ -16,6 +16,32 @@ window.isPaused     = false;
 window.pauseGame = function () {
   window.isPaused = true;
   document.getElementById("pauseOverlay").style.display = "flex";
+
+  // ✅ Show Change Mode only for Game1
+  const btn = document.getElementById("changeModeBtn");
+  if (window.currentGame === Game1) {
+    btn.style.display = "block";
+  } else {
+    btn.style.display = "none";
+  }
+};
+
+window.changeMode = function () {
+  window.isPaused = false;
+  document.getElementById("pauseOverlay").style.display = "none";
+
+  // Hide camera before switching
+  document.getElementById("input_video").style.opacity = "0";
+
+  // Reset game
+  window.currentGame = null;
+
+  // Show mode selector again
+  blackoutCanvas();
+  ModeSelector.show((modeKey) => {
+    document.getElementById("input_video").style.opacity = "1";
+    launchGame1WithMode(modeKey);
+  });
 };
 
 window.resumeGame = function () {
@@ -96,6 +122,7 @@ function launchGame1WithMode(modeKey) {
     default: break;
   }
 }
+
 
 /* ── Start game ───────────────────────────────────────────── */
 window.startGame = function (gameName) {

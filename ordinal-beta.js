@@ -21,32 +21,53 @@ const Game9 = {
   fingerX: null,
   fingerY: null,
 
-  /* ── Smoothed finger position ─────────────────────────────── */
   _fingerSmoothX: null,
   _fingerSmoothY: null,
-  FINGER_SMOOTH: 0.30,   // 0=frozen, 1=raw — 0.30 feels responsive but not jittery
+  FINGER_SMOOTH: 0.30,
 
   running: false,
   lastTime: 0,
 
-  /* ── Score selection lock ─────────────────────────────────── */
-  // Prevents confirmSelection firing every frame while inside door radius
   selectionLocked: false,
 
   sparkBursts: [],
+
+  /* ── LIFE SYSTEM ─────────────────────────────────────────── */
+  hearts: 3,
+  maxHearts: 3,
+  heartShakeTime: 0,
+
+  /* ── LEVEL SYSTEM ────────────────────────────────────────── */
+  level: 1,
+  correctAnswers: 0,        // total correct this session
+  correctThisLevel: 0,      // correct answers in current level
+  answersPerLevel: 3,       // how many correct before levelling up
+  numberRange: 10,          // numbers spawned from 1..numberRange
+  levelUpFlash: 0,          // timer for level-up flash effect (ms)
+  levelUpDuration: 1800,
+
+  /* ── STREAK ──────────────────────────────────────────────── */
+  streak: 0,
+  bestStreak: 0,
+  streakPulse: 0,
+
+  /* ── GAME OVER ───────────────────────────────────────────── */
+  gameOver: false,
+
+  /* ── TOAST ───────────────────────────────────────────────── */
+  toast: { text: "", timer: 0, color: "#fff", y: 0, alpha: 0 },
 
   /* ===== MASCOT ===== */
   gameState: "pickup",
 
   mascot: {
-    x: 0, 
+    x: 0,
     y: 0,
-    vx: 0, 
+    vx: 0,
     vy: 0,
-    /* Physics constants — tuned so the mascot feels the same on all devices */
-    accel:    0.010,   // px per ms² per px-of-distance (very small — delta is in ms)
-    maxSpeed: 0.65,    // px per ms  (≈ 33px/frame @60fps — quick but controllable)
-    friction: 0.978,   // exponential decay base; applied as v *= friction^delta
+    accel:    0.010,
+    maxSpeed: 0.65,
+    friction: 0.978,
     size: 140,
     carryingNumber: false
   },
@@ -93,16 +114,25 @@ const Game9 = {
   ============================================================ */
   init() {
     this.resize();
-    // NOTE: internal resize listener is suppressed by ordinals-perf-patch.js
-    // to prevent conflict with main.js's debounced resizeCanvas().
     window.addEventListener("resize", () => this.resize());
 
-    this.score          = 0;
-    this.selectionLocked = false;
-    this.running        = true;
-    this.lastTime       = performance.now();
-    this.sparkBursts    = [];
-  
+    this.score            = 0;
+    this.hearts           = 3;
+    this.level            = 1;
+    this.correctAnswers   = 0;
+    this.correctThisLevel = 0;
+    this.numberRange      = 10;
+    this.streak           = 0;
+    this.bestStreak       = 0;
+    this.streakPulse      = 0;
+    this.heartShakeTime   = 0;
+    this.levelUpFlash     = 0;
+    this.gameOver         = false;
+    this.selectionLocked  = false;
+    this.running          = true;
+    this.lastTime         = performance.now();
+    this.sparkBursts      = [];
+
     this._fingerSmoothX = null;
     this._fingerSmoothY = null;
 
@@ -117,20 +147,30 @@ const Game9 = {
     this.mascot.vx = 0;
     this.mascot.vy = 0;
     this.gameState = "pickup";
+
+    window.addEventListener("orientationchange", () => this.fullReset());
+    window.addEventListener("resize",            () => this.fullReset());
+
+    canvasElement.addEventListener("click", () => {
+      if (this.gameOver) this.retryGame();
+    });
   },
 
   resize() {
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
     const dpr  = window.devicePixelRatio || 1;
+
     canvasElement.width  = cssW * dpr;
     canvasElement.height = cssH * dpr;
     canvasElement.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+
     this.scale    = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT) || 1;
     this.CENTER_X = cssW / 2;
     this.CENTER_Y = cssH / 2;
-  },
 
+    this.initStarfield();
+  },
 
   /* ============================================================
      DOORS
@@ -142,10 +182,11 @@ const Game9 = {
     const gap      = this.cssWidth  * 0.2;
     const y        = this.cssHeight * 0.55;
     for (let i = 0; i < 4; i++) {
-      this.doors.push({ 
-        x: startX + i * gap, y, 
-        suffix: suffixes[i], 
-        label: suffixes[i] });
+      this.doors.push({
+        x: startX + i * gap, y,
+        suffix: suffixes[i],
+        label: suffixes[i]
+      });
     }
   },
 
@@ -156,14 +197,14 @@ const Game9 = {
      NUMBER SPAWN
   ============================================================ */
   spawnNumber() {
-    const num              = Math.floor(Math.random() * 10) + 1;
+    const num              = Math.floor(Math.random() * this.numberRange) + 1;
     this.currentNumber     = num;
     this.correctSuffix     = this.getSuffix(num);
     this.numberPosition.x  = this.CENTER_X;
     this.numberPosition.y  = this.CENTER_Y - 230 * this.scale;
     this.numberPosition.picked = false;
     this.mascot.carryingNumber = false;
-    this.selectionLocked   = false;   // unlock for new round
+    this.selectionLocked   = false;
     this.gameState         = "pickup";
   },
 
@@ -177,36 +218,78 @@ const Game9 = {
     return "th";
   },
 
+  /* ============================================================
+     LEVEL UP  — called after each correct answer
+  ============================================================ */
+  checkLevelUp() {
+    this.correctThisLevel++;
+    this.correctAnswers++;
+
+    if (this.correctThisLevel >= this.answersPerLevel) {
+      this.correctThisLevel = 0;
+      this.level++;
+      /* Expand number range every level: L1→10, L2→20, L3→30, L4→50, L5+→100 */
+      const ranges = [10, 20, 30, 50, 100];
+      this.numberRange = ranges[Math.min(this.level - 1, ranges.length - 1)];
+      this.levelUpFlash = this.levelUpDuration;
+      this.showToast(`🎮 Level ${this.level}! Numbers up to ${this.numberRange}!`, "#fbbf24");
+    }
+  },
 
   /* ============================================================
-     SCORE SYSTEM
-     ─────────────────────────────────────────────────────────
-     Correct answer gives a "fun" random bonus that always ends
-     in 0 (so the scoreboard stays readable).
-     Range: 10 – 100, multiples of 10, weighted toward lower
-     values so getting 100 feels exciting but rare.
+     SCORE
   ============================================================ */
   _rollScore() {
-    // Weighted pool: 10 appears most, 100 appears least
     const pool = [10,10,10,10,10, 20,20,20,20, 30,30,30, 40,40, 50,50, 60, 70, 80, 90, 100];
     return pool[Math.floor(Math.random() * pool.length)];
   },
 
   /* ============================================================
-     MAIN UPDATE — delta arrives in SECONDS from main.js
-     Convert to ms once here so everything else stays the same.
+     TOAST
+  ============================================================ */
+  showToast(text, color) {
+    this.toast = {
+      text,
+      color: color || "#fff",
+      timer: 1600,
+      y: this.CENTER_Y - 200 * this.scale,
+      alpha: 1
+    };
+  },
+
+  updateToast(delta) {
+    if (this.toast.timer <= 0) return;
+    this.toast.timer -= delta;
+    this.toast.alpha  = Math.min(1, this.toast.timer / 350);
+    this.toast.y     -= 0.022 * delta;
+  },
+
+  drawToast(ctx) {
+    if (this.toast.timer <= 0 || this.toast.alpha <= 0) return;
+    ctx.save();
+    ctx.globalAlpha  = this.toast.alpha;
+    ctx.fillStyle    = this.toast.color;
+    ctx.font         = `bold ${Math.round(34 * this.scale)}px 'Fredoka', 'Comic Sans MS', cursive`;
+    ctx.textAlign    = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor  = this.toast.color;
+    ctx.shadowBlur   = 14;
+    ctx.fillText(this.toast.text, this.CENTER_X, this.toast.y);
+    ctx.restore();
+  },
+
+  /* ============================================================
+     MAIN UPDATE
   ============================================================ */
   update(ctx, _fp, dtArg) {
     if (!this.running) return;
 
-    // Accept both seconds (new main.js) and ms (old main.js / direct call)
     const delta = (dtArg > 0 && dtArg < 1) ? dtArg * 1000
                 : (dtArg > 0)              ? Math.min(dtArg, 50)
                 : 16;
 
     this.drawDreamBackground(ctx);
 
-    // Starfield
     this.updateStarLayer(this.starsFar,  delta);
     this.updateStarLayer(this.starsMid,  delta);
     this.updateStarLayer(this.starsNear, delta);
@@ -214,13 +297,17 @@ const Game9 = {
     this.drawStarLayer(ctx, this.starsMid);
     this.drawStarLayer(ctx, this.starsNear);
 
-    // Shooting stars
     this.updateShootingStars(delta);
     this.drawShootingStars(ctx);
     this.updateStarBursts(delta);
     this.drawStarBursts(ctx);
 
-    // Game logic
+    /* If game over, overlay and stop game logic */
+    if (this.gameOver) {
+      this.drawGameOver(ctx);
+      return;
+    }
+
     this.updateFingerPosition();
     this.updateMascot(delta);
     this.checkPickup();
@@ -229,20 +316,40 @@ const Game9 = {
     this.updateFloatingNumber(delta);
     this.updatePortalAnimation(delta);
     this.updateSparkBursts(delta);
+    this.updateToast(delta);
+    this.updateHUDTimers(delta);
 
-
-    // Draw
     this.drawDoors(ctx);
     this.drawNumber(ctx);
     this.drawMascot(ctx);
-    this.drawScore(ctx);
-
+    this.drawHUD(ctx);
+    this.drawLevelUpFlash(ctx, delta);
     this.drawSparkBursts(ctx);
+    this.drawToast(ctx);
   },
 
+  /* ============================================================
+     HUD TIMERS
+  ============================================================ */
+  updateHUDTimers(delta) {
+    if (this.heartShakeTime > 0) this.heartShakeTime = Math.max(0, this.heartShakeTime - delta);
+    if (this.streakPulse    > 0) this.streakPulse    = Math.max(0, this.streakPulse    - delta * 0.003);
+    if (this.levelUpFlash   > 0) this.levelUpFlash   = Math.max(0, this.levelUpFlash   - delta);
+  },
 
   /* ============================================================
-     FINGER — smoothed so cursor doesn't jitter
+     LEVEL UP FLASH  — gentle screen overlay
+  ============================================================ */
+  drawLevelUpFlash(ctx) {
+    if (this.levelUpFlash <= 0) return;
+    const prog  = this.levelUpFlash / this.levelUpDuration;
+    const alpha = Math.sin(prog * Math.PI) * 0.35;
+    ctx.fillStyle = `rgba(251,191,36,${alpha})`;
+    ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+  },
+
+  /* ============================================================
+     FINGER
   ============================================================ */
   updateFingerPosition() {
     if (!window.fingerPositions || window.fingerPositions.length === 0) {
@@ -264,13 +371,8 @@ const Game9 = {
     this.fingerY = this._fingerSmoothY;
   },
 
-
   /* ============================================================
-     MASCOT MOVEMENT — framerate-independent physics
-     ─────────────────────────────────────────────────────────
-     Old code:  vx = force  →  x += vx   (runs faster on fast devices)
-     New code:  vx += force * delta  →  x += vx * delta
-                friction applied as  v *= friction^delta  (exponential)
+     MASCOT MOVEMENT
   ============================================================ */
   updateMascot(delta) {
     if (this.fingerX === null || this.fingerY === null) return;
@@ -280,18 +382,15 @@ const Game9 = {
     const dist = Math.sqrt(dx * dx + dy * dy);
 
     if (dist > 4) {
-      // Force proportional to distance, capped at maxSpeed
       const force = Math.min(dist * this.mascot.accel * delta, this.mascot.maxSpeed);
       this.mascot.vx += (dx / dist) * force;
       this.mascot.vy += (dy / dist) * force;
     }
 
-    // Framerate-independent friction: v *= friction^delta
     const fr = Math.pow(this.mascot.friction, delta);
     this.mascot.vx *= fr;
     this.mascot.vy *= fr;
 
-    // Speed cap
     const spd = Math.sqrt(this.mascot.vx * this.mascot.vx + this.mascot.vy * this.mascot.vy);
     if (spd > this.mascot.maxSpeed) {
       const ratio = this.mascot.maxSpeed / spd;
@@ -299,24 +398,21 @@ const Game9 = {
       this.mascot.vy *= ratio;
     }
 
-    // Integrate — multiply by delta so distance per step is time-consistent
     this.mascot.x += this.mascot.vx * delta;
     this.mascot.y += this.mascot.vy * delta;
 
-    // Screen clamp
     const pad = 80;
     this.mascot.x = Math.max(pad, Math.min(this.cssWidth  - pad, this.mascot.x));
     this.mascot.y = Math.max(pad, Math.min(this.cssHeight - pad, this.mascot.y));
   },
-
 
   /* ============================================================
      PICKUP
   ============================================================ */
   checkPickup() {
     if (this.gameState !== "pickup") return;
-    const dx   = this.mascot.x - this.numberPosition.x;
-    const dy   = this.mascot.y - this.numberPosition.y;
+    const dx = this.mascot.x - this.numberPosition.x;
+    const dy = this.mascot.y - this.numberPosition.y;
     if (Math.sqrt(dx * dx + dy * dy) < 80 * this.scale) {
       this.numberPosition.picked     = true;
       this.mascot.carryingNumber     = true;
@@ -324,23 +420,19 @@ const Game9 = {
     }
   },
 
-
   /* ============================================================
      DOOR ALIGNMENT
-     ─────────────────────────────────────────────────────────
-     FIX: selectionLocked flag ensures confirmSelection fires
-     exactly ONCE per delivery, not every frame while inside radius.
   ============================================================ */
   checkDoorAlignment() {
     if (this.gameState !== "deliver") return;
-    if (this.selectionLocked) return;   // ← already processed this delivery
+    if (this.selectionLocked) return;
 
     for (let i = 0; i < this.doors.length; i++) {
       const door = this.doors[i];
       const dx   = this.mascot.x - door.x;
       const dy   = this.mascot.y - door.y;
       if (Math.sqrt(dx * dx + dy * dy) <= this.doorRadius) {
-        this.selectionLocked = true;    // lock immediately before any async
+        this.selectionLocked = true;
         this.confirmSelection(i);
         break;
       }
@@ -351,44 +443,263 @@ const Game9 = {
     const door = this.doors[index];
 
     if (door.suffix === this.correctSuffix) {
+      /* ── CORRECT ── */
       const points = this._rollScore();
       this.score  += points;
+      this.streak++;
+      if (this.streak > this.bestStreak) this.bestStreak = this.streak;
+      this.streakPulse = 1;
       this.mascotState = "happy";
       this.spawnSparkBurst(door.x, door.y);
-      // Show floating score popup
-     
+      this.checkLevelUp();
+
+      const streakMsg = this.streak >= 5 ? "🔥 ON FIRE!"
+                      : this.streak >= 3 ? "⭐ Great streak!"
+                      : "✅ Correct!";
+      this.showToast(`${streakMsg} +${points}`, "#34d399");
+
     } else {
+      /* ── WRONG ── */
       this.score      = Math.max(0, this.score - 10);
+      this.streak     = 0;
+      this.hearts     = Math.max(0, this.hearts - 1);
+      this.heartShakeTime = 520;
       this.mascotState = "confused";
+      this.showToast(`💡 ${this.currentNumber} is ${this.currentNumber}${this.getSuffix(this.currentNumber)}!`, "#f87171");
+
+      if (this.hearts <= 0) {
+        setTimeout(() => { this.gameOver = true; }, 800);
+        return;
+      }
     }
 
     setTimeout(() => {
       this.mascotState = "idle";
-      this.spawnNumber();   // spawnNumber resets selectionLocked
+      this.spawnNumber();
     }, 1200);
   },
 
+  /* ============================================================
+     HUD  — score + hearts + streak + level
+  ============================================================ */
+  drawHUD(ctx) {
+    const s = this.scale;
+    const W = this.cssWidth;
 
+    /* ── Score badge ── */
+    const sw = 175 * s, sh = 54 * s, sx = 18 * s, sy = 16 * s;
+    ctx.fillStyle = "rgba(30,58,138,0.85)";
+    this._rrect(ctx, sx, sy, sw, sh, 18 * s);
+    ctx.fill();
+    ctx.fillStyle = "#FFD700";
+    ctx.font = `bold ${Math.round(26 * s)}px 'Fredoka', 'Comic Sans MS', cursive`;
+    ctx.textAlign    = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`⭐ ${this.score}`, sx + sw / 2, sy + sh / 2);
+
+    /* ── Level badge ── */
+    const lw = 150 * s, lh = 42 * s;
+    const lx = W / 2 - lw / 2, ly = 16 * s;
+    ctx.fillStyle = "rgba(30,58,138,0.85)";
+    this._rrect(ctx, lx, ly, lw, lh, 14 * s);
+    ctx.fill();
+    ctx.fillStyle = "#a78bfa";
+    ctx.font = `bold ${Math.round(20 * s)}px 'Fredoka', 'Comic Sans MS', cursive`;
+    ctx.textAlign    = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`Level ${this.level}`, lx + lw / 2, ly + lh / 2);
+
+    /* ── Hearts ── */
+    const hSz  = 32 * s;
+    const hGap = 8  * s;
+    const totalHW = this.maxHearts * (hSz + hGap) - hGap;
+    const hx0 = W - 18 * s - totalHW;
+    const hy0 = 18 * s;
+    const shk = this.heartShakeTime > 0 ? Math.sin(this.heartShakeTime * 0.055) * 5 * s : 0;
+
+    for (let i = 0; i < this.maxHearts; i++) {
+      const filled = i < this.hearts;
+      ctx.globalAlpha  = filled ? 1 : 0.22;
+      ctx.font         = `${Math.round(hSz)}px serif`;
+      ctx.textAlign    = "left";
+      ctx.textBaseline = "top";
+      ctx.fillText("❤️", hx0 + i * (hSz + hGap), hy0 + (filled ? shk : 0));
+    }
+    ctx.globalAlpha = 1;
+
+    /* ── Streak ── */
+    if (this.streak >= 2) {
+      const ps = 1 + this.streakPulse * 0.28;
+      ctx.save();
+      ctx.translate(W / 2, 88 * s);
+      ctx.scale(ps, ps);
+      ctx.globalAlpha  = 0.9 + this.streakPulse * 0.1;
+      ctx.fillStyle    = "#fbbf24";
+      ctx.font         = `bold ${Math.round(22 * s)}px 'Fredoka', 'Comic Sans MS', cursive`;
+      ctx.textAlign    = "center";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor  = "#fbbf24";
+      ctx.shadowBlur   = 10;
+      ctx.fillText(`🔥 ${this.streak} in a row!`, 0, 0);
+      ctx.shadowBlur   = 0;
+      ctx.restore();
+    }
+
+    /* ── Progress bar (correct this level) ── */
+   /* ── Progress bar (bottom center) ── */
+const barW = 260 * s, barH = 16 * s;
+
+// Position at bottom center with padding
+const bottomPadding = 40 * s;
+const bx = W / 2 - barW / 2;
+const by = this.cssHeight - bottomPadding - barH;
+
+// Background
+ctx.fillStyle = "rgba(255,255,255,0.15)";
+this._rrect(ctx, bx, by, barW, barH, 8 * s);
+ctx.fill();
+
+// Progress fill
+const prog = Math.min(this.correctThisLevel / this.answersPerLevel, 1);
+if (prog > 0) {
+  ctx.fillStyle = "#34d399";
+  this._rrect(ctx, bx, by, barW * prog, barH, 8 * s);
+  ctx.fill();
+}
+
+// Text above the bar
+ctx.fillStyle = "rgba(255,255,255,0.7)";
+ctx.font = `${Math.round(13 * s)}px 'Fredoka', sans-serif`;
+ctx.textAlign = "center";
+ctx.textBaseline = "bottom";
+
+ctx.fillText(
+  `${this.correctThisLevel}/${this.answersPerLevel} to next level`,
+  W / 2,
+  by - 6 * s
+);
+  },
 
   /* ============================================================
-     DRAW — number, doors, mascot, score (unchanged visuals)
+     GAME OVER SCREEN
+  ============================================================ */
+  drawGameOver(ctx) {
+    const W = this.cssWidth, H = this.cssHeight, s = this.scale;
+
+    /* Dim overlay */
+    ctx.fillStyle = "rgba(0,0,0,0.78)";
+    ctx.fillRect(0, 0, W, H);
+
+    /* Card */
+    const cw = Math.min(Math.max(W * 0.58, 320 * s), 640 * s);
+    const ch = 340 * s;
+    const cx = W / 2 - cw / 2;
+    const cy = H / 2 - ch / 2;
+
+    ctx.fillStyle = "rgba(10,14,39,0.97)";
+    this._rrect(ctx, cx, cy, cw, ch, 28 * s);
+    ctx.fill();
+    ctx.strokeStyle = "#f87171";
+    ctx.lineWidth   = 3 * s;
+    this._rrect(ctx, cx, cy, cw, ch, 28 * s);
+    ctx.stroke();
+
+    const mx = W / 2;
+    ctx.textAlign    = "center";
+    ctx.textBaseline = "middle";
+
+    /* Title */
+    ctx.fillStyle  = "#f87171";
+    ctx.font       = `bold ${Math.round(Math.min(48 * s, 52))}px 'Fredoka', 'Comic Sans MS', cursive`;
+    ctx.shadowColor = "#f87171";
+    ctx.shadowBlur  = 14;
+    ctx.fillText("💥 Game Over!", mx, cy + ch * 0.20);
+    ctx.shadowBlur  = 0;
+
+    /* Score row */
+    ctx.fillStyle = "#FFD700";
+    ctx.font      = `bold ${Math.round(Math.min(30 * s, 32))}px 'Fredoka', 'Comic Sans MS', cursive`;
+    ctx.fillText(`⭐ Score: ${this.score}`, mx, cy + ch * 0.40);
+
+    /* Stats row */
+    ctx.fillStyle = "#e2e8f0";
+    ctx.font      = `bold ${Math.round(Math.min(22 * s, 24))}px 'Fredoka', 'Comic Sans MS', cursive`;
+    ctx.fillText(
+      `🔥 Best Streak: ${this.bestStreak}   ·   🎮 Level: ${this.level}`,
+      mx, cy + ch * 0.57
+    );
+
+    /* Correct answers */
+    ctx.fillStyle = "#a78bfa";
+    ctx.font      = `bold ${Math.round(Math.min(19 * s, 21))}px 'Fredoka', 'Comic Sans MS', cursive`;
+    ctx.fillText(
+      `✅ Correct answers: ${this.correctAnswers}`,
+      mx, cy + ch * 0.71
+    );
+
+    /* Tap to retry — pulsing */
+    const pulse  = 0.78 + Math.sin(performance.now() * 0.004) * 0.22;
+    ctx.globalAlpha = pulse;
+    ctx.fillStyle   = "#34d399";
+    ctx.font        = `bold ${Math.round(Math.min(22 * s, 24))}px 'Fredoka', 'Comic Sans MS', cursive`;
+    ctx.fillText("👆 Tap anywhere to play again!", mx, cy + ch * 0.87);
+    ctx.globalAlpha = 1;
+  },
+
+  /* ============================================================
+     RETRY
+  ============================================================ */
+  retryGame() {
+    this.score            = 0;
+    this.hearts           = 3;
+    this.level            = 1;
+    this.correctAnswers   = 0;
+    this.correctThisLevel = 0;
+    this.numberRange      = 10;
+    this.streak           = 0;
+    this.bestStreak       = 0;
+    this.streakPulse      = 0;
+    this.heartShakeTime   = 0;
+    this.levelUpFlash     = 0;
+    this.gameOver         = false;
+    this.selectionLocked  = false;
+    this.sparkBursts      = [];
+    this.shootingStars    = [];
+    this.shootingStarBursts = [];
+    this.mascotState      = "idle";
+    this.mascot.carryingNumber = false;
+    this.mascot.x  = this.CENTER_X;
+    this.mascot.y  = this.CENTER_Y + 100 * this.scale;
+    this.mascot.vx = 0;
+    this.mascot.vy = 0;
+    this._fingerSmoothX = null;
+    this._fingerSmoothY = null;
+    this.fingerX = null;
+    this.fingerY = null;
+    this.toast   = { text: "", timer: 0, color: "#fff", y: 0, alpha: 0 };
+    this.setupDoors();
+    this.spawnNumber();
+  },
+
+  /* ============================================================
+     DRAW — number, doors, mascot (unchanged visuals)
   ============================================================ */
   drawNumber(ctx) {
     if (this.numberPosition.picked) return;
-    const baseX = this.numberPosition.x;
-    const baseY = this.numberPosition.y;
+    const baseX       = this.numberPosition.x;
+    const baseY       = this.numberPosition.y;
     const floatOffset = Math.sin(this.floatTime * this.floatSpeed) * this.floatAmplitude * this.scale;
     const pulse       = 1 + Math.sin(this.numberScalePulse) * 0.15;
 
     ctx.save();
     ctx.translate(baseX, baseY + floatOffset);
     ctx.scale(pulse, pulse);
-    ctx.shadowColor = "#FFD700"; 
-    ctx.shadowBlur = 40;
-    ctx.lineWidth = 8; 
+    ctx.shadowColor = "#FFD700";
+    ctx.shadowBlur  = 40;
+    ctx.lineWidth   = 8;
     ctx.strokeStyle = "#FFD700";
-    ctx.font = `bold ${90 * this.scale}px Comic Sans MS`;
-    ctx.textAlign = "center"; 
+    ctx.font        = `bold ${90 * this.scale}px Comic Sans MS`;
+    ctx.textAlign    = "center";
     ctx.textBaseline = "middle";
     ctx.strokeText(this.currentNumber, 0, 0);
     ctx.fillStyle = "#FFFFFF";
@@ -445,9 +756,7 @@ const Game9 = {
     const mascotX     = this.mascot.x;
     const mascotY     = this.mascot.y + floatOffset;
     const spd         = Math.sqrt(this.mascot.vx * this.mascot.vx + this.mascot.vy * this.mascot.vy);
-
-    // Speed is now in px/ms — scale squash threshold accordingly
-    const spdPx = spd * 16;   // approx px per frame at 60fps for threshold comparison
+    const spdPx       = spd * 16;
     let stretchX = 1, stretchY = 1;
     if (spdPx > 2) {
       stretchX = 1 + Math.min(spdPx * 0.02, 0.15);
@@ -455,21 +764,20 @@ const Game9 = {
     }
 
     ctx.save();
-    // Shadow
     ctx.beginPath();
     ctx.ellipse(mascotX, mascotY + 70 * this.scale, 65 * this.scale, 22 * this.scale, 0, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(0,0,0,0.25)";
     ctx.fill();
 
-    // Happy aura
     if (this.mascotState === "happy") {
       const glowPulse = 30 + Math.sin(time * 0.01) * 10;
-      ctx.shadowColor = "#FFF59D"; 
-      ctx.shadowBlur = glowPulse;
+      ctx.shadowColor = "#FFF59D";
+      ctx.shadowBlur  = glowPulse;
       ctx.beginPath();
       ctx.arc(mascotX, mascotY, 90 * this.scale, 0, Math.PI * 2);
       ctx.strokeStyle = "rgba(255,255,150,0.5)";
-      ctx.lineWidth   = 6 * this.scale; ctx.stroke();
+      ctx.lineWidth   = 6 * this.scale;
+      ctx.stroke();
     }
 
     ctx.translate(mascotX, mascotY);
@@ -487,59 +795,35 @@ const Game9 = {
 
     if (this.mascot.carryingNumber) {
       const badgeY = -80 * this.scale;
-      ctx.shadowColor = "#FFD700"; 
-      ctx.shadowBlur = 30;
-      ctx.lineWidth   = 7; ctx.strokeStyle = "#FFD700"; 
-      ctx.fillStyle = "#FFFFFF";
-      ctx.font        = `bold ${44 * this.scale}px Comic Sans MS`;
-      ctx.textAlign   = "center"; 
+      ctx.shadowColor  = "#FFD700";
+      ctx.shadowBlur   = 30;
+      ctx.lineWidth    = 7;
+      ctx.strokeStyle  = "#FFD700";
+      ctx.fillStyle    = "#FFFFFF";
+      ctx.font         = `bold ${44 * this.scale}px Comic Sans MS`;
+      ctx.textAlign    = "center";
       ctx.textBaseline = "middle";
       ctx.strokeText(this.currentNumber, 0, badgeY);
-      ctx.fillText(this.currentNumber, 0, badgeY);
+      ctx.fillText(this.currentNumber,   0, badgeY);
       ctx.shadowBlur = 0;
     }
     ctx.restore();
   },
 
-  drawScore(ctx) {
-    const width  = 220 * this.scale;
-    const height = 70  * this.scale;
-    const x      = 20  * this.scale;
-    const y      = 20  * this.scale;
-
-    ctx.save();
-    ctx.shadowColor = "rgba(0,0,0,0.4)"; ctx.shadowBlur = 15;
-    ctx.fillStyle   = "#1E3A8A";
-    ctx.beginPath();
-    ctx.roundRect(x, y, width, height, 25 * this.scale);
-    ctx.fill();
-    ctx.shadowBlur  = 0;
-    ctx.fillStyle   = "#FFD700";
-    ctx.font        = `bold ${32 * this.scale}px Comic Sans MS`;
-    ctx.textAlign   = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(`⭐ ${this.score}`, x + width / 2, y + height / 2);
-    ctx.restore();
-  },
-
-
   /* ============================================================
      SPARK BURSTS
   ============================================================ */
   spawnSparkBurst(x, y) {
-    if (this.sparkBursts.length > 80) return;   // cap
-    this.sparkBursts.push({ 
-      x, 
-      y, 
-      radius: 0, 
-      maxRadius: 140 * this.scale, 
-      alpha: 1, 
-      life: 600 
+    if (this.sparkBursts.length > 80) return;
+    this.sparkBursts.push({
+      x, y,
+      radius: 0, maxRadius: 140 * this.scale,
+      alpha: 1, life: 600
     });
     for (let i = 0; i < 20; i++) {
       this.sparkBursts.push({
-        x, 
-        y,
-        vx: (Math.random() - 0.5) * 0.35,   // px/ms instead of px/frame
+        x, y,
+        vx: (Math.random() - 0.5) * 0.35,
         vy: (Math.random() - 0.5) * 0.35,
         size: (Math.random() * 4 + 2) * this.scale,
         life: 500,
@@ -555,7 +839,7 @@ const Game9 = {
       if (s.type === "particle") {
         s.x  += s.vx * delta;
         s.y  += s.vy * delta;
-        s.vx *= Math.pow(0.994, delta);   // framerate-independent drag
+        s.vx *= Math.pow(0.994, delta);
         s.vy *= Math.pow(0.994, delta);
       } else {
         const progress = 1 - (s.life / 600);
@@ -572,21 +856,20 @@ const Game9 = {
       if (s.type === "particle") {
         ctx.globalAlpha = Math.max(0, s.life / 500);
         ctx.fillStyle   = "#00FFFF";
-        ctx.beginPath(); 
-        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2); 
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
         ctx.fill();
       } else {
         ctx.globalAlpha  = Math.max(0, s.alpha);
         ctx.strokeStyle  = "#00FFFF";
         ctx.lineWidth    = 6 * this.scale;
-        ctx.beginPath(); 
-        ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2); 
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
         ctx.stroke();
       }
     }
     ctx.globalAlpha = 1;
   },
-
 
   /* ============================================================
      SPRITE LOADING
@@ -603,7 +886,6 @@ const Game9 = {
     for (let i = 0; i <= 8; i++) { const img = new Image(); img.src = `D-1/0${i}_D-1.png`; this.portalFrames.push(img); }
   },
 
-
   /* ============================================================
      PORTAL ANIMATION
   ============================================================ */
@@ -615,7 +897,6 @@ const Game9 = {
     }
   },
 
-
   /* ============================================================
      FLOATING NUMBER
   ============================================================ */
@@ -626,9 +907,8 @@ const Game9 = {
     this.numberScalePulse += delta * this.pulseSpeed;
   },
 
-
   /* ============================================================
-     STARFIELD — batched draw call per layer (one fill per layer)
+     STARFIELD
   ============================================================ */
   initStarfield() {
     if (!this.cssWidth || this.cssWidth <= 0) return;
@@ -657,7 +937,6 @@ const Game9 = {
     }
   },
 
-  // Batched: one beginPath / fill per layer instead of one per star
   drawStarLayer(ctx, layer) {
     if (!layer || layer.length === 0) return;
     ctx.beginPath();
@@ -668,7 +947,6 @@ const Game9 = {
     ctx.fillStyle = "white";
     ctx.fill();
   },
-
 
   /* ============================================================
      SHOOTING STARS
@@ -693,7 +971,7 @@ const Game9 = {
     this.shootingStarSpawnTimer += delta;
     if (this.shootingStarSpawnTimer > this.shootingStarSpawnInterval) {
       this.createShootingStar();
-      this.shootingStarSpawnTimer   = 0;
+      this.shootingStarSpawnTimer    = 0;
       this.shootingStarSpawnInterval = 1500 + Math.random() * 3000;
     }
     for (let i = this.shootingStars.length - 1; i >= 0; i--) {
@@ -735,9 +1013,8 @@ const Game9 = {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 3 + 2;
       this.shootingStarBursts.push({
-        x, 
-        y,
-        vx: Math.cos(angle) * speed, 
+        x, y,
+        vx: Math.cos(angle) * speed,
         vy: Math.sin(angle) * speed,
         life: 0, maxLife: 600,
         size: Math.random() * 3 + 1
@@ -748,7 +1025,7 @@ const Game9 = {
   updateStarBursts(delta) {
     for (let i = this.shootingStarBursts.length - 1; i >= 0; i--) {
       const p = this.shootingStarBursts[i];
-      p.x += p.vx; 
+      p.x += p.vx;
       p.y += p.vy;
       p.life += delta;
       if (p.life > p.maxLife) this.shootingStarBursts.splice(i, 1);
@@ -764,7 +1041,6 @@ const Game9 = {
       ctx.fill();
     }
   },
-
 
   /* ============================================================
      BACKGROUND
@@ -797,4 +1073,76 @@ const Game9 = {
     ctx.fillStyle = "#FFFACD";
     ctx.fill();
   },
+
+  /* ============================================================
+     UTILITY
+  ============================================================ */
+  _rrect(ctx, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y,     x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x,     y + h, x,     y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x,     y,     x + r, y);
+    ctx.closePath();
+  },
+
+  /* ============================================================
+     FULL RESET  (resize / orientation change)
+  ============================================================ */
+  fullReset() {
+    this.score            = 0;
+    this.hearts           = 3;
+    this.level            = 1;
+    this.correctAnswers   = 0;
+    this.correctThisLevel = 0;
+    this.numberRange      = 10;
+    this.streak           = 0;
+    this.bestStreak       = 0;
+    this.streakPulse      = 0;
+    this.heartShakeTime   = 0;
+    this.levelUpFlash     = 0;
+    this.gameOver         = false;
+    this.gameState        = "pickup";
+    this.selectionLocked  = false;
+
+    this.numberPosition = {
+      x: this.CENTER_X,
+      y: this.CENTER_Y - 230 * this.scale,
+      picked: false
+    };
+
+    this.mascot.x  = this.CENTER_X;
+    this.mascot.y  = this.CENTER_Y + 100 * this.scale;
+    this.mascot.vx = 0;
+    this.mascot.vy = 0;
+    this.mascot.carryingNumber = false;
+    this.mascotState = "idle";
+
+    this._fingerSmoothX = null;
+    this._fingerSmoothY = null;
+    this.fingerX = null;
+    this.fingerY = null;
+
+    this.floatTime        = 0;
+    this.numberRotation   = 0;
+    this.numberScalePulse = 0;
+
+    this.sparkBursts          = [];
+    this.shootingStars        = [];
+    this.shootingStarBursts   = [];
+    this.shootingStarSpawnTimer = 0;
+    this.toast = { text: "", timer: 0, color: "#fff", y: 0, alpha: 0 };
+
+    this.portalFrameIndex = 0;
+    this.portalFrameTimer = 0;
+
+    this.setupDoors();
+    this.spawnNumber();
+  }
 };

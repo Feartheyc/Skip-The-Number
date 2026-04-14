@@ -136,6 +136,10 @@ html, body {
   z-index: 200;
 }
 
+#changeModeBtn {
+  display: none;
+}
+
 .pauseBox {
   background: white;
   padding: 30px;
