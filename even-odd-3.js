@@ -68,6 +68,7 @@ const Game8 = {
   init() {
     try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock("landscape").catch(e => console.log("Orientation lock failed:", e)); } } catch (e) { }
     window.addEventListener('click', () => {
+      if (window.currentGame !== Game8) return;
       sfxButtonClick_8.currentTime = 0;
       sfxButtonClick_8.play().catch(() => { });
     });
@@ -140,7 +141,9 @@ const Game8 = {
     const lm = results.poseLandmarks;
 
     const rightElbow = lm[14];
-    this.elbowMissing = !rightElbow || rightElbow.visibility < 0.4 || rightElbow.x < 0 || rightElbow.x > 1 || rightElbow.y < 0 || rightElbow.y > 1;
+    const elbowBad = !rightElbow || rightElbow.visibility < 0.3 || rightElbow.x < 0 || rightElbow.x > 1 || rightElbow.y < 0 || rightElbow.y > 1;
+    this.elbowMissingFrames = elbowBad ? (this.elbowMissingFrames || 0) + 1 : 0;
+    this.elbowMissing = this.elbowMissingFrames > 5;
 
     const mapPoint = (p) => ({
       x: (1 - p.x) * this.cssWidth,
@@ -155,16 +158,26 @@ const Game8 = {
       };
     };
 
+    // ELBOW SPECIFIC SMOOTHING for higher accuracy/stability on the pivot point
+    const smoothElbow = (oldP, newP) => {
+      if (!oldP) return newP;
+      const E_SMOOTH = 0.85;
+      return {
+        x: oldP.x * E_SMOOTH + newP.x * (1 - E_SMOOTH),
+        y: oldP.y * E_SMOOTH + newP.y * (1 - E_SMOOTH)
+      };
+    };
+
     // NEW: wrist -> index finger instead of shoulder -> wrist
     const updateArm = (side, wristLm, indexLm) => {
       if (!wristLm || !indexLm) return;
-      if (wristLm.visibility < 0.4 || indexLm.visibility < 0.4) return;
+      if (wristLm.visibility < 0.3 || indexLm.visibility < 0.3) return;
 
       let wrist = mapPoint(wristLm);   // base
       let index = mapPoint(indexLm);   // tip
 
       const prev = this.armData[side];
-      wrist = smooth(prev?.shoulder, wrist); // reuse shoulder slot as base
+      wrist = smoothElbow(prev?.shoulder, wrist); // reuse shoulder slot as base
       index = smooth(prev?.wrist, index);    // reuse wrist slot as tip
 
       const dx = index.x - wrist.x;
