@@ -1,6 +1,9 @@
 const sfxButtonClick_11 = new Audio('SFX-Bhavya/buttonclick.mp3');
+sfxButtonClick_11.volume = 0.5;
 const sfxCorrect_11 = new Audio('SFX-Bhavya/Correct.mp3');
+sfxCorrect_11.volume = 0.5;
 const sfxWrong_11 = new Audio('SFX-Bhavya/Wrong.mp3');
+sfxWrong_11.volume = 0.5;
 
 const Game11 = {
 
