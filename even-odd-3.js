@@ -35,7 +35,7 @@ const Game8 = {
 
   spawnTimer: 0,
   spawnRate: 2000,
-  minSpawnRate: 800,
+  minSpawnRate: 2000,
   maxSpawnRate: 3000,
   spawnMode: "top-bottom", // "top-bottom", "left-right", "all", "random-one"
   modeTimer: 0,
