@@ -68,7 +68,7 @@ const Game11 = {
     y: 0,
     vx: 0,
     vy: 0,
-    speed: 0.6,
+    speed: 2,
     maxSpeed: 8,
     size: 140,
     carryingNumber: false
