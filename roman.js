@@ -47,12 +47,12 @@ const Game5 = {
     const existingMenu = document.getElementById("game5-level-menu");
     if (existingMenu) existingMenu.style.display = "none";
 
-    if (window.stopCamera) window.stopCamera();
+    // if (window.stopCamera) window.stopCamera();
     
     const menu = document.getElementById("menu");
     if (menu) menu.style.display = "none";
-    const video = document.getElementById("input_video");
-    if (video) video.style.display = "none";
+    // const video = document.getElementById("input_video");
+    // if (video) video.style.display = "none";
     
     this.generateLevels();
     this.resizeCanvas();
