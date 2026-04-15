@@ -56,6 +56,8 @@ const Game11 = {
 
   running: false,
   gameStarted: false,
+  introPhase: false,
+  introCountdown: 3000,
   lastTime: 0,
 
   confettiParticles: [],
@@ -425,6 +427,12 @@ const Game11 = {
     if (!this.gameStarted) {
       this.drawFingerImages(ctx);
       this.drawStartScreen(ctx);
+      return;
+    }
+
+    if (this.introPhase) {
+      this.updateFingerPosition();
+      this.drawIntroPhase(ctx, delta);
       return;
     }
 
@@ -1845,9 +1853,72 @@ const Game11 = {
     if (e.clientX >= btnX && e.clientX <= btnX + btnW &&
       e.clientY >= btnY && e.clientY <= btnY + btnH) {
       this.gameStarted = true;
-      this.activateGameMode1();
+      this.introPhase = true;
+      this.introCountdown = 3000;
       this.lastTime = performance.now();
     }
+  },
+
+  drawIntroPhase(ctx, delta) {
+    let dist = 9999;
+    if (this.fingerX !== null && this.fingerY !== null) {
+      const dx = this.fingerX - this.CENTER_X;
+      const dy = this.fingerY - this.CENTER_Y;
+      dist = Math.sqrt(dx * dx + dy * dy);
+    }
+    
+    const targetRadius = 60 * this.scale;
+    const inCenter = dist < targetRadius;
+    
+    if (inCenter) {
+      this.introCountdown -= delta;
+    } else {
+      this.introCountdown = 3000;
+    }
+    
+    if (this.introCountdown <= 0) {
+      this.introPhase = false;
+      this.activateGameMode1();
+      return;
+    }
+
+    const time = performance.now();
+    const pulse = 1 + Math.sin(time * 0.005) * 0.1;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(this.CENTER_X, this.CENTER_Y, targetRadius * pulse, 0, Math.PI * 2);
+    ctx.strokeStyle = inCenter ? "rgba(0, 255, 170, 0.5)" : "rgba(255, 68, 68, 0.5)";
+    ctx.lineWidth = 10 * this.scale;
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(this.CENTER_X, this.CENTER_Y, 15 * this.scale, 0, Math.PI * 2);
+    ctx.fillStyle = inCenter ? "#00FFAA" : "#FF4444";
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = 20;
+    ctx.fill();
+    ctx.restore();
+
+    this.drawFingerIndicator(ctx);
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    if (inCenter) {
+      const sec = Math.ceil(this.introCountdown / 1000);
+      ctx.font = `bold ${80 * this.scale}px Arial`;
+      ctx.fillStyle = "#FFD700";
+      ctx.shadowColor = "#FFD700";
+      ctx.shadowBlur = 20;
+      ctx.fillText(sec.toString(), this.CENTER_X, this.CENTER_Y - 120 * this.scale);
+    } else {
+      ctx.font = `bold ${36 * this.scale}px 'Comic Sans MS', cursive`;
+      ctx.fillStyle = "#ffffff";
+      ctx.shadowColor = "rgba(0,0,0,0.8)";
+      ctx.shadowBlur = 10;
+      ctx.fillText("Bring hand to center to start", this.CENTER_X, this.CENTER_Y - 120 * this.scale);
+    }
+    ctx.restore();
   },
 
   drawStartScreen(ctx) {

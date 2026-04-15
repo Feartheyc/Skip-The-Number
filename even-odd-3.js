@@ -72,7 +72,8 @@ const Game8 = {
       sfxButtonClick_8.currentTime = 0;
       sfxButtonClick_8.play().catch(() => { });
     });
-    this.elbowMissing = false;
+    this.currentMissingState = null;
+    this.missingFrames = 0;
     // initial center in CSS coordinates; resize() will recompute
     const dpr = window.devicePixelRatio || 1;
     this.CENTER_X = (canvasElement.width / dpr) / 2;
@@ -134,16 +135,38 @@ const Game8 = {
   },
 
   onPoseResults(results) {
+    let state = null;
     if (!results.poseLandmarks) {
-      this.elbowMissing = true;
-      return;
-    }
-    const lm = results.poseLandmarks;
+      state = "arm";
+    } else {
+      const lm = results.poseLandmarks;
 
-    const rightElbow = lm[14];
-    const elbowBad = !rightElbow || rightElbow.visibility < 0.3 || rightElbow.x < 0 || rightElbow.x > 1 || rightElbow.y < 0 || rightElbow.y > 1;
-    this.elbowMissingFrames = elbowBad ? (this.elbowMissingFrames || 0) + 1 : 0;
-    this.elbowMissing = this.elbowMissingFrames > 5;
+      const rightElbow = lm[14];
+      const rightWrist = lm[16];
+      const rightIndex = lm[20];
+      
+      const isBad = (pt) => !pt || pt.visibility < 0.3 || pt.x < 0 || pt.x > 1 || pt.y < 0 || pt.y > 1;
+      
+      const elbowBad = isBad(rightElbow);
+      const wristBad = isBad(rightWrist) || isBad(rightIndex);
+      
+      if (elbowBad && wristBad) state = "arm";
+      else if (elbowBad) state = "elbow";
+      else if (wristBad) state = "wrist";
+    }
+
+    if (state) {
+      this.missingFrames = (this.missingFrames || 0) + 1;
+      if (this.missingFrames > 5) {
+        this.currentMissingState = state;
+      }
+    } else {
+      this.missingFrames = 0;
+      this.currentMissingState = null;
+    }
+
+    if (!results.poseLandmarks) return;
+    const lm = results.poseLandmarks;
 
     const mapPoint = (p) => ({
       x: (1 - p.x) * this.cssWidth,
@@ -890,10 +913,15 @@ const Game8 = {
     ctx.fillStyle = "#FF0000";
     ctx.fillText("Even", w * 0.92, bh);
 
-    if (this.elbowMissing) {
+    if (this.currentMissingState) {
       ctx.fillStyle = "red";
       ctx.font = `bold ${30 * this.scale}px Orbitron`;
-      ctx.fillText("BRING ELBOW IN CAMERA VIEW", this.CENTER_X, this.CENTER_Y + 150 * this.scale);
+      let msg = "";
+      if (this.currentMissingState === "arm") msg = "BRING ARM BACK IN SCREEN";
+      else if (this.currentMissingState === "elbow") msg = "BRING ELBOW BACK IN SCREEN";
+      else if (this.currentMissingState === "wrist") msg = "BRING WRIST BACK IN SCREEN";
+
+      ctx.fillText(msg, this.CENTER_X, this.CENTER_Y + 150 * this.scale);
     }
   },
 
