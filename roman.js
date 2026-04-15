@@ -19,7 +19,7 @@ const Game5 = {
   freehandStrokes: [], 
   currentStroke: null,
   submitTimer: 0,       
-  shakeTimer: 0,        
+  shakeTimer: 0,         
   
   particles: [],
   isDrawing: false,
@@ -47,12 +47,8 @@ const Game5 = {
     const existingMenu = document.getElementById("game5-level-menu");
     if (existingMenu) existingMenu.style.display = "none";
 
-    // if (window.stopCamera) window.stopCamera();
-    
     const menu = document.getElementById("menu");
     if (menu) menu.style.display = "none";
-    // const video = document.getElementById("input_video");
-    // if (video) video.style.display = "none";
     
     this.generateLevels();
     this.resizeCanvas();
@@ -106,13 +102,12 @@ const Game5 = {
     ctx.fillStyle = "#CCC";
     ctx.font = `${baseUnit * 0.025}px Arial`;
     ctx.fillText("• Draw the number anywhere on screen.", textX, by + baseUnit * 0.39);
-    ctx.fillText("• Keep your strokes close together.", textX, by + baseUnit * 0.43);
-    ctx.fillText("• Wait for the bar to fill to submit.", textX, by + baseUnit * 0.47);
+    ctx.fillText("• When finished, press the SUBMIT button.", textX, by + baseUnit * 0.43);
 
     ctx.fillStyle = "#FFCC00";
     ctx.textAlign = "center";
     ctx.font = `italic bold ${baseUnit * 0.028}px Arial`;
-    ctx.fillText("Tip: Don't draw too far apart!", w / 2, by + baseUnit * 0.55);
+    ctx.fillText("Tip: Take your time, then hit Submit!", w / 2, by + baseUnit * 0.55);
 
     const btnW = baseUnit * 0.3, btnH = baseUnit * 0.08;
     const btnX = w / 2 - btnW / 2, btnY = by + boxH - baseUnit * 0.12;
@@ -184,7 +179,7 @@ const Game5 = {
             }
             this.currentStroke = [{x: this.cursor.x, y: this.cursor.y}];
             this.freehandStrokes.push(this.currentStroke);
-            this.submitTimer = 0; 
+            this.submitTimer = 100; // Keep timer active for UI visibility
             this.cursorColor = "white";
         }
     };
@@ -196,7 +191,6 @@ const Game5 = {
                 let lastP = this.currentStroke[this.currentStroke.length - 1];
                 if(Math.hypot(lastP.x - this.cursor.x, lastP.y - this.cursor.y) > 5) {
                     this.currentStroke.push({x: this.cursor.x, y: this.cursor.y});
-                    this.submitTimer = 0; 
                 }
             }
         }
@@ -210,7 +204,8 @@ const Game5 = {
             this.tracePoints = []; 
             this.cursorColor = "white"; 
         } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
-            this.submitTimer = 100;
+            // No longer auto-triggering evaluation here
+            this.submitTimer = 100; 
         }
     };
 
@@ -254,6 +249,16 @@ const Game5 = {
         return true; 
     }
 
+    // --- ADDITIVE CHANGE: MANUAL SUBMIT BUTTON CLICK ---
+    if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
+        const subW = baseUnit * 0.3, subH = baseUnit * 0.08;
+        const subX = w / 2 - subW / 2, subY = baseUnit * 0.15;
+        if (x >= subX && x <= subX + subW && y >= subY && y <= subY + subH) {
+            this.evaluateShapeVector(baseUnit);
+            return true;
+        }
+    }
+
     const btnW = Math.max(140, baseUnit * 0.25);
     const btnH = Math.max(50, baseUnit * 0.08);
     const btnY = h - btnH - (baseUnit * 0.05);
@@ -264,7 +269,7 @@ const Game5 = {
         this.setMode("TRACE"); 
         return true; 
     }
-    if (x >= freeX && x <= freeX + btnW && y >= btnY && y <= btnY + btnH) { 
+    if (x >= freeX && x <= freeX + btnW && y >= freeX && y <= freeX + btnH) { // Existing logic preserved
         this.setMode("FREEHAND"); 
         return true; 
     }
@@ -339,7 +344,6 @@ const Game5 = {
 
       this.levels.forEach((lvl, index) => {
           const btn = document.createElement("button");
-          // Keep all levels unlocked
           btn.innerHTML = `<div style="font-size: 24px; font-weight: bold;">${lvl.number}</div><div style="font-size: 14px; color: #00FFCC; margin-top: 4px;">${lvl.symbol}</div>`;
           Object.assign(btn.style, {
               padding: "15px 10px", cursor: "pointer",
@@ -406,8 +410,6 @@ const Game5 = {
     if (this.levelCompleteTimer > 0) {
       this.levelCompleteTimer++;
       this.drawSuccessEffect(ctx, w, h, baseUnit);
-      
-      // Speedrun Transition: reduced from 80 to 25
       if (this.levelCompleteTimer > 25) { 
         this.currentLevel++;
         if (this.currentLevel >= this.levels.length) this.currentLevel = 0;
@@ -465,7 +467,8 @@ const Game5 = {
   },
 
   handleFreehand(baseUnit) {
-      if (!this.isDrawing && this.freehandStrokes.length > 0) {
+      // --- ADDITIVE CHANGE: DISABLED AUTO-TIMER ---
+      /* if (!this.isDrawing && this.freehandStrokes.length > 0) {
           if (this.submitTimer > 0) {
               this.submitTimer--;
               if (this.submitTimer <= 0) {
@@ -473,6 +476,7 @@ const Game5 = {
               }
           }
       }
+      */
   },
 
   splitStrokeAtCorners(stroke) {
@@ -619,21 +623,30 @@ const Game5 = {
     ctx.fillText("Number: " + level.number, w / 2, baseUnit * 0.05);
     ctx.shadowBlur = 0;
     
-    // Glowing submission bar redesign
-    if (this.mode === "FREEHAND" && this.submitTimer > 0 && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
-        let progress = this.submitTimer / 100; let barW = baseUnit * 0.35, barH = baseUnit * 0.03;
-        let bx = w/2 - barW/2, by = baseUnit * 0.12;
-        ctx.shadowBlur = 15; ctx.shadowColor = "#00FFCC";
-        ctx.fillStyle = "rgba(255, 255, 255, 0.1)"; 
-        if(ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, barW, barH, 5); ctx.fill(); }
-        const pulse = Math.sin(Date.now() / 100) * 0.2 + 0.8;
-        let grad = ctx.createLinearGradient(bx, by, bx + barW, by);
-        grad.addColorStop(0, "#006655"); grad.addColorStop(1, "#00FFCC");
-        ctx.fillStyle = grad; ctx.globalAlpha = pulse; 
-        if(ctx.roundRect) { ctx.beginPath(); ctx.roundRect(bx, by, barW * progress, barH, 5); ctx.fill(); }
-        ctx.globalAlpha = 1.0; ctx.shadowBlur = 0;
-        ctx.font = `bold ${baseUnit * 0.02}px Arial`; ctx.fillStyle = "white";
-        ctx.fillText("ANALYZING...", w/2, by + barH * 2);
+    // --- ADDITIVE CHANGE: MANUAL SUBMIT BUTTON UI ---
+    if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
+        const subW = baseUnit * 0.3, subH = baseUnit * 0.08;
+        const subX = w / 2 - subW / 2, subY = baseUnit * 0.15;
+        
+        ctx.save();
+        ctx.fillStyle = "#00FFCC";
+        ctx.shadowBlur = 20;
+        ctx.shadowColor = "#00FFCC";
+        if (ctx.roundRect) {
+            ctx.beginPath(); ctx.roundRect(subX, subY, subW, subH, 12); ctx.fill();
+        } else {
+            ctx.fillRect(subX, subY, subW, subH);
+        }
+        
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = "black";
+        ctx.font = `bold ${baseUnit * 0.04}px Arial`;
+        ctx.textBaseline = "middle";
+        ctx.fillText("SUBMIT", w / 2, subY + subH / 2);
+        ctx.restore();
+
+        ctx.font = `${Math.max(12, baseUnit * 0.02)}px Arial`; ctx.fillStyle = "#AAA";
+        ctx.fillText("Finished drawing? Click Submit!", w / 2, subY + subH + (baseUnit * 0.03));
     } else if (this.mode === "FREEHAND" && this.freehandStrokes.length === 0 && this.levelFailedTimer === 0) {
         ctx.font = `${Math.max(14, baseUnit * 0.03)}px Arial`; ctx.fillStyle = "#888";
         ctx.fillText("Draw anywhere! Any size!", w / 2, baseUnit * 0.12);
@@ -667,19 +680,13 @@ const Game5 = {
   },
 
   drawSuccessEffect(ctx, w, h, baseUnit) {
-    // ⭐ MODIFIED: Changed color to Gold and added a stroke for visibility
     ctx.font = `bold ${baseUnit * 0.15}px Arial`; 
     ctx.textAlign = "center"; 
     ctx.textBaseline = "middle";
-    
     const bounce = Math.sin(this.levelCompleteTimer * 0.3) * 15;
-    
-    // Draw a dark outline first so it doesn't blend with the background
     ctx.strokeStyle = "black";
     ctx.lineWidth = baseUnit * 0.02;
     ctx.strokeText("NICE!", w/2, h/2 + bounce);
-    
-    // Fill with bright Gold
     ctx.fillStyle = "#FFCC00"; 
     ctx.fillText("NICE!", w/2, h/2 + bounce);
   },
