@@ -61,7 +61,7 @@ const Game1 = {
   currentNumber: 1,
   maxNumber: 100,
   spawnTimer: null,
-  spawnInterval: 1200,
+  spawnInterval: 2000,
 
   pulseTime: 0,
   pulseSpeed: 2.2,
@@ -139,6 +139,9 @@ const Game1 = {
   MAX_EXPL: 80,
 
 
+  maxNotesOnScreen: 6, // tweak this (15–30 is a good range)
+
+
   /* ============================================================
      INIT
   ============================================================ */
@@ -166,7 +169,7 @@ const Game1 = {
     this.xpPopFlash = 0;
     this.hintState = "full";
     this.noiseTime = 0;
-    this.spawnInterval = 1200;
+    this.spawnInterval = 2000;
     this.torusAngle = 0;
    
 
@@ -221,8 +224,8 @@ window.addEventListener("resize", () => {
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
 
-    this.speedCap  = this.baseOuterRadius * 0.4;
-    this.speedMin  = this.speedCap * 0.20;
+    this.speedCap  = this.baseOuterRadius * 0.3;
+    this.speedMin  = this.speedCap * 0.15;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) {
       this.noteSpeed = this.speedCap;
     }
@@ -815,6 +818,7 @@ window.addEventListener("resize", () => {
      NOTES
   ============================================================ */
   spawnNote() {
+    if (this.notes.length >= this.maxNotesOnScreen) return; // 🚫 STOP spawning
     const angle  = Math.random() * Math.PI * 2;
     const minR   = this.currentOuterRadius + 150;
     const maxR   = this.currentOuterRadius + 210;
@@ -1110,6 +1114,7 @@ window.addEventListener("resize", () => {
      CANNON
   ============================================================ */
   spawnCannonNote() {
+    if (this.notes.length >= this.maxNotesOnScreen) return; // 🚫 STOP spawning
     if (this.pendingShot) return;
     const angle = Math.random() * Math.PI * 2;
     const num   = this.currentNumber++;
@@ -1201,6 +1206,7 @@ window.addEventListener("resize", () => {
      ORB LAUNCHER
   ============================================================ */
   spawnOrbNote() {
+    if (this.notes.length >= this.maxNotesOnScreen) return; // 🚫 STOP spawning
     const angle = Math.random() * Math.PI * 2;
     this.orbTargetAngle = angle + Math.PI / 2;
     const num   = this.currentNumber++;
@@ -1250,6 +1256,7 @@ window.addEventListener("resize", () => {
      TRIPLE CANNON
   ============================================================ */
   spawnTripleNote() {
+    if (this.notes.length >= this.maxNotesOnScreen) return; // 🚫 STOP spawning
     if (this.pendingShot) return;
     const angle       = Math.random() * Math.PI * 2;
     this.pendingShot  = { angle, speed: this.noteSpeed };
@@ -1472,7 +1479,7 @@ window.addEventListener("resize", () => {
   this.noiseTime = 0;
 
   // Reset spawn timing
-  this.spawnInterval = 1200;
+  this.spawnInterval = 2000;
 
   // Reset launcher states
   this.pendingShot = null;
