@@ -177,6 +177,7 @@ const Game1 = {
 
     this.orbImage = new Image();
     this.orbImage.src = "orb1.png";
+    
 
     this._initBgStars();
     this._restartSpawnTimer();

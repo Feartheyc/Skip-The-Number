@@ -1,65 +1,106 @@
 /* ============================================================
-   main.js  — with ModeSelector integrated for Game1
-   Changes vs original:
-   • startGame("game1") now shows ModeSelector first, then
-     calls the appropriate Game1 mode activator after selection.
-   • Everything else is identical to the optimised original.
+   main.js  — ModeSelector + Tutorial integrated for Game1/9/10
+   
+   Key changes vs original:
+   • startGame("game1")  → ModeSelector → Tutorial → launch
+   • startGame("Game9")  → Tutorial → launch  (no mode selector)
+   • startGame("Game10") → Tutorial → launch  (no mode selector)
+   • No-finger prompts use Tutorial.showNoFingerPrompt(gameId)
+     with the gameId explicitly passed — other games get nothing.
+   • Tutorial.destroyNoFingerPrompt() called on pause/menu/mode-change
+     so prompts never leak across games.
 ============================================================ */
 
-window.currentGame = null;
-const canvasElement = document.getElementById('game_canvas');
-const canvasCtx     = canvasElement.getContext('2d');
+window.currentGame  = null;
+const canvasElement = document.getElementById("game_canvas");
+const canvasCtx     = canvasElement.getContext("2d");
 let   lastTime      = performance.now();
 window.isPaused     = false;
+
+/* ── Which game is active (for finger prompt isolation) ───── */
+let _activeGameId = ""; // "game1"|"game9"|"game10"|"" for all others
+
+/* ── No-finger detection — per-game, no cross-game leaking ──
+   Only runs when _activeGameId is one of the tutorial games.
+   ─────────────────────────────────────────────────────────── */
+let _noFingerFrames = 0;
+const NO_FINGER_THRESHOLD = 90; // ~1.5 s at 60 fps
+
+function _checkFingerPresence() {
+  // Only show prompt for the three games that support it
+  if (!_activeGameId) return;
+  if (!["game1", "game9", "game10"].includes(_activeGameId)) return;
+
+  const has = (window.fingerPositions || []).length > 0;
+  if (has) {
+    _noFingerFrames = 0;
+    Tutorial.hideNoFingerPrompt(_activeGameId);
+  } else {
+    _noFingerFrames++;
+    if (_noFingerFrames > NO_FINGER_THRESHOLD) {
+      Tutorial.showNoFingerPrompt(_activeGameId);
+    }
+  }
+}
+
+function _clearFingerState() {
+  _noFingerFrames = 0;
+  Tutorial.destroyNoFingerPrompt();
+}
+
 
 /* ── Pause / Resume ───────────────────────────────────────── */
 window.pauseGame = function () {
   window.isPaused = true;
   document.getElementById("pauseOverlay").style.display = "flex";
 
-  // ✅ Show Change Mode only for Game1
+  // "Change Mode" only appears for Game1
   const btn = document.getElementById("changeModeBtn");
-  if (window.currentGame === Game1) {
-    btn.style.display = "block";
-  } else {
-    btn.style.display = "none";
-  }
+  if (btn) btn.style.display = (window.currentGame === Game1) ? "block" : "none";
+
+  // Always kill the finger prompt while paused
+  Tutorial.destroyNoFingerPrompt();
 };
 
 window.changeMode = function () {
   window.isPaused = false;
   document.getElementById("pauseOverlay").style.display = "none";
 
-  // Hide camera before switching
+  _clearFingerState();
+  _activeGameId = "";
   document.getElementById("input_video").style.opacity = "0";
-
-  // Reset game
   window.currentGame = null;
 
-  // Show mode selector again
   blackoutCanvas();
   ModeSelector.show((modeKey) => {
-    document.getElementById("input_video").style.opacity = "1";
-    launchGame1WithMode(modeKey);
+    Tutorial.show("game1", modeKey, () => {
+      _activeGameId = "game1";
+      document.getElementById("input_video").style.opacity = "1";
+      launchGame1WithMode(modeKey);
+    });
   });
 };
 
 window.resumeGame = function () {
-  window.isPaused  = false;
-  lastTime         = performance.now();
+  window.isPaused = false;
+  lastTime        = performance.now();
   document.getElementById("pauseOverlay").style.display = "none";
+  // Restart finger-frame counter so prompt doesn't flash immediately on resume
+  _noFingerFrames = 0;
 };
 
 window.goToMainMenu = function () {
   window.isPaused = false;
   document.getElementById("pauseOverlay").style.display = "none";
-  /* Hide camera BEFORE nulling currentGame so the loop doesn't
-     clear to transparent while the feed is still visible */
-  document.getElementById("input_video").style.opacity  = "0";
+
+  _clearFingerState();
+  _activeGameId = "";
+  document.getElementById("input_video").style.opacity = "0";
   blackoutCanvas();
   window.currentGame = null;
-  document.getElementById("menu").style.display         = "flex";
+  document.getElementById("menu").style.display = "flex";
 };
+
 
 /* ── Canvas resize (debounced) ────────────────────────────── */
 let _resizeTimer = null;
@@ -94,32 +135,29 @@ window.addEventListener("resize",            debouncedResize);
 window.addEventListener("orientationchange", debouncedResize);
 resizeCanvas();
 
-/* ── Solid dark fill on the game canvas — covers camera ────── */
+
+/* ── Blackout ─────────────────────────────────────────────── */
 function blackoutCanvas() {
   const dpr = window.devicePixelRatio || 1;
-  const w   = window.innerWidth;
-  const h   = window.innerHeight;
   canvasCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
   canvasCtx.fillStyle = "#0d1b2e";
-  canvasCtx.fillRect(0, 0, w, h);
+  canvasCtx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 }
 
-/* ── Game1 mode launcher (called after ModeSelector) ─────── */
-function launchGame1WithMode(modeKey) {
-  /* Paint dark bg immediately so there's no camera flash
-     between the selector disappearing and the first game frame */
-  blackoutCanvas();
 
+/* ── Game1 launcher — called after Tutorial.show resolves ─── */
+function launchGame1WithMode(modeKey) {
+  blackoutCanvas();
+  _noFingerFrames = 0;
   Game1.init();
   window.currentGame = Game1;
   resizeCanvas();
-
   switch (modeKey) {
     case "pattern": Game1.activatePatternMode();      break;
     case "cannon":  Game1.activateCannonMode();       break;
     case "orb":     Game1.activateOrbMode();          break;
     case "triple":  Game1.activateTripleCannonMode(); break;
-    default: break;
+    default: break; // "default" mode needs no extra call
   }
 }
 
@@ -128,28 +166,56 @@ function launchGame1WithMode(modeKey) {
 window.startGame = function (gameName) {
   document.getElementById("menu").style.display = "none";
   window.currentGame = null;
+  _clearFingerState();
+  _activeGameId = "";
 
-  /* Game1 gets the mode selector before starting.
-     We do NOT reveal the camera yet — the selector paints its
-     own dark background.  The camera opacity is set to 1 only
-     after the mode is chosen and the game loop takes over. */
+  /* ── GAME 1 ── ModeSelector → Tutorial → launch ─────────── */
   if (gameName === "game1") {
-    /* Paint dark bg on the game canvas before the selector
-       overlay appears, so there is zero visible gap */
     blackoutCanvas();
     ModeSelector.show((modeKey) => {
-      /* Now it's safe to show the camera feed — the game loop
-         will immediately start drawing over it */
-      document.getElementById("input_video").style.opacity = "1";
-      launchGame1WithMode(modeKey);
+      Tutorial.show("game1", modeKey, () => {
+        _activeGameId = "game1";
+        document.getElementById("input_video").style.opacity = "1";
+        launchGame1WithMode(modeKey);
+      });
     });
     return;
   }
 
-  /* All other games: reveal camera then start as normal */
+  /* ── GAME 9 ── Tutorial (dreamy theme) → launch ──────────── */
+  if (gameName === "Game9") {
+    blackoutCanvas();
+    Tutorial.show("game9", null, () => {
+      _activeGameId = "game9";
+      document.getElementById("input_video").style.opacity = "1";
+      blackoutCanvas();
+      _noFingerFrames = 0;
+      Game9.init();
+      window.currentGame = Game9;
+      resizeCanvas();
+    });
+    return;
+  }
+
+  /* ── GAME 10 ── Tutorial (cosmic theme) → launch ─────────── */
+  if (gameName === "Game10") {
+    blackoutCanvas();
+    Tutorial.show("game10", null, () => {
+      _activeGameId = "game10";
+      document.getElementById("input_video").style.opacity = "1";
+      blackoutCanvas();
+      _noFingerFrames = 0;
+      if (window.initArmDetection) window.initArmDetection();
+      Game10.init();
+      window.currentGame = Game10;
+      resizeCanvas();
+    });
+    return;
+  }
+
+  /* ── ALL OTHER GAMES — no tutorial, no finger prompt ─────── */
   document.getElementById("input_video").style.opacity = "1";
 
-  /* All other games start directly as before */
   const map = {
     game2:  () => { window.currentGame = Game2;  Game2.init(); },
     Game3:  () => { window.currentGame = Game3;  Game3.init(); Game3.startDetection(); },
@@ -158,17 +224,13 @@ window.startGame = function (gameName) {
     Game6:  () => { window.currentGame = Game6;  Game6.init(); },
     Game7:  () => { window.currentGame = Game7;  Game7.init(); },
     Game8:  () => { window.currentGame = Game8;  Game8.init(); },
-    Game9:  () => { window.currentGame = Game9;  Game9.init(); },
-    Game10: () => {
-      if (window.initArmDetection) window.initArmDetection();
-      window.currentGame = Game10; Game10.init();
-    },
     Game11: () => { window.currentGame = Game11; Game11.init(); },
   };
 
   if (map[gameName]) map[gameName]();
   resizeCanvas();
 };
+
 
 /* ── Game loop ────────────────────────────────────────────── */
 function gameLoop(currentTime) {
@@ -182,7 +244,10 @@ function gameLoop(currentTime) {
   if (window.isPaused) return;
 
   const game = window.currentGame;
-  if (!game || !game.update) return;   // leave blackout in place, don't clear
+  if (!game || !game.update) return;
+
+  // Check finger presence ONLY for the three supported games
+  _checkFingerPresence();
 
   canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
   game.update(canvasCtx, window.fingerPositions || [], dt);
