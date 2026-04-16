@@ -777,7 +777,13 @@ const Tutorial = (() => {
 
       overlay = document.createElement("div");
       overlay.id = "tutorialOverlay_" + gameId;
-      Object.assign(overlay.style, { position:"fixed", inset:"0", zIndex:"9998", pointerEvents:"none" });
+      Object.assign(overlay.style, { 
+      position: "fixed",
+      inset: "0",
+      zIndex: "99999",
+      background: "#000",          // HARD BLOCK camera
+      pointerEvents: "auto"        // block interaction behind
+      });      
       canvas = document.createElement("canvas");
       Object.assign(canvas.style, { display:"block", width:"100%", height:"100%" });
       overlay.appendChild(canvas);
