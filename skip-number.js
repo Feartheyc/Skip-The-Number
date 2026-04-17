@@ -1,1 +1,1504 @@
-const Game1={centerX:null,centerY:null,baseOuterRadius:1e3,baseInnerRadius:970,currentOuterRadius:1e3,currentInnerRadius:970,ringScale:1.5,C:{bg:"#0d1b2e",noteText:"#f0f4ff",correct:"#6de8b4",wrong:"#e87c6d",gold:"#f5c842",accent:"#8ecae6",hudBg:"rgba(10,20,38,0.78)",hudBorder:"rgba(140,180,220,0.18)",xpTrack:"rgba(245,200,66,0.15)"},notes:[],noteSpeed:0,popEffects:[],explosions:[],score:0,combo:0,multiplier:1,lastHitType:"",hitTextTimer:0,missQueue:[],currentNumber:1,maxNumber:100,spawnTimer:null,spawnInterval:1200,pulseTime:0,pulseSpeed:2.2,pulseAmountOuter:10,pulseAmountInner:5,torusAngle:0,mode:"default",skipAmount:3,gameTitle:"SKIP 3",pattern:{skip:3,collect:1},cannonAngle:0,cannonTargetAngle:0,cannonLength:0,pendingShot:null,orbImage:null,orbAngle:0,orbTargetAngle:0,lastOrbNote:null,charge:0,chargeSpeed:.8,isCharging:!1,chargeParticles:[],launcherSafeRadius:0,tripleCannons:[],tripleBaseAngle:0,tripleTargetAngle:0,tripleCount:3,previewCannons:[],previewTimer:0,previewDuration:.6,xp:0,xpToNext:8,level:1,maxLevel:20,tier:0,tierNames:["Sprout 🌱","Star ⭐","Champ 🏆","Legend 🌟"],tierColors:["#6de8b4","#f5c842","#e8a06d","#c084fc"],tierThresholds:[1,6,12,18],levelUpActive:!1,levelUpTimer:0,levelUpDuration:1400,levelUpParticles:[],xpPopFlash:0,hintState:"full",noiseTime:0,speedCap:0,speedMin:0,speedPenaltyStep:.06,speedRecoveryStep:.02,speedDriftRate:.008,bgStars:[],_hintChangeMessages:{subtle:"👀 Look carefully — hints are fading!",none:"🧠 No more hints — use your brain!",decoy:"😈 Watch out — fake signals ahead!",chaos:"🌀 CHAOS MODE — trust nothing!"},_hintChangeTimer:0,_hintChangeMessage:"",MAX_POP:80,MAX_EXPL:80,init(){const t=document.getElementById("container").getBoundingClientRect();this.onResize(t.width,t.height),this.notes=[],this.popEffects=[],this.explosions=[],this.missQueue=[],this.levelUpParticles=[],this.chargeParticles=[],this.score=0,this.combo=0,this.multiplier=1,this.hitTextTimer=1,this.currentNumber=1,this.xp=0,this.xpToNext=8,this.level=1,this.tier=0,this.levelUpActive=!1,this.xpPopFlash=0,this.hintState="full",this.noiseTime=0,this.spawnInterval=1200,this.torusAngle=0,this.mode="default",this.skipAmount=this.getRandomSkip(),this.gameTitle="SKIP "+this.skipAmount,this.noteSpeed=this.speedCap,this.orbImage=new Image,this.orbImage.src="orb1.png",this._initBgStars(),this._restartSpawnTimer(),window.addEventListener("orientationchange",()=>{this.fullReset()}),window.addEventListener("resize",()=>{this.fullReset()}),window.addEventListener("keydown",t=>{"1"===t.key&&this.activatePatternMode(),"2"===t.key&&this.activateCannonMode(),"3"===t.key&&this.activateOrbMode(),"4"===t.key&&this.activateTripleCannonMode()})},_restartSpawnTimer(){this.spawnTimer&&clearInterval(this.spawnTimer),this.spawnTimer=setInterval(()=>{"cannon"===this.mode?this.spawnCannonNote():"orb"===this.mode?this.spawnOrbNote():"triple"===this.mode?this.spawnTripleNote():this.spawnNote()},this.spawnInterval)},onResize(t,e){this.centerX=t/2,this.centerY=e/2;const i=Math.min(t,e);this.baseOuterRadius=.25*i*this.ringScale,this.baseInnerRadius=.8*this.baseOuterRadius,this.currentOuterRadius=this.baseOuterRadius,this.currentInnerRadius=this.baseInnerRadius,this.speedCap=.4*this.baseOuterRadius,this.speedMin=.2*this.speedCap,(!this.noteSpeed||this.noteSpeed>this.speedCap)&&(this.noteSpeed=this.speedCap),this.launcherSafeRadius=.45*this.baseOuterRadius,this._initBgStars()},_penalizeSpeed(){this.noteSpeed=Math.max(this.speedMin,this.noteSpeed-this.speedCap*this.speedPenaltyStep)},_recoverSpeed(){this.noteSpeed=Math.min(this.speedCap,this.noteSpeed+this.speedCap*this.speedRecoveryStep)},_driftSpeed(t){this.noteSpeed<this.speedCap&&(this.noteSpeed=Math.min(this.speedCap,this.noteSpeed+(this.speedCap-this.noteSpeed)*this.speedDriftRate*t*60))},_initBgStars(){this.bgStars=[];const t=2*this.centerX,e=2*this.centerY;for(let i=0;i<80;i++)this.bgStars.push({x:Math.round(Math.random()*t),y:Math.round(Math.random()*e),r:.5+1.4*Math.random(),a:.1+.4*Math.random(),tw:Math.random()*Math.PI*2,ts:.012+.018*Math.random()})},_drawBg(t){const e=2*this.centerX,i=2*this.centerY,s=t.createRadialGradient(this.centerX,.6*this.centerY,0,this.centerX,.5*i,.75*Math.max(e,i));s.addColorStop(0,"#1a2d4a"),s.addColorStop(.5,"#0f1e35"),s.addColorStop(1,"#080f1c"),t.fillStyle=s,t.fillRect(0,0,e,i)},_drawBgStars(t,e){for(const e of this.bgStars){e.tw+=e.ts;const i=Math.max(0,e.a+.12*Math.sin(e.tw));t.globalAlpha=i,t.fillStyle="#c8dff0",t.beginPath(),t.arc(e.x,e.y,e.r,0,2*Math.PI),t.fill()}t.globalAlpha=1},_gainXP(t){if(!(this.level>=this.maxLevel)&&(this.xp+=t,this.xp>=this.xpToNext)){this.xp=0,this.level++,this.xpToNext=Math.min(8+2*this.level,25),this.xpPopFlash=1;for(let t=this.tierThresholds.length-1;t>=0;t--)if(this.level>=this.tierThresholds[t]){this.tier=Math.max(this.tier,t);break}this._updateHintState(),this.level%3==0&&(this.spawnInterval=Math.max(650,this.spawnInterval-60),this._restartSpawnTimer()),this._triggerLevelUpBurst()}},_updateHintState(){const t=this.level,e=this.hintState;this.hintState=t<=3?"full":t<=5?"subtle":t<=8?"none":t<=11?"decoy":"chaos",this.hintState!==e&&(this._hintChangeTimer=2800,this._hintChangeMessage=this._hintChangeMessages[this.hintState]||"")},_noteVisual(t,e){const i=this.hintState,s=this.noiseTime+137.5*e,h=Math.abs(Math.sin(.7*s));return"full"===i?{showCorrect:t,showWrong:!t,shimmerAmt:0}:"subtle"===i?{showCorrect:t,showWrong:!1,shimmerAmt:0}:"none"===i?{showCorrect:!1,showWrong:!1,shimmerAmt:0}:"decoy"===i?{showCorrect:!t,showWrong:t,shimmerAmt:0}:{showCorrect:h>.6,showWrong:h<.25,shimmerAmt:h}},_triggerLevelUpBurst(){this.levelUpActive=!0,this.levelUpTimer=this.levelUpDuration,this.levelUpParticles=[];const t=[this.C.gold,this.C.correct,this.C.accent,"#ffffff"];for(let e=0;e<28;e++){const i=Math.random()*Math.PI*2,s=180+220*Math.random();this.levelUpParticles.push({x:this.centerX,y:this.centerY,vx:Math.cos(i)*s,vy:Math.sin(i)*s,r:3+5*Math.random(),color:t[e%t.length],life:1})}},_updateLevelUp(t){if(this.levelUpActive){this.levelUpTimer-=1e3*t,this.xpPopFlash>0&&(this.xpPopFlash=Math.max(0,this.xpPopFlash-3*t));for(const e of this.levelUpParticles)e.x+=e.vx*t,e.y+=e.vy*t,e.vx*=.94,e.vy*=.94,e.vy+=120*t,e.life-=1.1*t;this.levelUpParticles=this.levelUpParticles.filter(t=>t.life>0),this.levelUpTimer<=0&&(this.levelUpActive=!1)}},_drawLevelUpBurst(t){if(!this.levelUpActive)return;const e=1-this.levelUpTimer/this.levelUpDuration;for(const e of this.levelUpParticles)t.globalAlpha=.9*Math.max(0,e.life),t.fillStyle=e.color,t.shadowColor=e.color,t.shadowBlur=12,t.beginPath(),t.arc(e.x,e.y,e.r,0,2*Math.PI),t.fill();if(t.shadowBlur=0,t.globalAlpha=1,e>.05&&e<.8){const i=Math.sin(e/.8*Math.PI);t.save(),t.globalAlpha=i,t.translate(this.centerX,this.centerY-110),t.scale(.8+.3*i,.8+.3*i),t.textAlign="center",t.textBaseline="middle",t.font="bold 44px 'Trebuchet MS', sans-serif",t.shadowColor=this.C.gold,t.shadowBlur=28,t.fillStyle=this.C.gold,t.fillText("LEVEL "+this.level+"!",0,0),t.font="bold 22px 'Trebuchet MS', sans-serif",t.fillStyle=this.tierColors[this.tier],t.shadowColor=this.tierColors[this.tier],t.shadowBlur=14,t.fillText(this.tierNames[this.tier],0,46),t.restore()}},_drawHintChangeAnnouncement(t,e){if(this._hintChangeTimer<=0||!this._hintChangeMessage)return;this._hintChangeTimer-=1e3*e;const i=1-this._hintChangeTimer/2800;let s;s=i<.14?i/.14:i<.72?1:1-(i-.72)/.28,s=Math.max(0,Math.min(1,s));const h={subtle:"#f5c842",none:"#8ecae6",decoy:"#e87c6d",chaos:"#c084fc"}[this.hintState]||"#ffffff",a=2*this.centerX,r=.38*this.centerY;t.save(),t.globalAlpha=s;const o=this._hintChangeMessage;t.font="bold 30px 'Trebuchet MS', sans-serif";const n=t.measureText(o).width+56,l=56,d=a/2-n/2,c=r-28;t.beginPath(),t.moveTo(d+28,c),t.arcTo(d+n,c,d+n,c+l,28),t.arcTo(d+n,c+l,d,c+l,28),t.arcTo(d,c+l,d,c,28),t.arcTo(d,c,d+n,c,28),t.closePath(),t.fillStyle="rgba(8,14,28,0.88)",t.fill(),t.strokeStyle=h,t.lineWidth=2,t.shadowColor=h,t.shadowBlur=16,t.stroke(),t.shadowBlur=0,t.fillStyle=h,t.textAlign="center",t.textBaseline="middle",t.shadowColor=h,t.shadowBlur=10,t.fillText(o,a/2,r),t.restore()},_drawXPRing(t,e,i,s){const h=this.level>=this.maxLevel?1:this.xp/this.xpToNext,a=this.tierColors[this.tier],r=-Math.PI/2;t.beginPath(),t.arc(e,i,s,0,2*Math.PI),t.strokeStyle=this.C.xpTrack,t.lineWidth=6,t.stroke(),h>.01&&(t.beginPath(),t.arc(e,i,s,r,r+2*Math.PI*h),t.strokeStyle=a,t.lineWidth=6,t.shadowColor=a,t.shadowBlur=12+20*this.xpPopFlash,t.stroke(),t.shadowBlur=0),this.xpPopFlash>0&&(t.beginPath(),t.arc(e,i,s+12*this.xpPopFlash,0,2*Math.PI),t.strokeStyle=`rgba(245,200,66,${.55*this.xpPopFlash})`,t.lineWidth=5*this.xpPopFlash,t.stroke())},_pill(t,e,i,s,h){const a=h/2;t.beginPath(),t.moveTo(e+a,i),t.arcTo(e+s,i,e+s,i+h,a),t.arcTo(e+s,i+h,e,i+h,a),t.arcTo(e,i+h,e,i,a),t.arcTo(e,i,e+s,i,a),t.closePath(),t.fillStyle=this.C.hudBg,t.fill(),t.strokeStyle=this.C.hudBorder,t.lineWidth=1,t.stroke()},_drawHUD(t,e,i){const s=2*this.centerX,h=2*this.centerY,a="bold 20px 'Trebuchet MS', sans-serif";e?(t.fillStyle=this.C.hudBg,t.fillRect(0,0,s,50),t.strokeStyle=this.C.hudBorder,t.lineWidth=1,t.beginPath(),t.moveTo(0,50),t.lineTo(s,50),t.stroke(),t.font=a,t.textBaseline="middle",t.fillStyle="#e8f4ff",t.textAlign="left",t.fillText("⭐ "+this.score,16,25),t.fillStyle=this.C.gold,t.textAlign="center",t.font="bold 17px 'Trebuchet MS', sans-serif",t.fillText(this.gameTitle,s/2,25),t.textAlign="right",t.fillStyle=this.combo>=3?this.C.correct:"#aac8e0",t.font="bold 17px 'Trebuchet MS', sans-serif",t.fillText("x"+this.combo+" combo",s-16,25)):(this._pill(t,14,14,155,42),t.font=a,t.fillStyle="#e8f4ff",t.textAlign="left",t.textBaseline="middle",t.fillText("⭐ "+this.score,28,35),this._pill(t,s-174,14,160,42),t.textAlign="right",t.fillStyle=this.combo>=3?this.C.correct:"#aac8e0",t.fillText("🔥 "+this.combo+"  x"+this.multiplier,s-28,35),t.textAlign="center",t.textBaseline="middle",t.fillStyle=this.C.gold,t.font="bold 26px 'Trebuchet MS', sans-serif",t.shadowColor="rgba(245,200,66,0.4)",t.shadowBlur=14,t.fillText(this.gameTitle,s/2,34),t.shadowBlur=0);const r=s/2,o=e?h-60:h-48;this._drawXPRing(t,r,o,26),t.font="bold 13px 'Trebuchet MS', sans-serif",t.textAlign="center",t.textBaseline="middle",t.fillStyle=this.tierColors[this.tier],t.shadowColor=this.tierColors[this.tier],t.shadowBlur=8,t.fillText("Lv."+this.level,r,o),t.shadowBlur=0;t.textAlign="right",t.textBaseline="bottom",t.font="13px 'Trebuchet MS', sans-serif",t.globalAlpha=.7,t.fillStyle=this.tierColors[this.tier],t.fillText(this.tierNames[this.tier],s-12,h-8),t.fillStyle="#c8dff0",t.fillText({full:"🟢 Training",subtle:"🟡 Subtle",none:"🔵 Blind",decoy:"🔴 Decoy",chaos:"🟣 Chaos"}[this.hintState]||"",s-12,h-26),t.globalAlpha=1},update(t,e,i=1/60){this._drawBg(t),this._drawBgStars(t,i),this._updateLevelUp(i),this.noiseTime+=1.8*i,this._driftSpeed(i);const s="cannon"===this.mode||"orb"===this.mode||"triple"===this.mode;s||this.drawRings(t,i),"cannon"===this.mode?(this.updateCannonNotes(t,i),this.drawCannon(t,i),this.drawExplosions(t),this.drawLauncherZone(t),this.drawCharging(t),this.updateCharging(i)):"orb"===this.mode?(this.updateCannonNotes(t,i),this.drawOrbLauncher(t,i),this.drawExplosions(t),this.drawLauncherZone(t),this.drawCharging(t),this.updateCharging(i)):"triple"===this.mode?(this.updateCannonNotes(t,i),this.drawTripleCannons(t,i),this.drawExplosions(t),this.drawLauncherZone(t)):this.drawNotes(t,i),"triple"===this.mode&&this.previewTimer>0&&(this.previewTimer-=i,this.previewTimer<=0&&this.executeTripleShot()),this.drawPopEffects(t),e.forEach(e=>{this.drawFinger(t,e.x,e.y),s?this.checkCannonCollision(e.x,e.y):this.checkCollision(e.x,e.y)}),this._drawHUD(t,s,i),this._drawLevelUpBurst(t),this._drawHintChangeAnnouncement(t,i),this.drawHitText(t)},drawFinger(t,e,i){t.save(),t.beginPath(),t.arc(e,i,.065*this.baseOuterRadius,0,2*Math.PI),t.shadowColor="rgba(126,207,179,0.7)",t.shadowBlur=28,t.fillStyle="rgba(94,180,150,0.45)",t.fill(),t.beginPath(),t.arc(e,i,.03*this.baseOuterRadius,0,2*Math.PI),t.shadowBlur=12,t.fillStyle="#b0f0da",t.fill(),t.restore()},drawRings(t,e){this.pulseTime+=this.pulseSpeed*e,this.torusAngle=(this.torusAngle+.28*e)%(2*Math.PI);const i=Math.sin(this.pulseTime)*this.pulseAmountOuter,s=Math.sin(this.pulseTime)*this.pulseAmountInner;this.currentOuterRadius=this.baseOuterRadius+Math.max(0,i),this.currentInnerRadius=this.baseInnerRadius+Math.max(0,s);const h=this.centerX,a=this.centerY,r=this.currentOuterRadius,o=this.currentInnerRadius,n=(r+o)/2,l=(r-o)/2,d=Math.cos(this.torusAngle),c=Math.sin(this.torusAngle);t.save(),t.translate(h,a);const p=t.createRadialGradient(0,0,o-2.5*l,0,0,r+3.5*l);p.addColorStop(0,"rgba(0,0,0,0)"),p.addColorStop(.3,"rgba(126,207,179,0.07)"),p.addColorStop(.52,"rgba(201,147,58,0.14)"),p.addColorStop(.7,"rgba(142,202,230,0.09)"),p.addColorStop(1,"rgba(0,0,0,0)"),t.fillStyle=p,t.beginPath(),t.arc(0,0,r+3.5*l,0,2*Math.PI),t.fill();const u=-d*(r+l),g=-c*(r+l),m=d*(r+l),f=c*(r+l),b=t.createLinearGradient(u,g,m,f);b.addColorStop(0,"#0a1525"),b.addColorStop(.22,"#1c3a2a"),b.addColorStop(.4,"#5a3010"),b.addColorStop(.55,"#c9933a"),b.addColorStop(.68,"#e8c87a"),b.addColorStop(.8,"#7ecfb3"),b.addColorStop(1,"#0a1525"),t.beginPath(),t.arc(0,0,r,0,2*Math.PI),t.arc(0,0,o,0,2*Math.PI,!0),t.fillStyle=b,t.shadowColor="rgba(201,147,58,0.4)",t.shadowBlur=36,t.fill("evenodd"),t.shadowBlur=0;const C=t.createRadialGradient(0,0,.65*o,0,0,o);C.addColorStop(0,"rgba(4,10,20,0.82)"),C.addColorStop(.6,"rgba(4,10,20,0.45)"),C.addColorStop(1,"rgba(4,10,20,0.0)"),t.beginPath(),t.arc(0,0,o,0,2*Math.PI),t.fillStyle=C,t.fill(),t.beginPath(),t.arc(0,0,r,0,2*Math.PI),t.strokeStyle="#d4a44a",t.lineWidth=2.8,t.shadowColor="rgba(212,164,74,0.6)",t.shadowBlur=18,t.stroke(),t.shadowBlur=0,t.beginPath(),t.arc(0,0,o,0,2*Math.PI),t.strokeStyle="rgba(126,207,179,0.38)",t.lineWidth=1.8,t.shadowColor="rgba(126,207,179,0.25)",t.shadowBlur=10,t.stroke(),t.shadowBlur=0;const S=this.torusAngle-.35*Math.PI,x=this.torusAngle+.35*Math.PI;t.beginPath(),t.arc(0,0,n+.3*l,S,x),t.arc(0,0,n-.3*l,x,S,!0),t.closePath();const M=t.createLinearGradient(Math.cos(this.torusAngle)*(n-.3*l),Math.sin(this.torusAngle)*(n-.3*l),Math.cos(this.torusAngle)*(n+.3*l),Math.sin(this.torusAngle)*(n+.3*l));M.addColorStop(0,"rgba(255,255,255,0.0)"),M.addColorStop(.4,"rgba(255,240,200,0.18)"),M.addColorStop(.7,"rgba(200,240,255,0.22)"),M.addColorStop(1,"rgba(255,255,255,0.0)"),t.fillStyle=M,t.fill();const w=Math.cos(this.torusAngle)*r,T=Math.sin(this.torusAngle)*r,v=t.createRadialGradient(w,T,0,w,T,1.8*l);v.addColorStop(0,"rgba(255,250,230,0.95)"),v.addColorStop(.3,"rgba(245,215,140,0.55)"),v.addColorStop(1,"rgba(0,0,0,0)"),t.fillStyle=v,t.beginPath(),t.arc(w,T,1.8*l,0,2*Math.PI),t.fill();const P=Math.cos(this.torusAngle+.18*Math.PI)*o,y=Math.sin(this.torusAngle+.18*Math.PI)*o,A=t.createRadialGradient(P,y,0,P,y,1.2*l);A.addColorStop(0,"rgba(180,255,230,0.55)"),A.addColorStop(.5,"rgba(126,207,179,0.2)"),A.addColorStop(1,"rgba(0,0,0,0)"),t.fillStyle=A,t.beginPath(),t.arc(P,y,1.2*l,0,2*Math.PI),t.fill(),t.restore()},spawnNote(){const t=Math.random()*Math.PI*2,e=this.currentOuterRadius+150,i=this.currentOuterRadius+210,s=Math.random()*(i-e)+e,h=this.currentNumber++;this.currentNumber>this.maxNumber&&(this.currentNumber=1),this.notes.push({x:this.centerX+Math.cos(t)*s,y:this.centerY+Math.sin(t)*s,radius:.12*this.baseOuterRadius,value:h,id:h})},drawNotes(t,e){for(let i=this.notes.length-1;i>=0;i--){const s=this.notes[i],h=this.centerX-s.x,a=this.centerY-s.y,r=Math.sqrt(h*h+a*a),o=Math.min(this.noteSpeed*e,r);s.x+=h/r*o,s.y+=a/r*o,this._drawNoteCircle(t,s),r<=o+1&&this.notes.splice(i,1)}},_drawNoteCircle(t,e){const i=e.radius,s="cannon"===this.mode||"orb"===this.mode||"triple"===this.mode?this.shouldCollectCannon(e.value):this.shouldCollect(e.value),h=this._noteVisual(s,e.id||e.value),a=this.hintState,r=h.showCorrect,o=h.showWrong;if(t.save(),r||o||h.shimmerAmt>0){let s=r?.16:o?.11:.12*h.shimmerAmt;"subtle"===a&&r&&(s=.07);const n=r?`rgba(109,232,180,${s})`:o?`rgba(232,124,109,${s})`:`rgba(140,180,220,${s})`,l=t.createRadialGradient(e.x,e.y,.2*i,e.x,e.y,1.4*i);l.addColorStop(0,n),l.addColorStop(1,"rgba(0,0,0,0)"),t.fillStyle=l,t.beginPath(),t.arc(e.x,e.y,1.4*i,0,2*Math.PI),t.fill()}let n,l,d;r&&"subtle"!==a?(n="#0e3028",l=this.C.correct,d="rgba(109,232,180,0.45)"):o?(n="#2a1010",l=this.C.wrong,d="rgba(232,124,109,0.4)"):(n="#102140",l=`rgba(${Math.round(100+80*h.shimmerAmt)},${Math.round(160+40*h.shimmerAmt)},${Math.round(200+30*h.shimmerAmt)},${.55+.35*h.shimmerAmt})`,d=`rgba(90,150,200,${.25+.2*h.shimmerAmt})`),t.shadowColor=d,t.shadowBlur=20,t.beginPath(),t.arc(e.x,e.y,i,0,2*Math.PI),t.fillStyle=n,t.fill(),t.strokeStyle=l,t.lineWidth=2.5,t.stroke(),t.shadowBlur=0,t.beginPath(),t.arc(e.x-.27*i,e.y-.27*i,.2*i,0,2*Math.PI),t.fillStyle=r&&"subtle"!==a?"rgba(200,255,230,0.30)":"rgba(200,230,255,0.22)",t.fill(),"subtle"!==a||s||(t.globalAlpha=.18,t.fillStyle="#aac8e0",t.font=`bold ${Math.round(.42*i)}px 'Trebuchet MS', sans-serif`,t.textAlign="center",t.textBaseline="middle",t.fillText("?",e.x,e.y-.55*i),t.globalAlpha=1),t.fillStyle=this.C.noteText,t.font=`bold ${Math.round(.72*i)}px 'Trebuchet MS', sans-serif`,t.textAlign="center",t.textBaseline="middle",t.fillText(e.value,e.x,e.y),t.restore()},shouldCollect(t){if("default"===this.mode)return t%this.skipAmount===0;if("pattern"===this.mode){return(t-1)%(this.pattern.skip+this.pattern.collect)>=this.pattern.skip}return!1},shouldCollectCannon(t){return t%this.skipAmount===0},checkCollision(t,e){for(let i=this.notes.length-1;i>=0;i--){const s=this.notes[i],h=t-s.x,a=e-s.y,r=Math.sqrt(h*h+a*a),o=Math.sqrt((s.x-this.centerX)**2+(s.y-this.centerY)**2),n=o+s.radius>this.currentInnerRadius&&o-s.radius<this.currentOuterRadius;r<s.radius+20&&n&&(this.shouldCollect(s.value)?(this.combo++,this.combo%5==0&&this.multiplier++,this.score+=10*this.multiplier,this.lastHitType="CORRECT",this._gainXP(1),this._recoverSpeed(),this.popEffects.length<this.MAX_POP&&this.popEffects.push({x:s.x,y:s.y,life:0,color:this.C.correct})):(this.combo=0,this.multiplier=1,this.score-=5,this.lastHitType="WRONG",this._penalizeSpeed(),this.popEffects.length<this.MAX_POP&&this.popEffects.push({x:s.x,y:s.y,life:0,color:this.C.wrong})),this.hitTextTimer=30,this.notes.splice(i,1))}},checkCannonCollision(t,e){for(let i=this.notes.length-1;i>=0;i--){const s=this.notes[i];if(s.spawnProtected)continue;const h=t-s.x,a=e-s.y;Math.sqrt(h*h+a*a)<s.radius+20&&(this.shouldCollectCannon(s.value)?(this.combo++,this.combo%5==0&&this.multiplier++,this.score+=10*this.multiplier,this.lastHitType="CORRECT",this._gainXP(1),this._recoverSpeed(),this.createExplosion(s.x,s.y,this.C.correct)):(this.combo=0,this.multiplier=1,this.score-=5,this.lastHitType="WRONG",this._penalizeSpeed(),this.createExplosion(s.x,s.y,this.C.wrong)),this.hitTextTimer=30,this.notes.splice(i,1))}},drawPopEffects(t){for(let e=this.popEffects.length-1;e>=0;e--){const i=this.popEffects[e];if(i.life+=.025,i.life>=1){this.popEffects.splice(e,1);continue}const s=1-Math.pow(1-i.life,2),h=Math.max(0,1-s),a=1+.5*s;t.save(),t.globalAlpha=h,t.translate(i.x,i.y),t.scale(a,a),t.fillStyle=i.color,t.shadowColor=i.color,t.shadowBlur=16,t.beginPath(),t.arc(0,0,32,0,2*Math.PI),t.fill(),t.restore()}},drawHitText(t){if(this.hitTextTimer<=0&&this.missQueue.length>0&&(this.missQueue.sort((t,e)=>t-e),this.lastHitType="YOU SKIPPED NUMBER "+this.missQueue.shift(),this.hitTextTimer=40,this._penalizeSpeed()),this.hitTextTimer>0){const e=Math.sin(this.hitTextTimer/40*Math.PI);let i="#ffffff";"CORRECT"===this.lastHitType?i=this.C.correct:"WRONG"===this.lastHitType?i=this.C.wrong:this.lastHitType.includes("SKIPPED")&&(i=this.C.gold),t.save(),t.globalAlpha=e,t.fillStyle=i,t.font="bold 34px 'Trebuchet MS', sans-serif",t.textAlign="center",t.textBaseline="middle",t.shadowColor=i,t.shadowBlur=18,t.fillText(this.lastHitType,this.centerX,this.centerY-130),t.restore(),this.hitTextTimer--}},activatePatternMode(){this.mode="pattern",this.pattern.skip=Math.floor(5*Math.random())+1,this.pattern.collect=Math.floor(5*Math.random())+1,this.gameTitle="SKIP "+this.pattern.skip+" COLLECT "+this.pattern.collect},activateCannonMode(){this.mode="cannon",this._resetLauncherState(),this.gameTitle="CANNON SKIP "+this.skipAmount},activateOrbMode(){this.mode="orb",this._resetLauncherState(),this.orbAngle=0,this.orbTargetAngle=0,this.gameTitle="ORB SKIP "+this.skipAmount},activateTripleCannonMode(){this.mode="triple",this._resetLauncherState(),this.tripleBaseAngle=0,this.tripleTargetAngle=0,this.tripleCannons=[];const t=2*Math.PI/this.tripleCount;for(let e=0;e<this.tripleCount;e++)this.tripleCannons.push({offset:e*t});this.gameTitle="TRIPLE CANNON SKIP "+this.skipAmount},_resetLauncherState(){this.notes=[],this.explosions=[],this.combo=0,this.multiplier=1,this.cannonAngle=0,this.cannonTargetAngle=0,this.pendingShot=null,this.previewCannons=[],this.previewTimer=0,this.skipAmount=this.getRandomSkip(),this.noteSpeed=this.speedCap},spawnCannonNote(){if(this.pendingShot)return;const t=Math.random()*Math.PI*2,e=this.currentNumber++;this.currentNumber>this.maxNumber&&(this.currentNumber=1),this.pendingShot={angle:t,speed:this.noteSpeed,value:e,id:e},this.cannonTargetAngle=t+Math.PI/2,this.startCharging()},updateCannonNotes(t,e){for(let i=this.notes.length-1;i>=0;i--){const s=this.notes[i];s.x+=s.vx*e,s.y+=s.vy*e,this.updateLauncherProtection(s),this._drawNoteCircle(t,s);const h=120;(s.x<-h||s.x>2*this.centerX+h||s.y<-h||s.y>2*this.centerY+h)&&(this.shouldCollectCannon(s.value)&&(this.score-=10,this.combo=0,this.multiplier=1,this.missQueue.push(s.value),this._penalizeSpeed(),this.createExplosion(s.x,s.y,"#e8a06d")),this.notes.splice(i,1))}},drawCannon(t,e=1/60){const i=.35*this.baseOuterRadius;this.cannonLength=1.4*i;let s=this.cannonTargetAngle-this.cannonAngle;s=Math.atan2(Math.sin(s),Math.cos(s)),this.cannonAngle+=.18*s,this.pendingShot&&Math.abs(s)<.05&&this.fireCannon(),t.save(),t.translate(this.centerX,this.centerY),t.rotate(this.cannonAngle);const h=t.createRadialGradient(0,0,.1*i,0,0,.6*i);h.addColorStop(0,"#2a4a6e"),h.addColorStop(1,"#152035"),t.beginPath(),t.arc(0,0,.6*i,0,2*Math.PI),t.fillStyle=h,t.shadowColor=this.C.accent,t.shadowBlur=18,t.fill(),t.shadowBlur=0,t.fillStyle="#3a6080",t.beginPath();const a=.13*-i,r=-this.cannonLength,o=.26*i,n=this.cannonLength;t.moveTo(a+6,r),t.lineTo(a+o-6,r),t.quadraticCurveTo(a+o,r,a+o,r+6),t.lineTo(a+o,r+n),t.lineTo(a,r+n),t.lineTo(a,r+6),t.quadraticCurveTo(a,r,a+6,r),t.closePath(),t.fill(),t.strokeStyle=this.C.accent,t.lineWidth=1.5,t.stroke(),t.restore()},fireCannon(){if(!this.pendingShot)return;const{angle:t,speed:e,value:i,id:s}=this.pendingShot;this.notes.push({x:this.centerX,y:this.centerY,radius:.12*this.baseOuterRadius,value:i,id:s||i,vx:Math.cos(t)*e,vy:Math.sin(t)*e,spawnProtected:!0}),this.pendingShot=null,this.isCharging=!1,this.charge=0,this.chargeParticles=[]},spawnOrbNote(){const t=Math.random()*Math.PI*2;this.orbTargetAngle=t+Math.PI/2;const e=this.currentNumber++;this.currentNumber>this.maxNumber&&(this.currentNumber=1);const i=this.noteSpeed;setTimeout(()=>{this.notes.push({x:this.centerX,y:this.centerY,radius:.12*this.baseOuterRadius,value:e,id:e,vx:Math.cos(t)*i,vy:Math.sin(t)*i,spawnProtected:!0})},120)},drawOrbLauncher(t,e=1/60){const i=.6*this.baseOuterRadius;let s=this.orbTargetAngle-this.orbAngle;if(s=Math.atan2(Math.sin(s),Math.cos(s)),this.orbAngle+=.18*s,t.save(),t.translate(this.centerX,this.centerY),t.rotate(this.orbAngle),this.orbImage&&this.orbImage.complete&&this.orbImage.naturalWidth>0){const e=this.orbImage,s=i/Math.max(e.width,e.height);t.scale(1,-1),t.drawImage(e,-e.width*s/2,-e.height*s/2,e.width*s,e.height*s)}else{const e=t.createRadialGradient(0,0,0,0,0,i/2);e.addColorStop(0,"#8ecae6"),e.addColorStop(.55,"#1a3a5c"),e.addColorStop(1,"rgba(14,30,50,0)"),t.fillStyle=e,t.shadowColor=this.C.accent,t.shadowBlur=28,t.beginPath(),t.arc(0,0,i/2,0,2*Math.PI),t.fill(),t.shadowBlur=0}t.restore()},spawnTripleNote(){if(this.pendingShot)return;const t=Math.random()*Math.PI*2;this.pendingShot={angle:t,speed:this.noteSpeed},this.tripleTargetAngle=t+Math.PI/2,this.startCharging()},drawTripleCannons(t,e=1/60){const i=.6*this.baseOuterRadius;let s=this.tripleTargetAngle-this.tripleBaseAngle;s=Math.atan2(Math.sin(s),Math.cos(s)),this.tripleBaseAngle+=.18*s,this.pendingShot&&this.previewTimer<=0&&0===this.previewCannons.length&&Math.abs(s)<.05&&this.fireTriple();for(let e=0;e<this.tripleCannons.length;e++){const s=this.tripleCannons[e],h=this.tripleBaseAngle+s.offset;if(t.save(),t.translate(this.centerX,this.centerY),t.rotate(h),this.orbImage&&this.orbImage.complete&&this.orbImage.naturalWidth>0){const e=this.orbImage,s=i/Math.max(e.width,e.height);t.scale(1,-1),t.drawImage(e,-e.width*s/2,-e.height*s/2,e.width*s,e.height*s)}else{const e=t.createRadialGradient(0,0,0,0,0,i/2);e.addColorStop(0,"#8ecae6"),e.addColorStop(1,"rgba(14,30,50,0)"),t.fillStyle=e,t.beginPath(),t.arc(0,0,.8*i,0,2*Math.PI*.8),t.fill()}if(this.previewCannons.includes(e)&&this.previewTimer>0){const e=.8+.2*Math.sin(.01*Date.now()),s=.18*i,h=.6*-i;t.save(),t.globalCompositeOperation="lighter",t.scale(1,-1);const a=t.createRadialGradient(0,h,0,0,h,s);a.addColorStop(0,"rgba(245,200,66,1)"),a.addColorStop(.4,"rgba(245,200,66,0.55)"),a.addColorStop(1,"rgba(245,200,66,0)"),t.fillStyle=a,t.beginPath(),t.arc(0,h,s*e,0,2*Math.PI),t.fill(),t.restore()}t.restore()}},fireTriple(){if(!this.pendingShot)return;const t=[1,1,1,1,1,1,2,2,2,2,2,2,2,3,3],e=t[Math.floor(Math.random()*t.length)];for(this.previewCannons=[];this.previewCannons.length<e;){const t=Math.floor(Math.random()*this.tripleCount);this.previewCannons.includes(t)||this.previewCannons.push(t)}this.previewTimer=this.previewDuration},executeTripleShot(){if(!this.pendingShot)return;const t=this.pendingShot.speed;this.previewCannons.forEach((e,i)=>{setTimeout(()=>{const i=this.tripleBaseAngle+this.tripleCannons[e].offset-Math.PI/2,s=this.currentNumber++;this.currentNumber>this.maxNumber&&(this.currentNumber=1),this.notes.push({x:this.centerX,y:this.centerY,radius:.12*this.baseOuterRadius,value:s,id:s,vx:Math.cos(i)*t,vy:Math.sin(i)*t,spawnProtected:!0})},180*i)}),setTimeout(()=>{this.previewCannons=[],this.pendingShot=null,this.isCharging=!1,this.charge=0,this.chargeParticles=[]},180*this.previewCannons.length)},updateLauncherProtection(t){const e=t.x-this.centerX,i=t.y-this.centerY;Math.sqrt(e*e+i*i)>this.launcherSafeRadius&&(t.spawnProtected=!1)},drawLauncherZone(t){t.save(),t.setLineDash([6,9]),t.strokeStyle="rgba(140,180,220,0.18)",t.lineWidth=2,t.beginPath(),t.arc(this.centerX,this.centerY,this.launcherSafeRadius,0,2*Math.PI),t.stroke(),t.setLineDash([]),t.restore()},startCharging(){this.charge=0,this.isCharging=!0,this.chargeParticles=[]},updateCharging(t){if(this.isCharging){if(this.charge=Math.min(1,this.charge+this.chargeSpeed*t),Math.random()<.35){const t=Math.random()*Math.PI*2;this.chargeParticles.push({x:this.centerX+Math.cos(t)*this.launcherSafeRadius,y:this.centerY+Math.sin(t)*this.launcherSafeRadius,life:1})}for(let e=this.chargeParticles.length-1;e>=0;e--){const i=this.chargeParticles[e];i.x+=.08*(this.centerX-i.x),i.y+=.08*(this.centerY-i.y),i.life-=1.2*t,i.life<=0&&this.chargeParticles.splice(e,1)}}},drawCharging(t){if(!this.isCharging)return;t.save(),t.globalCompositeOperation="lighter";for(const e of this.chargeParticles)t.globalAlpha=.7*e.life,t.fillStyle=this.C.gold,t.shadowColor=this.C.gold,t.shadowBlur=12,t.beginPath(),t.arc(e.x,e.y,5,0,2*Math.PI),t.fill();t.restore();const e=.18*this.baseOuterRadius*(.5+.8*this.charge),i=t.createRadialGradient(this.centerX,this.centerY,0,this.centerX,this.centerY,e);i.addColorStop(0,`rgba(245,200,66,${.65*this.charge})`),i.addColorStop(1,"rgba(245,200,66,0)"),t.fillStyle=i,t.beginPath(),t.arc(this.centerX,this.centerY,e,0,2*Math.PI),t.fill()},createExplosion(t,e,i){for(let s=0;s<14&&!(this.explosions.length>=this.MAX_EXPL);s++){const s=Math.random()*Math.PI*2,h=200*Math.random()+100;this.explosions.push({x:t,y:e,vx:Math.cos(s)*h,vy:Math.sin(s)*h,life:0,color:i})}},drawExplosions(t){for(let e=this.explosions.length-1;e>=0;e--){const i=this.explosions[e];if(i.life+=.03,i.life>=1){this.explosions.splice(e,1);continue}i.x+=.016*i.vx,i.y+=.016*i.vy;const s=Math.max(0,1-i.life);t.save(),t.globalAlpha=s,t.fillStyle=i.color,t.shadowColor=i.color,t.shadowBlur=10,t.beginPath(),t.arc(i.x,i.y,.038*this.baseOuterRadius,0,2*Math.PI),t.fill(),t.restore()}},fullReset(){this.notes=[],this.popEffects=[],this.explosions=[],this.missQueue=[],this.currentNumber=1,this.score=0,this.combo=0,this.multiplier=1,this.xp=0,this.level=1,this.xpToNext=8,this.tier=0,this.noteSpeed=this.speedCap,this.hintState="full",this.noiseTime=0,this.spawnInterval=1200,this.pendingShot=null,this.previewCannons=[],this.previewTimer=0,this.isCharging=!1,this.charge=0,this.chargeParticles=[],this.torusAngle=0,this.pulseTime=0,this.skipAmount=this.getRandomSkip(),this.gameTitle="SKIP "+this.skipAmount,this._restartSpawnTimer()},getRandomSkip(){const t=[2,2,2,2,3,3,3,3,3,3,4,4,4,5,5];return t[Math.floor(Math.random()*t.length)]}};
+/* ============================================================
+   CHANGES v2:
+   - level 1-3 :- correct number will be visually able to classified in right and wring numbers to be collected
+   - level 4-6 :- correct number will have a slight hint halo effect on it
+   - level 7-9 :- no visual difference between right and wrong numbers
+   - level 10-12 :- wong number will have green colour and right number will have red colours 
+   - level 13-15 :- the effect will be randomised
+   - Adaptive speed system: starts at speedCap, drops on miss/wrong,
+     recovers on correct hits, gently drifts back toward cap when
+     playing well. Never exceeds speedCap.
+
+   skip-number.js  (Game1) — optimised
+   1. Particle + explosion arrays capped at 80 each — prevents
+      unbounded growth on slow devices causing frame spikes.
+   2. Cannon collision now correctly tracks combo + multiplier
+      (was missing from the original).
+   3. Background stars use Math.round for integer pixel coords —
+      stays on pixel grid so GPU rasterises faster.
+   4. xxxshadowBlur on torus fills removed — only applied on the
+      two strokes where it's visible. Fills with shadowBlur force
+      a full compositing pass on Android which is expensive.xxx
+   5. Single ctx.save/restore per note circle draw instead of
+      multiple scattered state changes.
+============================================================ */
+
+const Game1 = {
+
+  /* ── Layout ─────────────────────────────────────────────── */
+  centerX: null,
+  centerY: null,
+  baseOuterRadius: 1000,
+  baseInnerRadius: 970,
+  currentOuterRadius: 1000,
+  currentInnerRadius: 970,
+  ringScale: 1.5,
+
+  /* ── Palette ────────────────────────────────────────────── */
+  C: {
+    bg:          "#0d1b2e",
+    noteText:    "#f0f4ff",
+    correct:     "#6de8b4",
+    wrong:       "#e87c6d",
+    gold:        "#f5c842",
+    accent:      "#8ecae6",
+    hudBg:       "rgba(10,20,38,0.78)",
+    hudBorder:   "rgba(140,180,220,0.18)",
+    xpTrack:     "rgba(245,200,66,0.15)",
+  },
+
+  /* ── Notes & Game State ─────────────────────────────────── */
+  notes: [],
+  noteSpeed: 0,
+  popEffects: [],
+  explosions: [],
+  score: 0,
+  combo: 0,
+  multiplier: 1,
+  lastHitType: "",
+  hitTextTimer: 0,
+  missQueue: [],
+  currentNumber: 1,
+  maxNumber: 100,
+  spawnTimer: null,
+  spawnInterval: 1200,
+
+  pulseTime: 0,
+  pulseSpeed: 2.2,
+  pulseAmountOuter: 10,
+  pulseAmountInner: 5,
+
+  torusAngle: 0,
+
+  mode: "default",
+  skipAmount: 3,
+  gameTitle: "SKIP 3",
+  pattern: { skip: 3, collect: 1 },
+
+  cannonAngle: 0,
+  cannonTargetAngle: 0,
+  cannonLength: 0,
+  pendingShot: null,
+
+
+  orbImage: null,
+  orbAngle: 0,
+  orbTargetAngle: 0,
+  lastOrbNote: null,
+
+  charge: 0,
+  chargeSpeed: 0.8,
+  isCharging: false,
+  chargeParticles: [],
+  launcherSafeRadius: 0,
+
+  tripleCannons: [],
+  tripleBaseAngle: 0,
+  tripleTargetAngle: 0,
+  tripleCount: 3,
+  previewCannons: [],
+  previewTimer: 0,
+  previewDuration: 0.6,
+
+  xp: 0,
+  xpToNext: 8,
+  level: 1,
+  maxLevel: 20,
+  tier: 0,
+  tierNames:       ["Sprout 🌱", "Star ⭐", "Champ 🏆", "Legend 🌟"],
+  tierColors:      ["#6de8b4",   "#f5c842",  "#e8a06d",   "#c084fc"],
+  tierThresholds:  [1, 6, 12, 18],
+
+  levelUpActive: false,
+  levelUpTimer: 0,
+  levelUpDuration: 1400,
+  levelUpParticles: [],
+  xpPopFlash: 0,
+  hintState: "full",
+  noiseTime: 0,
+
+  speedCap: 0,
+  speedMin: 0,
+  speedPenaltyStep: 0.06,
+  speedRecoveryStep: 0.02,
+  speedDriftRate: 0.008,
+
+  bgStars: [],
+
+  _hintChangeMessages: {
+    subtle: "👀 Look carefully — hints are fading!",
+    none:   "🧠 No more hints — use your brain!",
+    decoy:  "😈 Watch out — fake signals ahead!",
+    chaos:  "🌀 CHAOS MODE — trust nothing!",
+  },
+  _hintChangeTimer: 0,
+  _hintChangeMessage: "",
+
+  /* ── Particle caps ───────────────────────────────────────── */
+  MAX_POP:  80,
+  MAX_EXPL: 80,
+
+
+  /* ============================================================
+     INIT
+  ============================================================ */
+  init() {
+    const rect = document.getElementById("container").getBoundingClientRect();
+    this.onResize(rect.width, rect.height);
+
+    this.notes = [];
+    this.popEffects = [];
+    this.explosions = [];
+    this.missQueue = [];
+    this.levelUpParticles = [];
+    this.chargeParticles = [];
+
+    this.score = 0;
+    this.combo = 0;
+    this.multiplier = 1;
+    this.hitTextTimer = 1;
+    this.currentNumber = 1;
+    this.xp = 0;
+    this.xpToNext = 8;
+    this.level = 1;
+    this.tier = 0;
+    this.levelUpActive = false;
+    this.xpPopFlash = 0;
+    this.hintState = "full";
+    this.noiseTime = 0;
+    this.spawnInterval = 1200;
+    this.torusAngle = 0;
+   
+
+    this.mode       = "default";
+    this.skipAmount = this.getRandomSkip();
+    this.gameTitle  = "SKIP " + this.skipAmount;
+    this.noteSpeed  = this.speedCap;
+
+    this.orbImage = new Image();
+    this.orbImage.src = "orb1.png";
+    
+
+    this._initBgStars();
+    this._restartSpawnTimer();
+    window.addEventListener("orientationchange", () => {
+  this.fullReset();
+});
+
+// Also handle desktop resize (important!)
+window.addEventListener("resize", () => {
+  this.fullReset();
+});
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "1") this.activatePatternMode();
+      if (e.key === "2") this.activateCannonMode();
+      if (e.key === "3") this.activateOrbMode();
+      if (e.key === "4") this.activateTripleCannonMode();
+    });
+  },
+
+  _restartSpawnTimer() {
+    if (this.spawnTimer) clearInterval(this.spawnTimer);
+    this.spawnTimer = setInterval(() => {
+      if      (this.mode === "cannon") this.spawnCannonNote();
+      else if (this.mode === "orb")    this.spawnOrbNote();
+      else if (this.mode === "triple") this.spawnTripleNote();
+      else                             this.spawnNote();
+    }, this.spawnInterval);
+  },
+
+
+  /* ============================================================
+     RESIZE
+  ============================================================ */
+  onResize(width, height) {
+    this.centerX = width / 2;
+    this.centerY = height / 2;
+    const base = Math.min(width, height);
+    this.baseOuterRadius    = base * 0.25 * this.ringScale;
+    this.baseInnerRadius    = this.baseOuterRadius * 0.8;
+    this.currentOuterRadius = this.baseOuterRadius;
+    this.currentInnerRadius = this.baseInnerRadius;
+
+    this.speedCap  = this.baseOuterRadius * 0.4;
+    this.speedMin  = this.speedCap * 0.20;
+    if (!this.noteSpeed || this.noteSpeed > this.speedCap) {
+      this.noteSpeed = this.speedCap;
+    }
+
+    this.launcherSafeRadius = this.baseOuterRadius * 0.45;
+    this._initBgStars();
+
+
+  },
+
+
+  /* ============================================================
+     ADAPTIVE SPEED
+  ============================================================ */
+  _penalizeSpeed() {
+    this.noteSpeed = Math.max(this.speedMin, this.noteSpeed - this.speedCap * this.speedPenaltyStep);
+  },
+
+  _recoverSpeed() {
+    this.noteSpeed = Math.min(this.speedCap, this.noteSpeed + this.speedCap * this.speedRecoveryStep);
+  },
+
+  _driftSpeed(dt) {
+    if (this.noteSpeed < this.speedCap) {
+      this.noteSpeed = Math.min(
+        this.speedCap,
+        this.noteSpeed + (this.speedCap - this.noteSpeed) * this.speedDriftRate * dt * 60
+      );
+    }
+  },
+
+
+  /* ============================================================
+     BACKGROUND — integer star coords for GPU friendliness
+  ============================================================ */
+  _initBgStars() {
+    this.bgStars = [];
+    const W = this.centerX * 2, H = this.centerY * 2;
+    for (let i = 0; i < 80; i++) {
+      this.bgStars.push({
+        x:  Math.round(Math.random() * W),
+        y:  Math.round(Math.random() * H),
+        r:  0.5 + Math.random() * 1.4,
+        a:  0.1 + Math.random() * 0.4,
+        tw: Math.random() * Math.PI * 2,
+        ts: 0.012 + Math.random() * 0.018,
+      });
+    }
+  },
+
+  _drawBg(ctx) {
+    const W = this.centerX * 2, H = this.centerY * 2;
+    const g = ctx.createRadialGradient(
+      this.centerX, this.centerY * 0.6, 0,
+      this.centerX, H * 0.5, Math.max(W, H) * 0.75
+    );
+    g.addColorStop(0, "#1a2d4a");
+    g.addColorStop(0.5, "#0f1e35");
+    g.addColorStop(1, "#080f1c");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  },
+
+  _drawBgStars(ctx, dt) {
+    for (const s of this.bgStars) {
+      s.tw += s.ts;
+      const alpha = Math.max(0, s.a + Math.sin(s.tw) * 0.12);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle   = "#c8dff0";
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  },
+
+
+  /* ============================================================
+     LEVEL / XP
+  ============================================================ */
+  _gainXP(amount) {
+    if (this.level >= this.maxLevel) return;
+    this.xp += amount;
+    if (this.xp >= this.xpToNext) {
+      this.xp       = 0;
+      this.level++;
+      this.xpToNext = Math.min(8 + this.level * 2, 25);
+      this.xpPopFlash = 1;
+      for (let t = this.tierThresholds.length - 1; t >= 0; t--) {
+        if (this.level >= this.tierThresholds[t]) {
+          this.tier = Math.max(this.tier, t); break;
+        }
+      }
+      this._updateHintState();
+      if (this.level % 3 === 0) {
+        this.spawnInterval = Math.max(650, this.spawnInterval - 60);
+        this._restartSpawnTimer();
+      }
+      this._triggerLevelUpBurst();
+    }
+  },
+
+  _updateHintState() {
+    const lv = this.level, prev = this.hintState;
+    if      (lv <= 3)  this.hintState = "full";
+    else if (lv <= 5)  this.hintState = "subtle";
+    else if (lv <= 8)  this.hintState = "none";
+    else if (lv <= 11) this.hintState = "decoy";
+    else               this.hintState = "chaos";
+    if (this.hintState !== prev) {
+      this._hintChangeTimer   = 2800;
+      this._hintChangeMessage = this._hintChangeMessages[this.hintState] || "";
+    }
+  },
+
+  _noteVisual(isCorrect, noteId) {
+    const h  = this.hintState;
+    const t  = this.noiseTime + noteId * 137.5;
+    const sh = Math.abs(Math.sin(t * 0.7));
+    if (h === "full")   return { showCorrect: isCorrect,  showWrong: !isCorrect, shimmerAmt: 0 };
+    if (h === "subtle") return { showCorrect: isCorrect,  showWrong: false,      shimmerAmt: 0 };
+    if (h === "none")   return { showCorrect: false,      showWrong: false,      shimmerAmt: 0 };
+    if (h === "decoy")  return { showCorrect: !isCorrect, showWrong: isCorrect,  shimmerAmt: 0 };
+    return { showCorrect: sh > 0.6, showWrong: sh < 0.25, shimmerAmt: sh };
+  },
+
+  _triggerLevelUpBurst() {
+    this.levelUpActive  = true;
+    this.levelUpTimer   = this.levelUpDuration;
+    this.levelUpParticles = [];
+    const cols = [this.C.gold, this.C.correct, this.C.accent, "#ffffff"];
+    for (let i = 0; i < 28; i++) {
+      const a = Math.random() * Math.PI * 2, v = 180 + Math.random() * 220;
+      this.levelUpParticles.push({
+        x: this.centerX, 
+        y: this.centerY,
+        vx: Math.cos(a) * v, 
+        vy: Math.sin(a) * v,
+        r: 3 + Math.random() * 5,
+        color: cols[i % cols.length], 
+        life: 1,
+      });
+    }
+  },
+
+  _updateLevelUp(dt) {
+    if (!this.levelUpActive) return;
+    this.levelUpTimer -= dt * 1000;
+    if (this.xpPopFlash > 0) this.xpPopFlash = Math.max(0, this.xpPopFlash - dt * 3);
+    for (const p of this.levelUpParticles) {
+      p.x += p.vx * dt; 
+      p.y += p.vy * dt;
+      p.vx *= 0.94; 
+      p.vy *= 0.94; 
+      p.vy += 120 * dt; 
+      p.life -= dt * 1.1;
+    }
+    this.levelUpParticles = this.levelUpParticles.filter(p => p.life > 0);
+    if (this.levelUpTimer <= 0) this.levelUpActive = false;
+  },
+
+  _drawLevelUpBurst(ctx) {
+    if (!this.levelUpActive) return;
+    const prog = 1 - this.levelUpTimer / this.levelUpDuration;
+    for (const p of this.levelUpParticles) {
+      ctx.globalAlpha = Math.max(0, p.life) * 0.9;
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color; ctx.shadowBlur = 12;
+      ctx.beginPath(); 
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); 
+      ctx.fill();
+    }
+    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+    if (prog > 0.05 && prog < 0.8) {
+      const alpha = Math.sin(prog / 0.8 * Math.PI);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(this.centerX, this.centerY - 110);
+      ctx.scale(0.8 + alpha * 0.3, 0.8 + alpha * 0.3);
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = "bold 44px 'Trebuchet MS', sans-serif";
+      ctx.shadowColor = this.C.gold; ctx.shadowBlur = 28;
+      ctx.fillStyle = this.C.gold;
+      ctx.fillText("LEVEL " + this.level + "!", 0, 0);
+      ctx.font = "bold 22px 'Trebuchet MS', sans-serif";
+      ctx.fillStyle = this.tierColors[this.tier];
+      ctx.shadowColor = this.tierColors[this.tier]; 
+      ctx.shadowBlur = 14;
+      ctx.fillText(this.tierNames[this.tier], 0, 46);
+      ctx.restore();
+    }
+  },
+
+  _drawHintChangeAnnouncement(ctx, dt) {
+    if (this._hintChangeTimer <= 0 || !this._hintChangeMessage) return;
+    this._hintChangeTimer -= dt * 1000;
+    const total    = 2800;
+    const progress = 1 - this._hintChangeTimer / total;
+    let alpha;
+    if      (progress < 0.14) alpha = progress / 0.14;
+    else if (progress < 0.72) alpha = 1;
+    else                       alpha = 1 - (progress - 0.72) / 0.28;
+    alpha = Math.max(0, Math.min(1, alpha));
+    const colors = { subtle: "#f5c842", none: "#8ecae6", decoy: "#e87c6d", chaos: "#c084fc" };
+    const col    = colors[this.hintState] || "#ffffff";
+    const W      = this.centerX * 2;
+    const bannerY = this.centerY * 0.38;
+    ctx.save(); ctx.globalAlpha = alpha;
+    const msg = this._hintChangeMessage;
+    ctx.font  = "bold 30px 'Trebuchet MS', sans-serif";
+    const tw  = ctx.measureText(msg).width;
+    const bw = tw + 56, bh = 56, bx = W / 2 - bw / 2, by = bannerY - bh / 2, br = bh / 2;
+    ctx.beginPath();
+    ctx.moveTo(bx + br, by); 
+    ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
+    ctx.arcTo(bx + bw, by + bh, bx, by + bh, br); 
+    ctx.arcTo(bx, by + bh, bx, by, br);
+    ctx.arcTo(bx, by, bx + bw, by, br); 
+    ctx.closePath();
+    ctx.fillStyle = "rgba(8,14,28,0.88)"; 
+    ctx.fill();
+    ctx.strokeStyle = col; 
+    ctx.lineWidth = 2;
+    ctx.shadowColor = col; 
+    ctx.shadowBlur = 16; 
+    ctx.stroke(); 
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = col; 
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = col; 
+    ctx.shadowBlur = 10;
+    ctx.fillText(msg, W / 2, bannerY);
+    ctx.restore();
+  },
+
+  _drawXPRing(ctx, cx, cy, radius) {
+    const fill      = this.level >= this.maxLevel ? 1 : this.xp / this.xpToNext;
+    const tierColor = this.tierColors[this.tier];
+    const start     = -Math.PI / 2;
+    ctx.beginPath(); 
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.strokeStyle = this.C.xpTrack; 
+    ctx.lineWidth = 6; 
+    ctx.stroke();
+    if (fill > 0.01) {
+      ctx.beginPath(); 
+      ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
+      ctx.strokeStyle = tierColor; 
+      ctx.lineWidth = 6;
+      ctx.shadowColor = tierColor; 
+      ctx.shadowBlur = 12 + this.xpPopFlash * 20;
+      ctx.stroke(); 
+      ctx.shadowBlur = 0;
+    }
+    if (this.xpPopFlash > 0) {
+      ctx.beginPath(); 
+      ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash * 0.55})`;
+      ctx.lineWidth   = 5 * this.xpPopFlash; ctx.stroke();
+    }
+  },
+
+  /* ============================================================
+     HUD
+  ============================================================ */
+  _pill(ctx, x, y, w, h) {
+    const r = h / 2;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); 
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r); 
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r); 
+    ctx.closePath();
+    ctx.fillStyle = this.C.hudBg; 
+    ctx.fill();
+    ctx.strokeStyle = this.C.hudBorder; 
+    ctx.lineWidth = 1; 
+    ctx.stroke();
+  },
+
+  _drawHUD(ctx, isLauncher, dt) {
+    const W = this.centerX * 2, H = this.centerY * 2;
+    const f = "bold 20px 'Trebuchet MS', sans-serif";
+
+    if (isLauncher) {
+      ctx.fillStyle = this.C.hudBg; 
+      ctx.fillRect(0, 0, W, 50);
+      ctx.strokeStyle = this.C.hudBorder; 
+      ctx.lineWidth = 1;
+      ctx.beginPath(); 
+      ctx.moveTo(0, 50); 
+      ctx.lineTo(W, 50); 
+      ctx.stroke();
+      ctx.font = f; 
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#e8f4ff"; 
+      ctx.textAlign = "left";
+      ctx.fillText("⭐ " + this.score, 16, 25);
+      ctx.fillStyle = this.C.gold; 
+      ctx.textAlign = "center";
+      ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
+      ctx.fillText(this.gameTitle, W / 2, 25);
+      ctx.textAlign = "right";
+      ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
+      ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
+      ctx.fillText("x" + this.combo + " combo", W - 16, 25);
+    } else {
+      this._pill(ctx, 14, 14, 155, 42);
+      ctx.font = f; 
+      ctx.fillStyle = "#e8f4ff"; 
+      ctx.textAlign = "left"; 
+      ctx.textBaseline = "middle";
+      ctx.fillText("⭐ " + this.score, 28, 35);
+      this._pill(ctx, W - 174, 14, 160, 42);
+      ctx.textAlign = "right";
+      ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
+      ctx.fillText("🔥 " + this.combo + "  x" + this.multiplier, W - 28, 35);
+      ctx.textAlign = "center"; 
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = this.C.gold; 
+      ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
+      ctx.shadowColor = "rgba(245,200,66,0.4)"; 
+      ctx.shadowBlur = 14;
+      ctx.fillText(this.gameTitle, W / 2, 34); 
+      ctx.shadowBlur = 0;
+    }
+
+    const ringCX = W / 2, ringCY = isLauncher ? H - 60 : H - 48, ringR = 26;
+    this._drawXPRing(ctx, ringCX, ringCY, ringR);
+    ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = this.tierColors[this.tier];
+    ctx.shadowColor = this.tierColors[this.tier]; 
+    ctx.shadowBlur = 8;
+    ctx.fillText("Lv." + this.level, ringCX, ringCY); 
+    ctx.shadowBlur = 0;
+
+    const diffLabels = { full: "🟢 Training", subtle: "🟡 Subtle", none: "🔵 Blind", decoy: "🔴 Decoy", chaos: "🟣 Chaos" };
+    ctx.textAlign = "right"; 
+    ctx.textBaseline = "bottom";
+    ctx.font = "13px 'Trebuchet MS', sans-serif";
+    ctx.globalAlpha = 0.7;
+    ctx.fillStyle = this.tierColors[this.tier]; 
+    ctx.fillText(this.tierNames[this.tier], W - 12, H - 8);
+    ctx.fillStyle = "#c8dff0"; 
+    ctx.fillText(diffLabels[this.hintState] || "", W - 12, H - 26);
+    ctx.globalAlpha = 1;
+  },
+
+
+  /* ============================================================
+     MAIN UPDATE
+  ============================================================ */
+  update(ctx, fingers, dt = 1 / 60) {
+    this._drawBg(ctx);
+    this._drawBgStars(ctx, dt);
+    this._updateLevelUp(dt);
+    this.noiseTime += dt * 1.8;
+    this._driftSpeed(dt);
+
+    const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
+
+    if (!isLauncher) this.drawRings(ctx, dt);
+
+    if (this.mode === "cannon") {
+      this.updateCannonNotes(ctx, dt);
+      this.drawCannon(ctx, dt);
+      this.drawExplosions(ctx);
+      this.drawLauncherZone(ctx);
+      this.drawCharging(ctx);
+      this.updateCharging(dt);
+    } else if (this.mode === "orb") {
+      this.updateCannonNotes(ctx, dt);
+      this.drawOrbLauncher(ctx, dt);
+      this.drawExplosions(ctx);
+      this.drawLauncherZone(ctx);
+      this.drawCharging(ctx);
+      this.updateCharging(dt);
+    } else if (this.mode === "triple") {
+      this.updateCannonNotes(ctx, dt);
+      this.drawTripleCannons(ctx, dt);
+      this.drawExplosions(ctx);
+      this.drawLauncherZone(ctx);
+    } else {
+      this.drawNotes(ctx, dt);
+    }
+
+    if (this.mode === "triple" && this.previewTimer > 0) {
+      this.previewTimer -= dt;
+      if (this.previewTimer <= 0) this.executeTripleShot();
+    }
+
+    this.drawPopEffects(ctx);
+
+    fingers.forEach((finger) => {
+      this.drawFinger(ctx, finger.x, finger.y);
+      if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
+      else            this.checkCollision(finger.x, finger.y);
+    });
+
+    this._drawHUD(ctx, isLauncher, dt);
+    this._drawLevelUpBurst(ctx);
+    this._drawHintChangeAnnouncement(ctx, dt);
+    this.drawHitText(ctx);
+  },
+
+
+
+
+  /* ============================================================
+     FINGER
+  ============================================================ */
+  drawFinger(ctx, x, y) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(x, y, this.baseOuterRadius * 0.065, 0, Math.PI * 2);
+    ctx.shadowColor = "rgba(126,207,179,0.7)"; 
+    ctx.shadowBlur = 28;
+    ctx.fillStyle = "rgba(94,180,150,0.45)"; 
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(x, y, this.baseOuterRadius * 0.030, 0, Math.PI * 2);
+    ctx.shadowBlur = 12; 
+    ctx.fillStyle = "#b0f0da"; 
+    ctx.fill();
+    ctx.restore();
+  },
+
+
+  /* ============================================================
+     TORUS RINGS  — cached offscreen canvas for static layers
+     Dynamic layers (specular dot, shimmer band) still drawn live
+     but only when the angle has changed enough to matter.
+     Visual layers (drawn back-to-front):
+       1. Wide ambient nebula bloom under the whole donut
+       2. Bottom-half shadow arc  (dark, behind the hole)
+       3. Tube fill — angled gradient following the light angle
+       4. Top-half highlight arc  (bright, catches the "light")
+       5. Outer edge stroke (crisp gold rim)
+       6. Inner edge stroke (faint mint rim — the hole's near edge)
+       7. Animated specular highlight dot that orbits the ring
+       8. Thin iridescent shimmer band along the top arc
+  ============================================================ */
+  drawRings(ctx, dt) {
+    this.pulseTime += this.pulseSpeed * dt;
+    this.torusAngle = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
+
+    const outerOff = Math.sin(this.pulseTime) * this.pulseAmountOuter;
+    const innerOff = Math.sin(this.pulseTime) * this.pulseAmountInner;
+    this.currentOuterRadius = this.baseOuterRadius + Math.max(0, outerOff);
+    this.currentInnerRadius = this.baseInnerRadius + Math.max(0, innerOff);
+
+    const cx = this.centerX, cy = this.centerY;
+    const Ro = this.currentOuterRadius;   // outer edge of torus
+    const Ri = this.currentInnerRadius;   // inner edge of torus
+    const Rm = (Ro + Ri) / 2;             // tube centreline radius
+    const r  = (Ro - Ri) / 2;             // tube cross-section radius
+
+    // Light direction (orbits slowly)
+    const lx = Math.cos(this.torusAngle);
+    const ly = Math.sin(this.torusAngle);
+
+    ctx.save();
+    ctx.translate(cx, cy);
+
+    /* ── 1. Ambient nebula bloom ──────────────────────────── */
+    const bloom = ctx.createRadialGradient(0, 0, Ri - r * 2.5, 0, 0, Ro + r * 3.5);
+    bloom.addColorStop(0,    "rgba(0,0,0,0)");
+    bloom.addColorStop(0.30, "rgba(126,207,179,0.07)");
+    bloom.addColorStop(0.52, "rgba(201,147,58,0.14)");
+    bloom.addColorStop(0.70, "rgba(142,202,230,0.09)");
+    bloom.addColorStop(1,    "rgba(0,0,0,0)");
+    ctx.fillStyle = bloom;
+    ctx.beginPath();
+    ctx.arc(0, 0, Ro + r * 3.5, 0, Math.PI * 2);
+    ctx.fill();
+
+    /* ── 2. Tube body — fill the annulus with a light-direction gradient ─
+       The gradient axis points from the shadow side toward the lit side,
+       giving the illusion that the tube is catching light at one angle   */
+    const gx0 = -lx * (Ro + r), gy0 = -ly * (Ro + r);
+    const gx1 =  lx * (Ro + r), gy1 =  ly * (Ro + r);
+
+    const tubeGrad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+    tubeGrad.addColorStop(0,    "#0a1525");          // deep shadow
+    tubeGrad.addColorStop(0.22, "#1c3a2a");          // shadow-side dark mint
+    tubeGrad.addColorStop(0.40, "#5a3010");          // warm mid-tone (gold shadow)
+    tubeGrad.addColorStop(0.55, "#c9933a");          // main gold
+    tubeGrad.addColorStop(0.68, "#e8c87a");          // bright lit face
+    tubeGrad.addColorStop(0.80, "#7ecfb3");          // mint sheen on far side
+    tubeGrad.addColorStop(1,    "#0a1525");          // wrap back to shadow
+
+    // Draw annulus (evenodd rule creates the hole)
+    ctx.beginPath();
+    ctx.arc(0, 0, Ro, 0, Math.PI * 2);
+    ctx.arc(0, 0, Ri, 0, Math.PI * 2, true);
+    ctx.fillStyle = tubeGrad;
+    ctx.shadowColor = "rgba(201,147,58,0.4)";
+    ctx.shadowBlur  = 36;
+    ctx.fill("evenodd");
+    ctx.shadowBlur  = 0;
+
+    /* ── 3. Inner hole darkness — makes the hole look deep ── */
+    // A subtle radial fade from just inside Ri inward
+    const holeDark = ctx.createRadialGradient(0, 0, Ri * 0.65, 0, 0, Ri);
+    holeDark.addColorStop(0,   "rgba(4,10,20,0.82)");
+    holeDark.addColorStop(0.6, "rgba(4,10,20,0.45)");
+    holeDark.addColorStop(1,   "rgba(4,10,20,0.0)");
+    ctx.beginPath();
+    ctx.arc(0, 0, Ri, 0, Math.PI * 2);
+    ctx.fillStyle = holeDark;
+    ctx.fill();
+
+    /* ── 4. Outer edge stroke — crisp gold rim ───────────── */
+    ctx.beginPath();
+    ctx.arc(0, 0, Ro, 0, Math.PI * 2);
+    ctx.strokeStyle = "#d4a44a";
+    ctx.lineWidth   = 2.8;
+    ctx.shadowColor = "rgba(212,164,74,0.6)";
+    ctx.shadowBlur  = 18;
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+
+    /* ── 5. Inner edge stroke — faint mint ──────────────── */
+    ctx.beginPath();
+    ctx.arc(0, 0, Ri, 0, Math.PI * 2);
+    ctx.strokeStyle = "rgba(126,207,179,0.38)";
+    ctx.lineWidth   = 1.8;
+    ctx.shadowColor = "rgba(126,207,179,0.25)";
+    ctx.shadowBlur  = 10;
+    ctx.stroke();
+    ctx.shadowBlur  = 0;
+
+    /* ── 6. Iridescent shimmer band along lit arc ────────── */
+    //  A semi-transparent arc on the lit half — like the sheen
+    //  you see on a glossy torus where the surface curves away
+    const shimStart = this.torusAngle - Math.PI * 0.35;
+    const shimEnd   = this.torusAngle + Math.PI * 0.35;
+
+    ctx.beginPath();
+    ctx.arc(0, 0, Rm + r * 0.3, shimStart, shimEnd);
+    ctx.arc(0, 0, Rm - r * 0.3, shimEnd, shimStart, true);
+    ctx.closePath();
+    const shimGrad = ctx.createLinearGradient(
+      Math.cos(this.torusAngle) * (Rm - r * 0.3),
+      Math.sin(this.torusAngle) * (Rm - r * 0.3),
+      Math.cos(this.torusAngle) * (Rm + r * 0.3),
+      Math.sin(this.torusAngle) * (Rm + r * 0.3)
+    );
+    shimGrad.addColorStop(0,   "rgba(255,255,255,0.0)");
+    shimGrad.addColorStop(0.4, "rgba(255,240,200,0.18)");
+    shimGrad.addColorStop(0.7, "rgba(200,240,255,0.22)");
+    shimGrad.addColorStop(1,   "rgba(255,255,255,0.0)");
+    ctx.fillStyle = shimGrad;
+    ctx.fill();
+
+    /* ── 7. Specular highlight — small bright dot on rim ─── */
+    //  The dot orbits at the light angle, sitting on the outer edge
+    const sx = Math.cos(this.torusAngle) * Ro;
+    const sy = Math.sin(this.torusAngle) * Ro;
+    const specGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.8);
+    specGrad.addColorStop(0,   "rgba(255,250,230,0.95)");
+    specGrad.addColorStop(0.3, "rgba(245,215,140,0.55)");
+    specGrad.addColorStop(1,   "rgba(0,0,0,0)");
+    ctx.fillStyle = specGrad;
+    ctx.beginPath();
+    ctx.arc(sx, sy, r * 1.8, 0, Math.PI * 2);
+    ctx.fill();
+
+    /* ── 8. Secondary specular on inner rim (mint tint) ──── */
+    const sx2 = Math.cos(this.torusAngle + Math.PI * 0.18) * Ri;
+    const sy2 = Math.sin(this.torusAngle + Math.PI * 0.18) * Ri;
+    const specGrad2 = ctx.createRadialGradient(sx2, sy2, 0, sx2, sy2, r * 1.2);
+    specGrad2.addColorStop(0,   "rgba(180,255,230,0.55)");
+    specGrad2.addColorStop(0.5, "rgba(126,207,179,0.2)");
+    specGrad2.addColorStop(1,   "rgba(0,0,0,0)");
+    ctx.fillStyle = specGrad2;
+    ctx.beginPath();
+    ctx.arc(sx2, sy2, r * 1.2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+  },
+
+
+  /* ============================================================
+     NOTES
+  ============================================================ */
+  spawnNote() {
+    const angle  = Math.random() * Math.PI * 2;
+    const minR   = this.currentOuterRadius + 150;
+    const maxR   = this.currentOuterRadius + 210;
+    const spawnR = Math.random() * (maxR - minR) + minR;
+    const num    = this.currentNumber++;
+    if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
+    this.notes.push({
+      x: this.centerX + Math.cos(angle) * spawnR,
+      y: this.centerY + Math.sin(angle) * spawnR,
+      radius: this.baseOuterRadius * 0.12,
+      value: num, id: num,
+    });
+  },
+
+  drawNotes(ctx, dt) {
+    for (let i = this.notes.length - 1; i >= 0; i--) {
+      const note = this.notes[i];
+      const dx = this.centerX - note.x;
+      const dy = this.centerY - note.y;
+      const len = Math.sqrt(dx * dx + dy * dy);
+
+      // Cap step to remaining distance — prevents overshoot jitter
+      const step = Math.min(this.noteSpeed * dt, len);
+      note.x += (dx / len) * step;
+      note.y += (dy / len) * step;
+
+      this._drawNoteCircle(ctx, note);
+
+      if (len <= step + 1) {
+        this.notes.splice(i, 1);
+      }
+    }
+  },
+
+  /* Optimised: single save/restore, batched shadow state */
+  _drawNoteCircle(ctx, note) {
+    const r   = note.radius;
+    const isC = this.mode === "cannon" || this.mode === "orb" || this.mode === "triple"
+                ? this.shouldCollectCannon(note.value)
+                : this.shouldCollect(note.value);
+
+    const vis    = this._noteVisual(isC, note.id || note.value);
+    const h      = this.hintState;
+    const isVisC = vis.showCorrect;
+    const isVisW = vis.showWrong;
+
+    ctx.save();
+
+    // Halo (only when visible)
+    if (isVisC || isVisW || vis.shimmerAmt > 0) {
+      let haloAlpha = isVisC ? 0.16 : isVisW ? 0.11 : vis.shimmerAmt * 0.12;
+      if (h === "subtle" && isVisC) haloAlpha = 0.07;
+      const haloColor = isVisC
+        ? `rgba(109,232,180,${haloAlpha})`
+        : isVisW ? `rgba(232,124,109,${haloAlpha})`
+                 : `rgba(140,180,220,${haloAlpha})`;
+      const grd = ctx.createRadialGradient(note.x, note.y, r * 0.2, note.x, note.y, r * 1.4);
+      grd.addColorStop(0, haloColor); 
+      grd.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = grd;
+      ctx.beginPath(); 
+      ctx.arc(note.x, note.y, r * 1.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Circle body
+    let bodyFill, rimColor, shadowCol;
+    if (isVisC && h !== "subtle") {
+      bodyFill  = "#0e3028"; rimColor = this.C.correct; shadowCol = "rgba(109,232,180,0.45)";
+    } else if (isVisW) {
+      bodyFill  = "#2a1010"; rimColor = this.C.wrong; shadowCol = "rgba(232,124,109,0.4)";
+    } else {
+      bodyFill  = "#102140";
+      rimColor  = `rgba(${Math.round(100 + vis.shimmerAmt * 80)},${Math.round(160 + vis.shimmerAmt * 40)},${Math.round(200 + vis.shimmerAmt * 30)},${0.55 + vis.shimmerAmt * 0.35})`;
+      shadowCol = `rgba(90,150,200,${0.25 + vis.shimmerAmt * 0.2})`;
+    }
+
+    ctx.shadowColor = shadowCol; 
+    ctx.shadowBlur = 20;
+    ctx.beginPath(); 
+    ctx.arc(note.x, note.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = bodyFill; 
+    ctx.fill();
+    ctx.strokeStyle = rimColor; 
+    ctx.lineWidth = 2.5; 
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Inner shine
+    ctx.beginPath(); 
+    ctx.arc(note.x - r * 0.27, note.y - r * 0.27, r * 0.20, 0, Math.PI * 2);
+    ctx.fillStyle = isVisC && h !== "subtle" ? "rgba(200,255,230,0.30)" : "rgba(200,230,255,0.22)";
+    ctx.fill();
+
+    // Subtle hint
+    if (h === "subtle" && !isC) {
+      ctx.globalAlpha = 0.18; 
+      ctx.fillStyle = "#aac8e0";
+      ctx.font = `bold ${Math.round(r * 0.42)}px 'Trebuchet MS', sans-serif`;
+      ctx.textAlign = "center"; 
+      ctx.textBaseline = "middle";
+      ctx.fillText("?", note.x, note.y - r * 0.55); 
+      ctx.globalAlpha = 1;
+    }
+
+    // Number text
+    ctx.fillStyle = this.C.noteText;
+    ctx.font      = `bold ${Math.round(r * 0.72)}px 'Trebuchet MS', sans-serif`;
+    ctx.textAlign = "center"; 
+    ctx.textBaseline = "middle";
+    ctx.fillText(note.value, note.x, note.y);
+
+    ctx.restore();
+  },
+
+
+  /* ============================================================
+     COLLISION
+  ============================================================ */
+  shouldCollect(number) {
+    if (this.mode === "default") return number % this.skipAmount === 0;
+    if (this.mode === "pattern") {
+      const cycle = this.pattern.skip + this.pattern.collect;
+      return (number - 1) % cycle >= this.pattern.skip;
+    }
+    return false;
+  },
+
+  shouldCollectCannon(number) { return number % this.skipAmount === 0; },
+
+  checkCollision(fingerX, fingerY) {
+    for (let index = this.notes.length - 1; index >= 0; index--) {
+      const note = this.notes[index];
+      const dx   = fingerX - note.x;
+      const dy   = fingerY - note.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const dfc  = Math.sqrt((note.x - this.centerX) ** 2 + (note.y - this.centerY) ** 2);
+      const onRing = dfc + note.radius > this.currentInnerRadius &&
+                     dfc - note.radius < this.currentOuterRadius;
+      if (dist < note.radius + 20 && onRing) {
+        if (this.shouldCollect(note.value)) {
+          this.combo++;
+          if (this.combo % 5 === 0) this.multiplier++;
+          this.score += 10 * this.multiplier;
+          this.lastHitType = "CORRECT";
+          this._gainXP(1);
+          this._recoverSpeed();
+          if (this.popEffects.length < this.MAX_POP)
+            this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.correct });
+        } else {
+          this.combo = 0; this.multiplier = 1;
+          this.score -= 5; this.lastHitType = "WRONG";
+          this._penalizeSpeed();
+          if (this.popEffects.length < this.MAX_POP)
+            this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.wrong });
+        }
+        this.hitTextTimer = 30;
+        this.notes.splice(index, 1);
+      }
+    }
+  },
+
+  checkCannonCollision(fingerX, fingerY) {
+    for (let i = this.notes.length - 1; i >= 0; i--) {
+      const note = this.notes[i];
+      if (note.spawnProtected) continue;
+      const dx = fingerX - note.x, dy = fingerY - note.y;
+      if (Math.sqrt(dx * dx + dy * dy) < note.radius + 20) {
+        if (this.shouldCollectCannon(note.value)) {
+          this.combo++;
+          if (this.combo % 5 === 0) this.multiplier++;
+          this.score += 10 * this.multiplier;
+          this.lastHitType = "CORRECT";
+          this._gainXP(1); this._recoverSpeed();
+          this.createExplosion(note.x, note.y, this.C.correct);
+        } else {
+          this.combo = 0; this.multiplier = 1;
+          this.score -= 5; this.lastHitType = "WRONG";
+          this._penalizeSpeed();
+          this.createExplosion(note.x, note.y, this.C.wrong);
+        }
+        this.hitTextTimer = 30;
+        
+        this.notes.splice(i, 1);
+      }
+    }
+  },
+
+
+  /* ============================================================
+     POP EFFECTS
+  ============================================================ */
+  drawPopEffects(ctx) {
+    for (let i = this.popEffects.length - 1; i >= 0; i--) {
+      const p = this.popEffects[i];
+      p.life += 0.025;
+      if (p.life >= 1) { this.popEffects.splice(i, 1); continue; }
+      const ease  = 1 - Math.pow(1 - p.life, 2);
+      const alpha = Math.max(0, 1 - ease);
+      const scale = 1 + ease * 0.5;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(p.x, p.y);
+      ctx.scale(scale, scale);
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color; 
+      ctx.shadowBlur = 16;
+      ctx.beginPath(); 
+      ctx.arc(0, 0, 32, 0, Math.PI * 2); 
+      ctx.fill();
+      ctx.restore();
+    }
+  },
+
+
+  /* ============================================================
+     HIT TEXT
+  ============================================================ */
+  drawHitText(ctx) {
+    if (this.hitTextTimer <= 0 && this.missQueue.length > 0) {
+      this.missQueue.sort((a, b) => a - b);
+      this.lastHitType = "YOU SKIPPED NUMBER " + this.missQueue.shift();
+      this.hitTextTimer = 40;
+      this._penalizeSpeed();
+    }
+    if (this.hitTextTimer > 0) {
+      const alpha = Math.sin((this.hitTextTimer / 40) * Math.PI);
+      let color   = "#ffffff";
+      if (this.lastHitType === "CORRECT")           color = this.C.correct;
+      else if (this.lastHitType === "WRONG")         color = this.C.wrong;
+      else if (this.lastHitType.includes("SKIPPED")) color = this.C.gold;
+      ctx.save();
+      ctx.globalAlpha = alpha; 
+      ctx.fillStyle = color;
+      ctx.font = "bold 34px 'Trebuchet MS', sans-serif";
+      ctx.textAlign = "center"; 
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = color; 
+      ctx.shadowBlur = 18;
+      ctx.fillText(this.lastHitType, this.centerX, this.centerY - 130);
+      ctx.restore();
+      this.hitTextTimer--;
+    }
+  },
+
+
+  /* ============================================================
+     MODE ACTIVATORS
+  ============================================================ */
+  activatePatternMode() {
+    this.mode = "pattern";
+    this.pattern.skip    = Math.floor(Math.random() * 5) + 1;
+    this.pattern.collect = Math.floor(Math.random() * 5) + 1;
+    this.gameTitle = "SKIP " + this.pattern.skip + " COLLECT " + this.pattern.collect;
+  },
+
+  activateCannonMode() {
+    this.mode = "cannon"; this._resetLauncherState();
+    this.gameTitle = "CANNON SKIP " + this.skipAmount;
+  },
+
+  activateOrbMode() {
+    this.mode = "orb"; this._resetLauncherState();
+    this.orbAngle = 0; this.orbTargetAngle = 0;
+    this.gameTitle = "ORB SKIP " + this.skipAmount;
+  },
+
+  activateTripleCannonMode() {
+    this.mode = "triple"; this._resetLauncherState();
+    this.tripleBaseAngle = 0; this.tripleTargetAngle = 0;
+    this.tripleCannons = [];
+    const sp = (Math.PI * 2) / this.tripleCount;
+    for (let i = 0; i < this.tripleCount; i++) this.tripleCannons.push({ offset: i * sp });
+    this.gameTitle = "TRIPLE CANNON SKIP " + this.skipAmount;
+  },
+
+  _resetLauncherState() {
+    this.notes = []; 
+    this.explosions = [];
+    this.combo = 0; 
+    this.multiplier = 1;
+    this.cannonAngle = 0; 
+    this.cannonTargetAngle = 0;
+    this.pendingShot = null; 
+    this.previewCannons = []; 
+    this.previewTimer = 0;
+    this.skipAmount = this.getRandomSkip();
+    this.noteSpeed  = this.speedCap;
+  },
+
+
+  /* ============================================================
+     CANNON
+  ============================================================ */
+  spawnCannonNote() {
+    if (this.pendingShot) return;
+    const angle = Math.random() * Math.PI * 2;
+    const num   = this.currentNumber++;
+    if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
+    this.pendingShot         = { angle, speed: this.noteSpeed, value: num, id: num };
+    this.cannonTargetAngle   = angle + Math.PI / 2;
+    this.startCharging();
+  },
+
+  updateCannonNotes(ctx, dt) {
+    for (let i = this.notes.length - 1; i >= 0; i--) {
+      const note = this.notes[i];
+      note.x += note.vx * dt; note.y += note.vy * dt;
+      this.updateLauncherProtection(note);
+      this._drawNoteCircle(ctx, note);
+      const m   = 120;
+      const off = note.x < -m || note.x > this.centerX * 2 + m ||
+                  note.y < -m || note.y > this.centerY * 2 + m;
+      if (off) {
+        if (this.shouldCollectCannon(note.value)) {
+          this.score -= 10; this.combo = 0; this.multiplier = 1;
+          this.missQueue.push(note.value);
+          this._penalizeSpeed();
+          this.createExplosion(note.x, note.y, "#e8a06d");
+        }
+        this.notes.splice(i, 1);
+      }
+    }
+  },
+
+  drawCannon(ctx, dt = 1 / 60) {
+    const size = this.baseOuterRadius * 0.35;
+    this.cannonLength = size * 1.4;
+    let diff = this.cannonTargetAngle - this.cannonAngle;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    this.cannonAngle += diff * 0.18;
+    if (this.pendingShot && Math.abs(diff) < 0.05) this.fireCannon();
+
+    ctx.save(); 
+    ctx.translate(this.centerX, this.centerY); 
+    ctx.rotate(this.cannonAngle);
+    const bg = ctx.createRadialGradient(0, 0, size * 0.1, 0, 0, size * 0.6);
+    bg.addColorStop(0, "#2a4a6e"); bg.addColorStop(1, "#152035");
+    ctx.beginPath(); 
+    ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
+    ctx.fillStyle = bg; 
+    ctx.shadowColor = this.C.accent; 
+    ctx.shadowBlur = 18;
+    ctx.fill(); 
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#3a6080";
+    ctx.beginPath();
+    const bx = -size * 0.13, by = -this.cannonLength, bw = size * 0.26, bh = this.cannonLength;
+    ctx.moveTo(bx + 6, by); 
+    ctx.lineTo(bx + bw - 6, by);
+    ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + 6);
+    ctx.lineTo(bx + bw, by + bh); 
+    ctx.lineTo(bx, by + bh);
+    ctx.lineTo(bx, by + 6); 
+    ctx.quadraticCurveTo(bx, by, bx + 6, by);
+    ctx.closePath(); 
+    ctx.fill();
+    ctx.strokeStyle = this.C.accent; 
+    ctx.lineWidth = 1.5; 
+    ctx.stroke();
+    ctx.restore();
+  },
+
+  fireCannon() {
+    if (!this.pendingShot) return;
+    const { angle, speed, value, id } = this.pendingShot;
+    this.notes.push({
+      x: this.centerX, 
+      y: this.centerY,
+      radius: this.baseOuterRadius * 0.12, value, 
+      id: id || value,
+      vx: Math.cos(angle) * speed, 
+      vy: Math.sin(angle) * speed,
+      spawnProtected: true,
+    });
+    this.pendingShot = null; 
+    this.isCharging = false; 
+    this.charge = 0; 
+    this.chargeParticles = [];
+  },
+
+
+  /* ============================================================
+     ORB LAUNCHER
+  ============================================================ */
+  spawnOrbNote() {
+    const angle = Math.random() * Math.PI * 2;
+    this.orbTargetAngle = angle + Math.PI / 2;
+    const num   = this.currentNumber++;
+    if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
+    const speed = this.noteSpeed;
+    setTimeout(() => {
+      this.notes.push({
+        x: this.centerX, 
+        y: this.centerY,
+        radius: this.baseOuterRadius * 0.12, 
+        value: num, id: num,
+        vx: Math.cos(angle) * speed, 
+        vy: Math.sin(angle) * speed,
+        spawnProtected: true,
+      });
+    }, 120);
+  },
+
+  drawOrbLauncher(ctx, dt = 1 / 60) {
+    const sz = this.baseOuterRadius * 0.6;
+    let diff = this.orbTargetAngle - this.orbAngle;
+    diff     = Math.atan2(Math.sin(diff), Math.cos(diff));
+    this.orbAngle += diff * 0.18;
+    ctx.save(); 
+    ctx.translate(this.centerX, this.centerY); 
+    ctx.rotate(this.orbAngle);
+    if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth > 0) {
+      const img = this.orbImage, sc = sz / Math.max(img.width, img.height);
+      ctx.scale(1, -1);
+      ctx.drawImage(img, -img.width * sc / 2, -img.height * sc / 2, img.width * sc, img.height * sc);
+    } else {
+      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz / 2);
+      g.addColorStop(0, "#8ecae6"); g.addColorStop(0.55, "#1a3a5c"); g.addColorStop(1, "rgba(14,30,50,0)");
+      ctx.fillStyle = g; 
+      ctx.shadowColor = this.C.accent;
+      ctx.shadowBlur = 28;
+      ctx.beginPath(); 
+      ctx.arc(0, 0, sz / 2, 0, Math.PI * 2); 
+      ctx.fill(); 
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
+  },
+
+
+  /* ============================================================
+     TRIPLE CANNON
+  ============================================================ */
+  spawnTripleNote() {
+    if (this.pendingShot) return;
+    const angle       = Math.random() * Math.PI * 2;
+    this.pendingShot  = { angle, speed: this.noteSpeed };
+    this.tripleTargetAngle = angle + Math.PI / 2;
+    this.startCharging();
+  },
+
+  drawTripleCannons(ctx, dt = 1 / 60) {
+    const sz = this.baseOuterRadius * 0.6;
+    let diff = this.tripleTargetAngle - this.tripleBaseAngle;
+    diff     = Math.atan2(Math.sin(diff), Math.cos(diff));
+    this.tripleBaseAngle += diff * 0.18;
+
+    if (this.pendingShot && this.previewTimer <= 0 && this.previewCannons.length === 0 && Math.abs(diff) < 0.05)
+      this.fireTriple();
+
+    for (let i = 0; i < this.tripleCannons.length; i++) {
+      const cannon = this.tripleCannons[i];
+      const angle  = this.tripleBaseAngle + cannon.offset;
+      ctx.save(); 
+      ctx.translate(this.centerX, this.centerY); 
+      ctx.rotate(angle);
+      if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth > 0) {
+        const img = this.orbImage, sc = sz / Math.max(img.width, img.height);
+        ctx.scale(1, -1);
+        ctx.drawImage(img, -img.width * sc / 2, -img.height * sc / 2, img.width * sc, img.height * sc);
+      } else {
+        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz / 2);
+        g.addColorStop(0, "#8ecae6"); g.addColorStop(1, "rgba(14,30,50,0)");
+        ctx.fillStyle = g;
+        ctx.beginPath(); 
+        ctx.arc(0, 0, sz * 0.8, 0, Math.PI * 2 * 0.8); 
+        ctx.fill();
+      }
+      if (this.previewCannons.includes(i) && this.previewTimer > 0) {
+        const pulse  = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
+        const miniR  = sz * 0.18, offY = -sz * 0.6;
+        ctx.save(); 
+        ctx.globalCompositeOperation = "lighter"; 
+        ctx.scale(1, -1);
+        const g2 = ctx.createRadialGradient(0, offY, 0, 0, offY, miniR);
+        g2.addColorStop(0, "rgba(245,200,66,1)"); 
+        g2.addColorStop(0.4, "rgba(245,200,66,0.55)"); 
+        g2.addColorStop(1, "rgba(245,200,66,0)");
+        ctx.fillStyle = g2;
+        ctx.beginPath(); 
+        ctx.arc(0, offY, miniR * pulse, 0, Math.PI * 2); 
+        ctx.fill();
+        ctx.restore();
+      }
+      ctx.restore();
+    }
+  },
+
+  fireTriple() {
+    if (!this.pendingShot) return;
+    const pool = [1,1,1,1,1,1,2,2,2,2,2,2,2,3,3];
+    const fc   = pool[Math.floor(Math.random() * pool.length)];
+    this.previewCannons = [];
+    while (this.previewCannons.length < fc) {
+      const ri = Math.floor(Math.random() * this.tripleCount);
+      if (!this.previewCannons.includes(ri)) this.previewCannons.push(ri);
+    }
+    this.previewTimer = this.previewDuration;
+  },
+
+  executeTripleShot() {
+    if (!this.pendingShot) return;
+    const speed             = this.pendingShot.speed;
+    const delayBetweenShots = 180;
+    this.previewCannons.forEach((i, index) => {
+      setTimeout(() => {
+        const angle = this.tripleBaseAngle + this.tripleCannons[i].offset - Math.PI / 2;
+        const value = this.currentNumber++;
+        if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
+        this.notes.push({
+          x: this.centerX, 
+          y: this.centerY,
+          radius: this.baseOuterRadius * 0.12,
+          value, 
+          id: value,
+          vx: Math.cos(angle) * speed, 
+          vy: Math.sin(angle) * speed,
+          spawnProtected: true,
+        });
+      }, index * delayBetweenShots);
+    });
+    setTimeout(() => {
+      this.previewCannons = [];
+      this.pendingShot    = null;
+      this.isCharging     = false;
+      this.charge         = 0;
+      this.chargeParticles = [];
+    }, this.previewCannons.length * delayBetweenShots);
+  },
+
+
+  /* ============================================================
+     LAUNCHER SHARED
+  ============================================================ */
+  updateLauncherProtection(note) {
+    const dx = note.x - this.centerX, dy = note.y - this.centerY;
+    if (Math.sqrt(dx * dx + dy * dy) > this.launcherSafeRadius) note.spawnProtected = false;
+  },
+
+  drawLauncherZone(ctx) {
+    ctx.save(); 
+    ctx.setLineDash([6, 9]);
+    ctx.strokeStyle = "rgba(140,180,220,0.18)"; 
+    ctx.lineWidth = 2;
+    ctx.beginPath(); 
+    ctx.arc(this.centerX, this.centerY, this.launcherSafeRadius, 0, Math.PI * 2);
+    ctx.stroke(); 
+    ctx.setLineDash([]); 
+    ctx.restore();
+  },
+
+  startCharging() {
+    this.charge = 0; 
+    this.isCharging = true; 
+    this.chargeParticles = [];
+  },
+
+  updateCharging(dt) {
+    if (!this.isCharging) return;
+    this.charge = Math.min(1, this.charge + this.chargeSpeed * dt);
+    if (Math.random() < 0.35) {
+      const a = Math.random() * Math.PI * 2;
+      this.chargeParticles.push({
+        x: this.centerX + Math.cos(a) * this.launcherSafeRadius,
+        y: this.centerY + Math.sin(a) * this.launcherSafeRadius,
+        life: 1,
+      });
+    }
+    for (let i = this.chargeParticles.length - 1; i >= 0; i--) {
+      const p = this.chargeParticles[i];
+      p.x += (this.centerX - p.x) * 0.08; p.y += (this.centerY - p.y) * 0.08;
+      p.life -= dt * 1.2;
+      if (p.life <= 0) this.chargeParticles.splice(i, 1);
+    }
+  },
+
+  drawCharging(ctx) {
+    if (!this.isCharging) return;
+    ctx.save(); 
+    ctx.globalCompositeOperation = "lighter";
+    for (const p of this.chargeParticles) {
+      ctx.globalAlpha = p.life * 0.7; ctx.fillStyle = this.C.gold;
+      ctx.shadowColor = this.C.gold; ctx.shadowBlur = 12;
+      ctx.beginPath(); 
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); 
+      ctx.fill();
+    }
+    ctx.restore();
+    const gr = this.baseOuterRadius * 0.18 * (0.5 + this.charge * 0.8);
+    const g  = ctx.createRadialGradient(this.centerX, this.centerY, 0, this.centerX, this.centerY, gr);
+    g.addColorStop(0, `rgba(245,200,66,${0.65 * this.charge})`);
+    g.addColorStop(1, "rgba(245,200,66,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); 
+    ctx.arc(this.centerX, this.centerY, gr, 0, Math.PI * 2); 
+    ctx.fill();
+  },
+
+
+  /* ============================================================
+     EXPLOSIONS  — capped at MAX_EXPL
+  ============================================================ */
+  createExplosion(x, y, color) {
+    for (let i = 0; i < 14; i++) {
+      if (this.explosions.length >= this.MAX_EXPL) break;
+      const a = Math.random() * Math.PI * 2, v = Math.random() * 200 + 100;
+      this.explosions.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: 0, color });
+    }
+  },
+
+  drawExplosions(ctx) {
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      const p = this.explosions[i];
+      p.life += 0.03;
+      if (p.life >= 1) { this.explosions.splice(i, 1); continue; }
+      p.x += p.vx * 0.016; 
+      p.y += p.vy * 0.016;
+      const alpha = Math.max(0, 1 - p.life);
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color; 
+      ctx.shadowBlur = 10;
+      ctx.beginPath(); 
+      ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2); 
+      ctx.fill();
+      ctx.restore();
+    }
+  },
+  
+  fullReset() {
+   // Core gameplay reset
+  this.notes = [];
+  this.popEffects = [];
+  this.explosions = [];
+  this.missQueue = [];
+
+  this.currentNumber = 1;   // ✅ FIX: restart numbering
+  this.score = 0;
+  this.combo = 0;
+  this.multiplier = 1;
+
+  // XP + level
+  this.xp = 0;
+  this.level = 1;
+  this.xpToNext = 8;
+  this.tier = 0;
+
+  // Speed reset
+  this.noteSpeed = this.speedCap;
+
+  // Reset hint system
+  this.hintState = "full";
+  this.noiseTime = 0;
+
+  // Reset spawn timing
+  this.spawnInterval = 1200;
+
+  // Reset launcher states
+  this.pendingShot = null;
+  this.previewCannons = [];
+  this.previewTimer = 0;
+  this.isCharging = false;
+  this.charge = 0;
+  this.chargeParticles = [];
+
+  // Reset visuals
+  this.torusAngle = 0;
+  this.pulseTime = 0;
+
+  // Reset mode logic
+  this.skipAmount = this.getRandomSkip();
+  this.gameTitle = "SKIP " + this.skipAmount;
+
+  // IMPORTANT: restart spawning fresh
+  this._restartSpawnTimer();
+},
+
+  /* ============================================================
+     UTILITY
+  ============================================================ */
+  getRandomSkip() {
+    const w = [2,2,2,2,3,3,3,3,3,3,4,4,4,5,5,];
+    return w[Math.floor(Math.random() * w.length)];
+  },
+};
