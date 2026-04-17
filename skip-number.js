@@ -47,7 +47,7 @@ const Game1 = {
   currentNumber: 1,
   maxNumber: 100,
   spawnTimer: null,
-  spawnInterval: 1200,
+  spawnInterval: 2000,
 
   pulseTime: 0,
   pulseSpeed: 2.2,
@@ -109,6 +109,9 @@ const Game1 = {
   bgStars: [],
   MAX_POP: 60,   // Reduced slightly for low-end
   MAX_EXPL: 60,
+
+  maxNotesOnScreen: 6, // tweak this (15–30 is a good range)
+
 
   /* ============================================================
       INIT
