@@ -187,10 +187,11 @@ window.startGame = function (gameName) {
     blackoutCanvas();
     Tutorial.show("game9", null, () => {
       _activeGameId = "game9";
-      document.getElementById("input_video").style.opacity = "1";
+       Game9.init();
+      // document.getElementById("input_video").style.opacity = "1";
       blackoutCanvas();
       _noFingerFrames = 0;
-      Game9.init();
+     
       window.currentGame = Game9;
       resizeCanvas();
     });
@@ -202,11 +203,13 @@ window.startGame = function (gameName) {
     blackoutCanvas();
     Tutorial.show("game10", null, () => {
       _activeGameId = "game10";
-      document.getElementById("input_video").style.opacity = "1";
       blackoutCanvas();
+      Game10.init();
+      // document.getElementById("input_video").style.opacity = "1";
+      
       _noFingerFrames = 0;
       if (window.initArmDetection) window.initArmDetection();
-      Game10.init();
+      
       window.currentGame = Game10;
       resizeCanvas();
     });
