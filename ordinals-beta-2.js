@@ -183,6 +183,9 @@ const Game11 = {
 
   // 🌈 Background Evolution
   backgroundHueShift: 0,
+  lastFingerUpdateTime: 0,
+  FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
+FINGER_SMOOTH: 0.2,
   init() {
     try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock("landscape").catch(e => console.log("Orientation lock failed:", e)); } } catch (e) { }
 
@@ -431,7 +434,7 @@ const Game11 = {
     }
 
     if (this.introPhase) {
-      this.updateFingerPosition();
+      this.updateFingerPosition(performance.now());
       this.drawIntroPhase(ctx, delta);
       return;
     }
@@ -444,7 +447,7 @@ const Game11 = {
     }
 
     // 🎮 GAME LOGIC
-    this.updateFingerPosition();
+    this.updateFingerPosition(performance.now());
     this.updateMode1TargetSuffix();
     this.updateMascot(delta);
 
@@ -477,19 +480,25 @@ const Game11 = {
     ctx.restore(); // End of screen shake
   },
 
-  updateFingerPosition() {
+  updateFingerPosition(currentTime = performance.now()) {
 
-    if (!window.fingerPositions ||
-      window.fingerPositions.length === 0) {
-      this.fingerX = null;
-      this.fingerY = null;
-      return;
-    }
+  // ⏱️ Limit updates to every 22ms (~45 FPS)
+  if (currentTime - this.lastFingerUpdateTime < 22) {
+    return;
+  }
 
-    const finger = window.fingerPositions[0];
-    this.fingerX = finger.x;
-    this.fingerY = finger.y;
-  },
+  this.lastFingerUpdateTime = currentTime;
+
+  if (!window.fingerPositions || window.fingerPositions.length === 0) {
+    this.fingerX = null;
+    this.fingerY = null;
+    return;
+  }
+
+  const finger = window.fingerPositions[0];
+  this.fingerX = finger.x;
+  this.fingerY = finger.y;
+},
 
   get doorRadius() {
     return this.DOOR_RADIUS * this.scale;
