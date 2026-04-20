@@ -26,27 +26,7 @@ let _activeGameId = ""; // "game1"|"game9"|"game10"|"" for all others
 let _noFingerFrames = 0;
 const NO_FINGER_THRESHOLD = 90; // ~1.5 s at 60 fps
 
-function _checkFingerPresence() {
-  // Only show prompt for the three games that support it
-  if (!_activeGameId) return;
-  if (![ "game10"].includes(_activeGameId)) return;
 
-  const has = (window.fingerPositions || []).length > 0;
-  if (has) {
-    _noFingerFrames = 0;
-    Tutorial.hideNoFingerPrompt(_activeGameId);
-  } else {
-    _noFingerFrames++;
-    if (_noFingerFrames > NO_FINGER_THRESHOLD) {
-      Tutorial.showNoFingerPrompt(_activeGameId);
-    }
-  }
-}
-
-function _clearFingerState() {
-  _noFingerFrames = 0;
-  Tutorial.destroyNoFingerPrompt();
-}
 
 
 /* ── Pause / Resume ───────────────────────────────────────── */
@@ -57,16 +37,13 @@ window.pauseGame = function () {
   // "Change Mode" only appears for Game1
   const btn = document.getElementById("changeModeBtn");
   if (btn) btn.style.display = (window.currentGame === Game1) ? "block" : "none";
-
-  // Always kill the finger prompt while paused
-  Tutorial.destroyNoFingerPrompt();
 };
 
 window.changeMode = function () {
   window.isPaused = false;
   document.getElementById("pauseOverlay").style.display = "none";
 
-  _clearFingerState();
+
   _activeGameId = "";
   document.getElementById("input_video").style.opacity = "0";
   window.currentGame = null;
@@ -91,7 +68,7 @@ window.goToMainMenu = function () {
   window.isPaused = false;
   document.getElementById("pauseOverlay").style.display = "none";
 
-  _clearFingerState();
+
   _activeGameId = "";
   document.getElementById("input_video").style.opacity = "0";
   blackoutCanvas();
@@ -147,16 +124,10 @@ function blackoutCanvas() {
 function launchGame1WithMode(modeKey) {
   blackoutCanvas();
   _noFingerFrames = 0;
-  Game1.init();
+  Game1.init(modeKey);
   window.currentGame = Game1;
   resizeCanvas();
-  switch (modeKey) {
-    case "pattern": Game1.activatePatternMode();      break;
-    case "cannon":  Game1.activateCannonMode();       break;
-    case "orb":     Game1.activateOrbMode();          break;
-    case "triple":  Game1.activateTripleCannonMode(); break;
-    default: break; // "default" mode needs no extra call
-  }
+
 }
 
 
@@ -164,7 +135,6 @@ function launchGame1WithMode(modeKey) {
 window.startGame = function (gameName) {
   document.getElementById("menu").style.display = "none";
   window.currentGame = null;
-  _clearFingerState();
   _activeGameId = "";
 
   /* ── GAME 1 ── ModeSelector → Tutorial → launch ─────────── */
@@ -189,18 +159,14 @@ window.startGame = function (gameName) {
   /* ── GAME 10 ── Tutorial (cosmic theme) → launch ─────────── */
   if (gameName === "Game10") {
     blackoutCanvas();
-    Tutorial.show("game10", null, () => {
+
       _activeGameId = "game10";
       blackoutCanvas();
       Game10.init();
       // document.getElementById("input_video").style.opacity = "1";
-      
-      _noFingerFrames = 0;
-      if (window.initArmDetection) window.initArmDetection();
-      
+ 
       window.currentGame = Game10;
       resizeCanvas();
-    });
     return;
   }
 
@@ -238,7 +204,7 @@ function gameLoop(currentTime) {
   if (!game || !game.update) return;
 
   // Check finger presence ONLY for the three supported games
-  _checkFingerPresence();
+
 
   canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
   game.update(canvasCtx, window.fingerPositions || [], dt);
