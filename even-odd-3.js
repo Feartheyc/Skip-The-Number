@@ -75,7 +75,7 @@ const Game8 = {
     this.currentMissingState = null;
     this.missingFrames = 0;
     // initial center in CSS coordinates; resize() will recompute
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
     this.CENTER_X = (canvasElement.width / dpr) / 2;
     this.CENTER_Y = (canvasElement.height / dpr) / 2;
 
@@ -131,8 +131,12 @@ const Game8 = {
     this.pose.onResults(this.onPoseResults.bind(this));
     this.poseBusy = false;
 
+    let lastPoseTime = 0;
     window.sendFrameToPose = async (image) => {
       if (!this.running || this.poseBusy) return;
+      const now = performance.now();
+      if (now - lastPoseTime < 80) return; // Max ~12 fps for pose, not 60
+      lastPoseTime = now;
       this.poseBusy = true;
       try {
         await this.pose.send({ image });
@@ -296,10 +300,16 @@ const Game8 = {
   },
 
   resize() {
-    // adopt the full viewport CSS dimensions for consistent scaling
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
-    const dpr = window.devicePixelRatio || 1;
+    let newScale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
+    if (!newScale || newScale <= 0) newScale = 1;
+
+    if (this.scale && Math.abs(newScale - this.scale) < 0.001 && 
+        this.cssWidth === cssW && this.cssHeight === cssH) return; // Skip!
+
+    // adopt the full viewport CSS dimensions for consistent scaling
+    const dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap DPR at 2
 
     // update canvas buffer size (main.js already does this but repeating is safe)
     canvasElement.width = cssW * dpr;
@@ -309,8 +319,7 @@ const Game8 = {
     this.cssHeight = cssH;
 
     // compute game scale using CSS coordinates (avoids DPI issues)
-    this.scale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
-    if (!this.scale || this.scale <= 0) this.scale = 1;
+    this.scale = newScale;
 
     // keep center coordinates in CSS space; transform scales them to device pixels
     this.CENTER_X = cssW / 2;
