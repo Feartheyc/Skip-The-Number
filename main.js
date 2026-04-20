@@ -29,7 +29,7 @@ const NO_FINGER_THRESHOLD = 90; // ~1.5 s at 60 fps
 function _checkFingerPresence() {
   // Only show prompt for the three games that support it
   if (!_activeGameId) return;
-  if (!["game1", "game9", "game10"].includes(_activeGameId)) return;
+  if (![ "game10"].includes(_activeGameId)) return;
 
   const has = (window.fingerPositions || []).length > 0;
   if (has) {
@@ -73,13 +73,11 @@ window.changeMode = function () {
 
   blackoutCanvas();
   ModeSelector.show((modeKey) => {
-    Tutorial.show("game1", modeKey, () => {
+
       _activeGameId = "game1";
-      document.getElementById("input_video").style.opacity = "1";
       launchGame1WithMode(modeKey);
     });
-  });
-};
+  };
 
 window.resumeGame = function () {
   window.isPaused = false;
