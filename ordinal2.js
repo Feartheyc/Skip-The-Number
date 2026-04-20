@@ -150,7 +150,9 @@ fingerSmoothing: 0.12,
 
   /* Debug finger dot — set false in production */
   debugFinger: true,
-
+  _lastFingerUpdateTime: 0,
+FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
+FINGER_SMOOTH: 0.2,
   /* ============================================================
      INIT
   ============================================================ */
@@ -347,8 +349,8 @@ window.addEventListener("resize", () => {
 
     this.updateBigBang(delta);
 
-    /* Finger must be read BEFORE mascot update every frame */
-    this.updateFingerPosition();
+  
+    this.updateFingerPosition(performance.now());
     this.updateMascot(delta);
     this.updatePortalAnimation(delta);
 
@@ -383,7 +385,11 @@ window.addEventListener("resize", () => {
   },
 
 
-updateFingerPosition() {
+updateFingerPosition(now) {
+
+  /* ⏱️ Throttle updates to every 22ms */
+  if (now - this._lastFingerUpdateTime < 22) return;
+  this._lastFingerUpdateTime = now;
 
   if (
     !window.fingerPositions ||
@@ -398,7 +404,6 @@ updateFingerPosition() {
   }
 
   const fp = window.fingerPositions[0];
-
   const rawX = fp.x;
   const rawY = fp.y;
 
@@ -408,27 +413,24 @@ updateFingerPosition() {
     this.fingerSmoothY = rawY;
   }
 
-  /* 🔧 Better smoothing (less jitter) */
-  const smoothing = 0.12; // lower = smoother
+  /* Smooth movement */
+  const smoothing = this.mascot.vx === 0 && this.mascot.vy === 0 ? 0.08 : 0.15;
   this.fingerSmoothX += (rawX - this.fingerSmoothX) * smoothing;
   this.fingerSmoothY += (rawY - this.fingerSmoothY) * smoothing;
 
-  /* 🧠 Deadzone to ignore tiny noise */
-  const DEADZONE = 3; // tweak 2–5
+  /* Deadzone */
+  const DEADZONE = 3;
 
   if (this.fingerX !== null && this.fingerY !== null) {
     const dx = this.fingerSmoothX - this.fingerX;
     const dy = this.fingerSmoothY - this.fingerY;
 
-    if (Math.hypot(dx, dy) < DEADZONE) {
-      return; // ignore micro movement
-    }
+    if (Math.hypot(dx, dy) < DEADZONE) return;
   }
 
   this.fingerX = this.fingerSmoothX;
   this.fingerY = this.fingerSmoothY;
 },
-
   updateMascot(delta) {
 
   /* Auto-move during round confirmation */
