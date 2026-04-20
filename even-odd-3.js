@@ -47,13 +47,10 @@ const Game8 = {
   shakeTimer: 0,
 
   pivotLockTimer: { left: 0, right: 0 },
-  pivotLocked: { left: false, right: false },
-  armFlash: { left: 0, right: 0 },
 
   pose: null,
-  armData: { left: null, right: null },
+  armData: { right: null },
   armVelocity: {
-    left: { vx: 0, vy: 0, last: null },
     right: { vx: 0, vy: 0, last: null }
   },
 
@@ -105,9 +102,7 @@ const Game8 = {
     this.scoreScale = 1;
     this.scoreColor = "white";
 
-    this.pivotLocked = { left: false, right: false };
     this.pivotLockTimer = { left: 0, right: 0 };
-    this.armFlash = { left: 0, right: 0 };
 
     this.initPose();
   },
@@ -235,11 +230,7 @@ const Game8 = {
       };
     };
 
-    // Mediapipe Pose indices:
-    // Right wrist = 16, Right index = 20
-    // Left wrist  = 15, Left index  = 19
     updateArm("right", lm[14], lm[16]);
-    updateArm("left", lm[15], lm[19]);
   },
 
   rebuildCaches() {
@@ -851,13 +842,7 @@ const Game8 = {
     if (this.bgCanvas) ctx.drawImage(this.bgCanvas, 0, 0);
   },
 
-  drawEdgeZones(ctx) {
-    // Handled in drawBackground cache
-  },
 
-  drawCross(ctx) {
-    // Handled in drawBackground cache
-  },
 
   drawBalls(ctx) {
     ctx.textAlign = "center";
@@ -1043,20 +1028,7 @@ const Game8 = {
     }
   },
 
-  pointToLineDistance(px, py, x1, y1, x2, y2) {
-    const A = px - x1; const B = py - y1;
-    const C = x2 - x1; const D = y2 - y1;
-    const dot = A * C + B * D;
-    const lenSq = C * C + D * D;
-    let param = -1;
-    if (lenSq !== 0) param = dot / lenSq;
-    let xx, yy;
-    if (param < 0) { xx = x1; yy = y1; }
-    else if (param > 1) { xx = x2; yy = y2; }
-    else { xx = x1 + param * C; yy = y1 + param * D; }
-    const dx = px - xx; const dy = py - yy;
-    return Math.sqrt(dx * dx + dy * dy);
-  },
+
 
   get pivotOffset() { return this._pivotOffset; },
   get armLength() { return this._armLength; },
