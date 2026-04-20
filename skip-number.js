@@ -47,7 +47,7 @@ const Game1 = {
   currentNumber: 1,
   maxNumber: 100,
   spawnTimer: null,
-  spawnInterval: 2000,
+  spawnInterval: 1800,
 
   pulseTime: 0,
   pulseSpeed: 2.2,
@@ -102,8 +102,8 @@ const Game1 = {
 
   speedCap: 0,
   speedMin: 0,
-  speedPenaltyStep: 0.06,
-  speedRecoveryStep: 0.02,
+  speedPenaltyStep: 0.1,
+  speedRecoveryStep: 0.08,
   speedDriftRate: 0.008,
 
   bgStars: [],
@@ -223,7 +223,7 @@ const Game1 = {
     this.xpPopFlash = 0;
     this.hintState = "full";
     this.noiseTime = 0;
-    this.spawnInterval = 2000;
+    this.spawnInterval = 1800;
     this.torusAngle = 0;
 
     this.mode      = "default";
@@ -695,7 +695,8 @@ const Game1 = {
       }
       this._updateHintState();
       if (this.level % 3 === 0) {
-        this.spawnInterval = Math.max(650, this.spawnInterval - 60);
+        this.spawnInterval = Math.max(1000, this.spawnInterval - 40
+        );
         this._restartSpawnTimer();
       }
       this._triggerLevelUpBurst();
@@ -1343,7 +1344,7 @@ const Game1 = {
     this.currentNumber=1; this.score=0; this.combo=0; this.multiplier=1;
     this.xp=0; this.level=1; this.xpToNext=8; this.tier=0;
     this.noteSpeed=this.speedCap; this.hintState="full"; this.noiseTime=0;
-    this.spawnInterval=2000;
+    this.spawnInterval=1800;
     this.pendingShot=null; this.previewCannons=[]; this.previewTimer=0;
     this.isCharging=false; this.charge=0; this.chargeParticles=[];
     this.torusAngle=0; this.pulseTime=0;
