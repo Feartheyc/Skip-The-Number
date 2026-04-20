@@ -243,7 +243,7 @@ const Game8 = {
   },
 
   rebuildCaches() {
-    this.bgCanvas = document.createElement("canvas");
+    if (!this.bgCanvas) this.bgCanvas = document.createElement("canvas");
     this.bgCanvas.width = this.cssWidth;
     this.bgCanvas.height = this.cssHeight;
     const bgCtx = this.bgCanvas.getContext("2d");
@@ -299,6 +299,21 @@ const Game8 = {
     bgCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
 
     bgCtx.globalAlpha = 1;
+
+    bgCtx.strokeStyle = "rgba(255,255,255,0.2)";
+    bgCtx.lineWidth = 2 * this.scale;
+    const insetV = 200 * this.scale;
+    const insetH = 600 * this.scale;
+    bgCtx.beginPath();
+    bgCtx.moveTo(cx - gap, 0);          bgCtx.lineTo(cx - gap, cy - insetV);
+    bgCtx.moveTo(cx - gap, cy + insetV); bgCtx.lineTo(cx - gap, h);
+    bgCtx.moveTo(cx + gap, 0);          bgCtx.lineTo(cx + gap, cy - insetV);
+    bgCtx.moveTo(cx + gap, cy + insetV); bgCtx.lineTo(cx + gap, h);
+    bgCtx.moveTo(0, cy - gap);          bgCtx.lineTo(cx - insetH, cy - gap);
+    bgCtx.moveTo(cx + insetH, cy - gap); bgCtx.lineTo(w, cy - gap);
+    bgCtx.moveTo(0, cy + gap);          bgCtx.lineTo(cx - insetH, cy + gap);
+    bgCtx.moveTo(cx + insetH, cy + gap); bgCtx.lineTo(w, cy + gap);
+    bgCtx.stroke();
 
     // 2. Ball Cache (Using white as base template)
     // Ball needs some extra padding for shadowBlur
@@ -375,6 +390,13 @@ const Game8 = {
     // compute game scale using CSS coordinates (avoids DPI issues)
     this.scale = newScale;
 
+    this._armLength  = this.ARM_LENGTH  * this.scale;
+    this._ballRadius = this.BALL_RADIUS * this.scale;
+    this._edgeSize   = this.EDGE_SIZE   * this.scale;
+    this._lineGap    = this.LINE_GAP    * this.scale;
+    this._pivotRadius = this.PIVOT_RADIUS * this.scale;
+    this._pivotOffset = this.PIVOT_OFFSET * this.scale;
+
     // keep center coordinates in CSS space; transform scales them to device pixels
     this.CENTER_X = cssW / 2;
     this.CENTER_Y = cssH / 2;
@@ -387,6 +409,8 @@ const Game8 = {
     this.fontUI = `bold ${30 * this.scale}px Orbitron`;
     this.fontLegend = `bold ${36 * this.scale}px Orbitron`;
     this.fontFloater = `bold ${24 * this.scale}px Orbitron`;
+    this.fontScore = `bold ${20 * this.scale}px Orbitron`;
+    this.fontScoreBig = `bold ${40 * this.scale}px Orbitron`;
 
     this.rebuildCaches();
   },
@@ -397,6 +421,10 @@ const Game8 = {
     const now = performance.now();
     const deltaTime = now - this.lastTime;
     this.lastTime = now;
+
+    if (this.scoreScale > 1) {
+      this.scoreScale = Math.max(1, this.scoreScale - 0.05);
+    }
 
     if (!this.gameStarted) this.checkPivotLock(deltaTime);
     else {
@@ -409,17 +437,13 @@ const Game8 = {
     this.updateParticles();
     this.updateFloaters();
 
-    // canvas cleared globally in main loop; no need to double-clear here
+    this.drawBackground(ctx);
 
     if (this.gameStarted) {
-      // FIX: Removed the solid black fillRect so your AR camera feed remains visible
       this.drawBalls(ctx);
       this.drawArms(ctx);
     }
 
-    this.drawBackground(ctx);
-    this.drawEdgeZones(ctx);
-    this.drawCross(ctx);
     this.drawPivots(ctx);
     this.drawParticles(ctx);
     this.drawFloaters(ctx);
@@ -500,6 +524,7 @@ const Game8 = {
       isOdd,
       color: "#ffffff",
       trail: [],
+      trailIdx: 0,
       hitCooldown: 0,
       scored: false,
       hasCollided: false
@@ -831,29 +856,7 @@ const Game8 = {
   },
 
   drawCross(ctx) {
-    ctx.strokeStyle = "rgba(255,255,255,0.2)";
-    ctx.lineWidth = 2 * this.scale;
-    const gap = this.lineGap;
-    const cx = this.CENTER_X;
-    const cy = this.CENTER_Y;
-    const w = this.cssWidth;
-    const h = this.cssHeight;
-    const insetV = 200 * this.scale;
-    const insetH = 600 * this.scale;
-
-    ctx.beginPath();
-    // Vertical lines (top and bottom segments)
-    ctx.moveTo(cx - gap, 0); ctx.lineTo(cx - gap, cy - insetV);
-    ctx.moveTo(cx - gap, cy + insetV); ctx.lineTo(cx - gap, h);
-    ctx.moveTo(cx + gap, 0); ctx.lineTo(cx + gap, cy - insetV);
-    ctx.moveTo(cx + gap, cy + insetV); ctx.lineTo(cx + gap, h);
-
-    // Horizontal lines (left and right segments)
-    ctx.moveTo(0, cy - gap); ctx.lineTo(cx - insetH, cy - gap);
-    ctx.moveTo(cx + insetH, cy - gap); ctx.lineTo(w, cy - gap);
-    ctx.moveTo(0, cy + gap); ctx.lineTo(cx - insetH, cy + gap);
-    ctx.moveTo(cx + insetH, cy + gap); ctx.lineTo(w, cy + gap);
-    ctx.stroke();
+    // Handled in drawBackground cache
   },
 
   drawBalls(ctx) {
@@ -905,22 +908,21 @@ const Game8 = {
       arm.wrist.x - arm.shoulder.x
     );
 
-    const angles = [baseAngle, baseAngle + Math.PI];
+    const armPad = 40;
 
-    for (let i = 0; i < angles.length; i++) {
-      let angle = angles[i];
-      const tipX = pivot.x + Math.cos(angle) * this.armLength;
-      const tipY = pivot.y + Math.sin(angle) * this.armLength;
+    if (this.armCanvas) {
+      ctx.save();
+      ctx.translate(pivot.x, pivot.y);
+      
+      ctx.save();
+      ctx.rotate(baseAngle);
+      ctx.drawImage(this.armCanvas, -armPad, -armPad);
+      ctx.restore();
 
-      // Cached Stick & Tip
-      if (this.armCanvas) {
-        const armPad = 40;
-        ctx.save();
-        ctx.translate(pivot.x, pivot.y);
-        ctx.rotate(angle);
-        ctx.drawImage(this.armCanvas, -armPad, -armPad);
-        ctx.restore();
-      }
+      ctx.rotate(baseAngle + Math.PI);
+      ctx.drawImage(this.armCanvas, -armPad, -armPad);
+
+      ctx.restore();
     }
 
     // Wrist highlight
@@ -1000,8 +1002,7 @@ const Game8 = {
 
     // ===== SCORE =====
     ctx.textAlign = "center";
-    const fontSize = 20 * this.scoreScale * this.scale;
-    ctx.font = `bold ${fontSize}px Orbitron`;
+    ctx.font = this.scoreScale > 1.1 ? this.fontScoreBig : this.fontScore;
     ctx.fillStyle = this.scoreColor;
     ctx.fillText(this.score, this.CENTER_X, 100 * this.scale);
 
@@ -1057,12 +1058,12 @@ const Game8 = {
     return Math.sqrt(dx * dx + dy * dy);
   },
 
-  get pivotOffset() { return this.PIVOT_OFFSET * this.scale },
-  get armLength() { return this.ARM_LENGTH * this.scale },
-  get ballRadius() { return this.BALL_RADIUS * this.scale },
-  get edgeSize() { return this.EDGE_SIZE * this.scale },
-  get lineGap() { return this.LINE_GAP * this.scale },
-  get pivotRadius() { return this.PIVOT_RADIUS * this.scale }
+  get pivotOffset() { return this._pivotOffset; },
+  get armLength() { return this._armLength; },
+  get ballRadius() { return this._ballRadius; },
+  get edgeSize() { return this._edgeSize; },
+  get lineGap() { return this._lineGap; },
+  get pivotRadius() { return this._pivotRadius; }
 
 };
 
