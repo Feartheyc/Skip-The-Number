@@ -86,6 +86,10 @@ const Game9 = {
   _tutNoFingerThreshold: 90,
   HOLD_SEC: 3.0,
 
+
+  // Finger update throttling (Game9 only)
+_lastFingerUpdateTime: 0,
+FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
   /* ============================================================
      INIT
   ============================================================ */
@@ -498,7 +502,7 @@ const Game9 = {
 
     if (this.gameOver) { this.drawGameOver(ctx); return; }
 
-    this.updateFingerPosition();
+    this.updateFingerPosition(performance.now());
     this.updateMascot(delta);
     this.checkPickup();
     this.checkDoorAlignment();
@@ -533,14 +537,35 @@ const Game9 = {
   },
 
   /* ── Finger ─────────────────────────────────────────────── */
-  updateFingerPosition() {
-    if (!window.fingerPositions||window.fingerPositions.length===0) { this.fingerX=null; this.fingerY=null; return; }
-    const fp=window.fingerPositions[0];
-    if (this._fingerSmoothX===null) { this._fingerSmoothX=fp.x; this._fingerSmoothY=fp.y; }
-    this._fingerSmoothX+=(fp.x-this._fingerSmoothX)*this.FINGER_SMOOTH;
-    this._fingerSmoothY+=(fp.y-this._fingerSmoothY)*this.FINGER_SMOOTH;
-    this.fingerX=this._fingerSmoothX; this.fingerY=this._fingerSmoothY;
-  },
+  updateFingerPosition(now) {
+  // Throttle to 45 FPS
+  if (now - this._lastFingerUpdateTime < this.FINGER_UPDATE_INTERVAL) {
+    return; // skip update, keep previous smoothed value
+  }
+
+  this._lastFingerUpdateTime = now;
+
+  if (!window.fingerPositions || window.fingerPositions.length === 0) {
+    this.fingerX = null;
+    this.fingerY = null;
+    return;
+  }
+
+  const fp = window.fingerPositions[0];
+
+  // Initialize smoothing if needed
+  if (this._fingerSmoothX === null) {
+    this._fingerSmoothX = fp.x;
+    this._fingerSmoothY = fp.y;
+  }
+
+  // Smooth movement
+  this._fingerSmoothX += (fp.x - this._fingerSmoothX) * this.FINGER_SMOOTH;
+  this._fingerSmoothY += (fp.y - this._fingerSmoothY) * this.FINGER_SMOOTH;
+
+  this.fingerX = this._fingerSmoothX;
+  this.fingerY = this._fingerSmoothY;
+},
 
   /* ── Mascot ──────────────────────────────────────────────── */
   updateMascot(delta) {
