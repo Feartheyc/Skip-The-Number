@@ -73,6 +73,11 @@ const Game3 = {
   frameCounter: 0,
   fpsTimer: 0,
 
+
+  // Finger update throttling (Game9 only)
+_lastFingerUpdateTime: 0,
+FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
+_cachedLandmarks: null,
   // ⚡ ADDITIVE: SFX Play Helper
   playSFX(name, vol = 0.5) {
     const s = this.sfx[name];
@@ -275,55 +280,94 @@ const Game3 = {
   },
 
   update(ctx, landmarks, dt = 1 / 60) {
-    const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
-    if (isPaused) dt = 0;
+  const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
+  if (isPaused) dt = 0;
 
-    this.frameCounter++;
-    this.fpsTimer += dt;
-    if (this.fpsTimer >= 1) { this.fps = this.frameCounter; this.frameCounter = 0; this.fpsTimer = 0; }
+  this.frameCounter++;
+  this.fpsTimer += dt;
+  if (this.fpsTimer >= 1) {
+    this.fps = this.frameCounter;
+    this.frameCounter = 0;
+    this.fpsTimer = 0;
+  }
 
-    ctx.save();
-    if (this.shakeTime > 0) {
-      this.shakeTime -= dt;
-      ctx.translate((Math.random() - 0.5) * this.shakeMag, (Math.random() - 0.5) * this.shakeMag);
+  // =========================================
+  // ✅ THROTTLE FINGER DATA (45 FPS ONLY)
+  // =========================================
+  const now = performance.now();
+
+  if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
+    this._lastFingerUpdateTime = now;
+
+    if (landmarks && landmarks.length >= 3) {
+      this._cachedLandmarks = landmarks;
+    } else {
+      this._cachedLandmarks = null;
     }
+  }
 
-    this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
-    this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
+  // Use cached landmarks instead of raw input
+  const activeLandmarks = this._cachedLandmarks;
 
-    this.drawUI(ctx);
-    this.drawPopups(ctx, dt);
-    this.drawParticles(ctx, dt);
+  ctx.save();
 
-    const isPlaying = !this.showTutorial && !this.difficultyMenuOpen && this.gameState === "PLAYING";
+  if (this.shakeTime > 0) {
+    this.shakeTime -= dt;
+    ctx.translate(
+      (Math.random() - 0.5) * this.shakeMag,
+      (Math.random() - 0.5) * this.shakeMag
+    );
+  }
 
-    if (this.gameState === "PLAYING" || this.showTutorial) {
-      if (!landmarks || landmarks.length < 3) {
-        if (isPlaying) this.drawFeedback(ctx, "Show One Hand!", "orange");
-        else if (this.showTutorial) this.tutorialHoldTime = Math.max(0, this.tutorialHoldTime - dt);
-      } else {
-        const [indexTip, thumbTip, wrist] = landmarks;
-        this.drawArmSymbol(ctx, indexTip, thumbTip, wrist);
-        if (this.showTutorial) {
-          this.tutorialHoldTime += dt;
-          if (this.tutorialHoldTime >= 1.5) { this.showTutorial = false; this.spawnNumbers(); }
-        } else if (isPlaying) {
-          this.checkPose(ctx, indexTip, thumbTip, wrist, dt);
+  this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
+  this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
+
+  this.drawUI(ctx);
+  this.drawPopups(ctx, dt);
+  this.drawParticles(ctx, dt);
+
+  const isPlaying =
+    !this.showTutorial &&
+    !this.difficultyMenuOpen &&
+    this.gameState === "PLAYING";
+
+  if (this.gameState === "PLAYING" || this.showTutorial) {
+    // =========================================
+    // USE THROTTLED DATA HERE
+    // =========================================
+    if (!activeLandmarks || activeLandmarks.length < 3) {
+      if (isPlaying) {
+        this.drawFeedback(ctx, "Show One Hand!", "orange");
+      } else if (this.showTutorial) {
+        this.tutorialHoldTime = Math.max(0, this.tutorialHoldTime - dt);
+      }
+    } else {
+      const [indexTip, thumbTip, wrist] = activeLandmarks;
+
+      this.drawArmSymbol(ctx, indexTip, thumbTip, wrist);
+
+      if (this.showTutorial) {
+        this.tutorialHoldTime += dt;
+        if (this.tutorialHoldTime >= 1.5) {
+          this.showTutorial = false;
+          this.spawnNumbers();
         }
+      } else if (isPlaying) {
+        this.checkPose(ctx, indexTip, thumbTip, wrist, dt);
       }
     }
+  }
 
-    if (this.showTutorial) this.drawTutorialWindow(ctx);
-    if (this.difficultyMenuOpen) this.drawDifficultyMenu(ctx);
+  if (this.showTutorial) this.drawTutorialWindow(ctx);
+  if (this.difficultyMenuOpen) this.drawDifficultyMenu(ctx);
 
-    ctx.restore();
+  ctx.restore();
 
-    if (typeof PauseArea !== 'undefined') {
-      PauseArea.drawPauseIcon(ctx);
-      if (isPaused) PauseArea.draw();
-    }
-  },
-
+  if (typeof PauseArea !== 'undefined') {
+    PauseArea.drawPauseIcon(ctx);
+    if (isPaused) PauseArea.draw();
+  }
+},
   drawDifficultyMenu(ctx) {
     ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
     ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
