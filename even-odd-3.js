@@ -121,10 +121,11 @@ const Game8 = {
     });
 
     this.pose.setOptions({
-      modelComplexity: 1,
+      // Changed from 1 to 0 to save massive amounts of CPU on low tier cellphones!
+      modelComplexity: 0,
       smoothLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
     });
 
     this.pose.onResults(this.onPoseResults.bind(this));
@@ -238,35 +239,8 @@ const Game8 = {
   },
 
   rebuildCaches() {
-    // 1. Edge Zones Cache
-    this.edgeZoneCanvas.width = this.cssWidth;
-    this.edgeZoneCanvas.height = this.cssHeight;
-    const eCtx = this.edgeZoneCanvas.getContext("2d");
-    eCtx.clearRect(0, 0, this.cssWidth, this.cssHeight);
-    
-    const w = this.cssWidth;
-    const h = this.cssHeight;
-    const e = this.edgeSize;
-    const gap = this.lineGap;
-    const cx = this.CENTER_X;
-    const cy = this.CENTER_Y;
-
-    eCtx.globalAlpha = 0.85;
-    eCtx.shadowBlur = 20;
-
-    eCtx.fillStyle = "rgba(255, 0, 0, 0.6)";
-    eCtx.shadowColor = "red";
-    eCtx.fillRect(0, 0, e, cy - gap);
-    eCtx.fillRect(0, 0, cx - gap, e);
-    eCtx.fillRect(w - e, cy + gap, e, h - (cy + gap));
-    eCtx.fillRect(cx + gap, h - e, w - (cx + gap), e);
-
-    eCtx.fillStyle = "rgba(0, 255, 255, 0.6)";
-    eCtx.shadowColor = "cyan";
-    eCtx.fillRect(0, cy + gap, e, h - (cy + gap));
-    eCtx.fillRect(0, h - e, cx - gap, e);
-    eCtx.fillRect(w - e, 0, e, cy - gap);
-    eCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
+    // We removed full-screen edgeZoneCanvas cache because massive transparent Image composition
+    // kills mobile GPU fill-rate. We'll render flat raw rects natively.
 
     // 2. Ball Cache (Using white as base template)
     // Ball needs some extra padding for shadowBlur
@@ -784,18 +758,57 @@ const Game8 = {
     ctx.strokeStyle = "rgba(0, 255, 255, 0.05)";
     ctx.lineWidth = 1;
     const step = 40 * this.scale;
+    ctx.beginPath();
     for (let x = 0; x < this.cssWidth; x += step) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.cssHeight); ctx.stroke();
+      ctx.moveTo(x, 0); ctx.lineTo(x, this.cssHeight);
     }
     for (let y = 0; y < this.cssHeight; y += step) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.cssWidth, y); ctx.stroke();
+      ctx.moveTo(0, y); ctx.lineTo(this.cssWidth, y);
     }
+    ctx.stroke();
   },
 
   drawEdgeZones(ctx) {
-    if (this.edgeZoneCanvas) {
-      ctx.drawImage(this.edgeZoneCanvas, 0, 0);
-    }
+    const w = this.cssWidth;
+    const h = this.cssHeight;
+    const e = this.edgeSize;
+    const gap = this.lineGap;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
+
+    // We do NOT use shadowBlur here anymore, drawing rects is faster than compositing huge offscreen images!
+    ctx.globalAlpha = 0.85;
+
+    // Simulate glow cheaply with low alpha border layers instead of shadow math
+    const overS = e * 1.3;
+
+    // =========== TOP LEFT & BOTTOM RIGHT (Red - Even) ===========
+    ctx.fillStyle = "rgba(255, 0, 0, 0.3)"; // Fake glow outer
+    ctx.fillRect(0, 0, overS, cy - gap + 5);
+    ctx.fillRect(0, 0, cx - gap + 5, overS);
+    ctx.fillRect(w - overS, cy + gap - 5, overS, h);
+    ctx.fillRect(cx + gap - 5, h - overS, w, overS);
+
+    ctx.fillStyle = "rgba(255, 0, 0, 0.8)"; // Inner solid
+    ctx.fillRect(0, 0, e, cy - gap);
+    ctx.fillRect(0, 0, cx - gap, e);
+    ctx.fillRect(w - e, cy + gap, e, h - (cy + gap));
+    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);
+
+    // =========== BOTTOM LEFT & TOP RIGHT (Blue - Odd) ===========
+    ctx.fillStyle = "rgba(0, 255, 255, 0.3)"; // Fake glow outer
+    ctx.fillRect(0, cy + gap - 5, overS, h);
+    ctx.fillRect(0, h - overS, cx - gap + 5, overS);
+    ctx.fillRect(w - overS, 0, overS, cy - gap + 5);
+    ctx.fillRect(cx + gap - 5, 0, w, overS);
+
+    ctx.fillStyle = "rgba(0, 255, 255, 0.8)"; // Inner solid
+    ctx.fillRect(0, cy + gap, e, h - (cy + gap));
+    ctx.fillRect(0, h - e, cx - gap, e);
+    ctx.fillRect(w - e, 0, e, cy - gap);
+    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);
+
+    ctx.globalAlpha = 1;
   },
 
   drawCross(ctx) {
@@ -927,7 +940,9 @@ const Game8 = {
       let p = this.particles[i];
       ctx.globalAlpha = p.life;
       ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 4 * this.scale, 0, Math.PI * 2); ctx.fill();
+      // Using fillRect instead of arc for massive speed gains
+      const size = 4 * this.scale;
+      ctx.fillRect(p.x - size, p.y - size, size * 2, size * 2);
     }
     ctx.globalAlpha = 1;
   },
