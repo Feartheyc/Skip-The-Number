@@ -89,7 +89,7 @@ const Game9 = {
 
   // Finger update throttling (Game9 only)
 _lastFingerUpdateTime: 0,
-FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
+FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
   /* ============================================================
      INIT
   ============================================================ */
@@ -538,13 +538,6 @@ FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
 
   /* ── Finger ─────────────────────────────────────────────── */
   updateFingerPosition(now) {
-  // Throttle to 45 FPS
-  if (now - this._lastFingerUpdateTime < this.FINGER_UPDATE_INTERVAL) {
-    return; // skip update, keep previous smoothed value
-  }
-
-  this._lastFingerUpdateTime = now;
-
   if (!window.fingerPositions || window.fingerPositions.length === 0) {
     this.fingerX = null;
     this.fingerY = null;
@@ -553,15 +546,25 @@ FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
 
   const fp = window.fingerPositions[0];
 
-  // Initialize smoothing if needed
+  // Initialize smoothing
   if (this._fingerSmoothX === null) {
     this._fingerSmoothX = fp.x;
     this._fingerSmoothY = fp.y;
   }
 
-  // Smooth movement
-  this._fingerSmoothX += (fp.x - this._fingerSmoothX) * this.FINGER_SMOOTH;
-  this._fingerSmoothY += (fp.y - this._fingerSmoothY) * this.FINGER_SMOOTH;
+  const deltaTime = now - this._lastFingerUpdateTime;
+
+  // Only update target every 22ms
+  if (deltaTime >= this.FINGER_UPDATE_INTERVAL) {
+    this._lastFingerUpdateTime = now;
+
+    this._targetFingerX = fp.x;
+    this._targetFingerY = fp.y;
+  }
+
+  // Always smooth toward latest target (runs every frame)
+  this._fingerSmoothX += (this._targetFingerX - this._fingerSmoothX) * this.FINGER_SMOOTH;
+  this._fingerSmoothY += (this._targetFingerY - this._fingerSmoothY) * this.FINGER_SMOOTH;
 
   this.fingerX = this._fingerSmoothX;
   this.fingerY = this._fingerSmoothY;
