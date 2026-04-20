@@ -137,41 +137,86 @@ window.startGame = function (gameName) {
   window.currentGame = null;
   _activeGameId = "";
 
-  /* ── GAME 1 ── ModeSelector → Tutorial → launch ─────────── */
+  const video = document.getElementById("input_video");
+
+  /* ── GAME 1 ── ModeSelector → launch ─────────── */
   if (gameName === "game1") {
     blackoutCanvas();
+
+    // ✅ Restore camera preview for Game1
+    if (video) {
+      video.style.position = "fixed";
+      video.style.top = "-9999px";
+      video.style.left = "-9999px";
+      video.style.width = "1px";
+      video.style.height = "1px";
+      video.style.opacity = "0";
+      video.style.pointerEvents = "none";
+    }
+
     ModeSelector.show((modeKey) => {
       launchGame1WithMode(modeKey);
     });
     return;
   }
 
-  /* ── GAME 9 ── Tutorial (dreamy theme) → launch ──────────── */
+  /* ── GAME 9 ── Hide camera preview completely ─────────── */
   if (gameName === "Game9") {
     blackoutCanvas();
 
-      _activeGameId = "game9";
-       Game9.init();
-      window.currentGame = Game9;
-      resizeCanvas();
-  }
+    _activeGameId = "game9";
 
-  /* ── GAME 10 ── Tutorial (cosmic theme) → launch ─────────── */
-  if (gameName === "Game10") {
-    blackoutCanvas();
+    // ✅ FULLY hide camera preview but keep stream running
+    if (video) {
+      video.style.position = "fixed";
+      video.style.top = "-9999px";
+      video.style.left = "-9999px";
+      video.style.width = "1px";
+      video.style.height = "1px";
+      video.style.opacity = "0";
+      video.style.pointerEvents = "none";
+    }
 
-      _activeGameId = "game10";
-      blackoutCanvas();
-      Game10.init();
-      // document.getElementById("input_video").style.opacity = "1";
- 
-      window.currentGame = Game10;
-      resizeCanvas();
+    Game9.init();
+    window.currentGame = Game9;
+    resizeCanvas();
     return;
   }
 
-  /* ── ALL OTHER GAMES — no tutorial, no finger prompt ─────── */
-  document.getElementById("input_video").style.opacity = "1";
+  /* ── GAME 10 ── Normal behavior ─────────── */
+  if (gameName === "Game10") {
+    blackoutCanvas();
+
+    _activeGameId = "game10";
+
+    // ✅ Restore camera preview
+    if (video) {
+      video.style.position = "fixed";
+      video.style.top = "-9999px";
+      video.style.left = "-9999px";
+      video.style.width = "1px";
+      video.style.height = "1px";
+      video.style.opacity = "0";
+      video.style.pointerEvents = "none";
+    }
+
+    Game10.init();
+    window.currentGame = Game10;
+    resizeCanvas();
+    return;
+  }
+
+  /* ── ALL OTHER GAMES ─────────── */
+  // ✅ Restore camera preview
+  if (video) {
+    video.style.position = "absolute";
+    video.style.top = "0";
+    video.style.left = "0";
+    video.style.width = "";
+    video.style.height = "";
+    video.style.opacity = "1";
+    video.style.pointerEvents = "auto";
+  }
 
   const map = {
     game2:  () => { window.currentGame = Game2;  Game2.init(); },
