@@ -75,9 +75,17 @@ const Game8 = {
     this.currentMissingState = null;
     this.missingFrames = 0;
     // initial center in CSS coordinates; resize() will recompute
-    const dpr = window.devicePixelRatio || 1;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     this.CENTER_X = (canvasElement.width / dpr) / 2;
     this.CENTER_Y = (canvasElement.height / dpr) / 2;
+
+    // Caches and object pools must be initialized before resize() calls rebuildCaches()
+    this.particlePool = [];
+    this.floaterPool = [];
+    if (!this.edgeZoneCanvas) this.edgeZoneCanvas = document.createElement("canvas");
+    if (!this.ballCanvas) this.ballCanvas = document.createElement("canvas");
+    if (!this.armCanvas) this.armCanvas = document.createElement("canvas");
+    if (!this.wristCanvas) this.wristCanvas = document.createElement("canvas");
 
     this.resize();
     window.addEventListener("resize", () => this.resize());
@@ -113,17 +121,22 @@ const Game8 = {
     });
 
     this.pose.setOptions({
-      modelComplexity: 1,
+      // Changed from 1 to 0 to save massive amounts of CPU on low tier cellphones!
+      modelComplexity: 0,
       smoothLandmarks: true,
-      minDetectionConfidence: 0.6,
-      minTrackingConfidence: 0.6
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
     });
 
     this.pose.onResults(this.onPoseResults.bind(this));
     this.poseBusy = false;
 
+    let lastPoseTime = 0;
     window.sendFrameToPose = async (image) => {
       if (!this.running || this.poseBusy) return;
+      const now = performance.now();
+      if (now - lastPoseTime < 80) return; // Max ~12 fps for pose, not 60
+      lastPoseTime = now;
       this.poseBusy = true;
       try {
         await this.pose.send({ image });
@@ -229,11 +242,128 @@ const Game8 = {
     updateArm("left", lm[15], lm[19]);
   },
 
+  rebuildCaches() {
+    this.bgCanvas = document.createElement("canvas");
+    this.bgCanvas.width = this.cssWidth;
+    this.bgCanvas.height = this.cssHeight;
+    const bgCtx = this.bgCanvas.getContext("2d");
+
+    // draw grid
+    bgCtx.strokeStyle = "rgba(0, 255, 255, 0.05)";
+    bgCtx.lineWidth = 1;
+    const step = 40 * this.scale;
+    bgCtx.beginPath();
+    for (let x = 0; x < this.cssWidth; x += step) {
+      bgCtx.moveTo(x, 0); bgCtx.lineTo(x, this.cssHeight);
+    }
+    for (let y = 0; y < this.cssHeight; y += step) {
+      bgCtx.moveTo(0, y); bgCtx.lineTo(this.cssWidth, y);
+    }
+    bgCtx.stroke();
+
+    // draw edge zones
+    const w = this.cssWidth;
+    const h = this.cssHeight;
+    const e = this.edgeSize;
+    const gap = this.lineGap;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
+    const overS = e * 1.3;
+
+    bgCtx.globalAlpha = 0.85;
+
+    // =========== TOP LEFT & BOTTOM RIGHT (Red - Even) ===========
+    bgCtx.fillStyle = "rgba(255, 0, 0, 0.3)";
+    bgCtx.fillRect(0, 0, overS, cy - gap + 5);
+    bgCtx.fillRect(0, 0, cx - gap + 5, overS);
+    bgCtx.fillRect(w - overS, cy + gap - 5, overS, h);
+    bgCtx.fillRect(cx + gap - 5, h - overS, w, overS);
+
+    bgCtx.fillStyle = "rgba(255, 0, 0, 0.8)";
+    bgCtx.fillRect(0, 0, e, cy - gap);
+    bgCtx.fillRect(0, 0, cx - gap, e);
+    bgCtx.fillRect(w - e, cy + gap, e, h - (cy + gap));
+    bgCtx.fillRect(cx + gap, h - e, w - (cx + gap), e);
+
+    // =========== BOTTOM LEFT & TOP RIGHT (Blue - Odd) ===========
+    bgCtx.fillStyle = "rgba(0, 255, 255, 0.3)";
+    bgCtx.fillRect(0, cy + gap - 5, overS, h);
+    bgCtx.fillRect(0, h - overS, cx - gap + 5, overS);
+    bgCtx.fillRect(w - overS, 0, overS, cy - gap + 5);
+    bgCtx.fillRect(cx + gap - 5, 0, w, overS);
+
+    bgCtx.fillStyle = "rgba(0, 255, 255, 0.8)";
+    bgCtx.fillRect(0, cy + gap, e, h - (cy + gap));
+    bgCtx.fillRect(0, h - e, cx - gap, e);
+    bgCtx.fillRect(w - e, 0, e, cy - gap);
+    bgCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
+
+    bgCtx.globalAlpha = 1;
+
+    // 2. Ball Cache (Using white as base template)
+    // Ball needs some extra padding for shadowBlur
+    const ballPad = 30; 
+    const br = this.ballRadius;
+    this.ballCanvas.width = (br + ballPad) * 2;
+    this.ballCanvas.height = (br + ballPad) * 2;
+    const bCtx = this.ballCanvas.getContext("2d");
+    
+    bCtx.shadowBlur = 15;
+    bCtx.shadowColor = "#ffffff";
+    bCtx.fillStyle = "#ffffff";
+    bCtx.beginPath();
+    bCtx.arc(br + ballPad, br + ballPad, br, 0, Math.PI * 2);
+    bCtx.fill();
+
+    // 3. Arm Canvas
+    const armPad = 40;
+    const al = this.armLength;
+    this.armCanvas.width = al + armPad * 2;
+    this.armCanvas.height = armPad * 2;
+    const aCtx = this.armCanvas.getContext("2d");
+
+    aCtx.shadowBlur = 20;
+    aCtx.shadowColor = "#f36affff";
+    aCtx.strokeStyle = "#ac2fffff";
+    aCtx.lineWidth = 10 * this.scale;
+    aCtx.beginPath();
+    aCtx.moveTo(armPad, armPad);
+    aCtx.lineTo(armPad + al, armPad);
+    aCtx.stroke();
+    
+    aCtx.shadowBlur = 0;
+    aCtx.beginPath();
+    aCtx.arc(armPad + al, armPad, 8 * this.scale, 0, Math.PI * 2);
+    aCtx.fillStyle = "#b906b9ff";
+    aCtx.fill();
+
+    // 4. Wrist Canvas
+    const wPad = 30;
+    const wr = 18 * this.scale;
+    this.wristCanvas.width = (wr + wPad) * 2;
+    this.wristCanvas.height = (wr + wPad) * 2;
+    const wCtx = this.wristCanvas.getContext("2d");
+
+    wCtx.shadowBlur = 15;
+    wCtx.shadowColor = "#BB66FF";
+    wCtx.strokeStyle = "#BB66FF";
+    wCtx.lineWidth = 4 * this.scale;
+    wCtx.beginPath();
+    wCtx.arc(wr + wPad, wr + wPad, wr, 0, Math.PI * 2);
+    wCtx.stroke();
+  },
+
   resize() {
-    // adopt the full viewport CSS dimensions for consistent scaling
     const cssW = window.innerWidth;
     const cssH = window.innerHeight;
-    const dpr = window.devicePixelRatio || 1;
+    let newScale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
+    if (!newScale || newScale <= 0) newScale = 1;
+
+    if (this.scale && Math.abs(newScale - this.scale) < 0.001 && 
+        this.cssWidth === cssW && this.cssHeight === cssH) return; // Skip!
+
+    // adopt the full viewport CSS dimensions for consistent scaling
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // Cap DPR at 1.5
 
     // update canvas buffer size (main.js already does this but repeating is safe)
     canvasElement.width = cssW * dpr;
@@ -243,8 +373,7 @@ const Game8 = {
     this.cssHeight = cssH;
 
     // compute game scale using CSS coordinates (avoids DPI issues)
-    this.scale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
-    if (!this.scale || this.scale <= 0) this.scale = 1;
+    this.scale = newScale;
 
     // keep center coordinates in CSS space; transform scales them to device pixels
     this.CENTER_X = cssW / 2;
@@ -253,6 +382,13 @@ const Game8 = {
     // normalize drawing matrix
     const ctx = canvasElement.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    this.fontBall = `bold ${30 * this.scale}px Orbitron`;
+    this.fontUI = `bold ${30 * this.scale}px Orbitron`;
+    this.fontLegend = `bold ${36 * this.scale}px Orbitron`;
+    this.fontFloater = `bold ${24 * this.scale}px Orbitron`;
+
+    this.rebuildCaches();
   },
 
   update(ctx) {
@@ -503,7 +639,7 @@ const Game8 = {
         b.targetY = b.y + (b.vy / (b.speed || 1)) * farBoundary;
 
         b.hitCooldown = 8 * this.scale;
-        this.spawnExplosion(b.x, b.y, "white", 10);
+        this.spawnExplosion(b.x, b.y, "white", 5);
       }
     }
   },
@@ -559,11 +695,11 @@ const Game8 = {
         if (scoreType === "good") {
           this.updateScore(10, true);
           this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", nx * 1.5, ny * 1.5, 2.5);
-          this.spawnExplosion(b.x, b.y, "#00FF00", 15, nx * 3, ny * 3);
+          this.spawnExplosion(b.x, b.y, "#00FF00", 8, nx * 3, ny * 3);
         } else {
           this.updateScore(-5, false);
           this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", nx * 1.5, ny * 1.5, 2.5);
-          this.spawnExplosion(b.x, b.y, "#FF0000", 10, nx * 3, ny * 3);
+          this.spawnExplosion(b.x, b.y, "#FF0000", 5, nx * 3, ny * 3);
           this.shakeTimer = 25;
         }
         this.balls.splice(i, 1);
@@ -628,18 +764,34 @@ const Game8 = {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 5 + 2;
-      this.particles.push({
-        x, y,
-        vx: Math.cos(angle) * speed + biasX,
-        vy: Math.sin(angle) * speed + biasY,
-        life: 1.0,
-        color: color
-      });
+      
+      let p = this.particlePool.pop();
+      if (!p) p = {};
+      
+      p.x = x;
+      p.y = y;
+      p.vx = Math.cos(angle) * speed + biasX;
+      p.vy = Math.sin(angle) * speed + biasY;
+      p.life = 1.0;
+      p.color = color;
+      
+      this.particles.push(p);
     }
   },
 
   spawnFloatingText(x, y, text, color, dx = 0, dy = -2, life = 1.0) {
-    this.floaters.push({ x, y, text, color, life, dx, dy });
+    let f = this.floaterPool.pop();
+    if (!f) f = {};
+    
+    f.x = x;
+    f.y = y;
+    f.text = text;
+    f.color = color;
+    f.life = life;
+    f.dx = dx;
+    f.dy = dy;
+    
+    this.floaters.push(f);
   },
 
   updateParticles() {
@@ -647,7 +799,10 @@ const Game8 = {
       let p = this.particles[i];
       p.x += p.vx; p.y += p.vy;
       p.life -= 0.05;
-      if (p.life <= 0) this.particles.splice(i, 1);
+      if (p.life <= 0) {
+        this.particlePool.push(p);
+        this.particles.splice(i, 1);
+      }
     }
   },
 
@@ -657,7 +812,10 @@ const Game8 = {
       f.x += f.dx || 0;
       f.y += f.dy;
       f.life -= 0.02;
-      if (f.life <= 0) this.floaters.splice(i, 1);
+      if (f.life <= 0) {
+        this.floaterPool.push(f);
+        this.floaters.splice(i, 1);
+      }
     }
   },
 
@@ -665,47 +823,11 @@ const Game8 = {
      DRAWING
   ============================== */
   drawBackground(ctx) {
-    ctx.strokeStyle = "rgba(0, 255, 255, 0.05)";
-    ctx.lineWidth = 1;
-    const step = 40 * this.scale;
-    for (let x = 0; x < this.cssWidth; x += step) {
-      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, this.cssHeight); ctx.stroke();
-    }
-    for (let y = 0; y < this.cssHeight; y += step) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(this.cssWidth, y); ctx.stroke();
-    }
+    if (this.bgCanvas) ctx.drawImage(this.bgCanvas, 0, 0);
   },
 
   drawEdgeZones(ctx) {
-    const w = this.cssWidth;
-    const h = this.cssHeight;
-    const e = this.edgeSize;
-    const gap = this.lineGap;
-    const cx = this.CENTER_X;
-    const cy = this.CENTER_Y;
-
-    ctx.globalAlpha = 0.85;
-    ctx.shadowBlur = 20;
-
-    // TOP LEFT & BOTTOM RIGHT (Red - Even)
-    ctx.fillStyle = "rgba(255, 0, 0, 0.6)";
-    ctx.shadowColor = "red";
-    ctx.fillRect(0, 0, e, cy - gap);                  // left upper vertical
-    ctx.fillRect(0, 0, cx - gap, e);                 // top left strip
-    ctx.fillRect(w - e, cy + gap, e, h - (cy + gap)); // right lower vertical
-    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e); // bottom right strip
-
-    // BOTTOM LEFT & TOP RIGHT (Blue - Odd)
-    ctx.fillStyle = "rgba(0, 255, 255, 0.6)";
-    ctx.shadowColor = "cyan";
-    ctx.fillRect(0, cy + gap, e, h - (cy + gap));     // left lower vertical
-    ctx.fillRect(0, h - e, cx - gap, e);             // bottom left strip
-    ctx.fillRect(w - e, 0, e, cy - gap);             // right upper vertical
-    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);    // top right strip
-
-
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
+    // Handled in drawBackground cache
   },
 
   drawCross(ctx) {
@@ -737,35 +859,35 @@ const Game8 = {
   drawBalls(ctx) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `bold ${30 * this.scale}px Orbitron`;
+    ctx.font = this.fontBall;
+
+    // Batch Trails
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = this.ballRadius * 1.5;
+    ctx.lineCap = "round";
+    ctx.globalAlpha = 0.25;
+    for (let i = 0; i < this.balls.length; i++) {
+      let b = this.balls[i];
+      if (b.trail.length < 2) continue;
+      let tIdx = b.trailIdx || 0;
+      ctx.moveTo(b.trail[tIdx].x, b.trail[tIdx].y);
+      for (let j = 1; j < b.trail.length; j++) {
+        let idx = (tIdx + j) % b.trail.length;
+        ctx.lineTo(b.trail[idx].x, b.trail[idx].y);
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
 
     for (let i = 0; i < this.balls.length; i++) {
       let b = this.balls[i];
-      // Trail
-      if (b.trail.length > 1) {
-        ctx.beginPath();
-        ctx.strokeStyle = b.color;
-        ctx.lineWidth = this.ballRadius * 1.5; // Increased from 1.2
-        ctx.lineCap = "round";
-        ctx.globalAlpha = 0.25; // Slightly lower alpha for longer trail
 
-        let tIdx = b.trailIdx || 0;
-        ctx.moveTo(b.trail[tIdx].x, b.trail[tIdx].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          let idx = (tIdx + j) % b.trail.length;
-          ctx.lineTo(b.trail[idx].x, b.trail[idx].y);
-        }
-        ctx.stroke();
-        ctx.globalAlpha = 1.0;
+      if (this.ballCanvas) {
+        const bp = 30; // ball padding
+        const br = this.ballRadius;
+        ctx.drawImage(this.ballCanvas, b.x - br - bp, b.y - br - bp);
       }
-
-      ctx.beginPath();
-      ctx.fillStyle = b.color;
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = b.color;
-      ctx.arc(b.x, b.y, this.ballRadius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
 
       ctx.fillStyle = "black";
       ctx.fillText(b.number, b.x, b.y);
@@ -790,33 +912,23 @@ const Game8 = {
       const tipX = pivot.x + Math.cos(angle) * this.armLength;
       const tipY = pivot.y + Math.sin(angle) * this.armLength;
 
-      // Stick
-      ctx.beginPath();
-      ctx.moveTo(pivot.x, pivot.y);
-      ctx.lineTo(tipX, tipY);
-      ctx.strokeStyle = "#ac2fffff";
-      ctx.lineWidth = 10 * this.scale;
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = "#f36affff";
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      // Tip
-      ctx.beginPath();
-      ctx.arc(tipX, tipY, 8 * this.scale, 0, Math.PI * 2);
-      ctx.fillStyle = "#b906b9ff";
-      ctx.fill();
+      // Cached Stick & Tip
+      if (this.armCanvas) {
+        const armPad = 40;
+        ctx.save();
+        ctx.translate(pivot.x, pivot.y);
+        ctx.rotate(angle);
+        ctx.drawImage(this.armCanvas, -armPad, -armPad);
+        ctx.restore();
+      }
     }
 
     // Wrist highlight
-    ctx.beginPath();
-    ctx.arc(arm.shoulder.x, arm.shoulder.y, 18 * this.scale, 0, Math.PI * 2);
-    ctx.strokeStyle = "#BB66FF";
-    ctx.lineWidth = 4 * this.scale;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#BB66FF";
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+    if (this.wristCanvas) {
+      const wPad = 30;
+      const wr = 18 * this.scale;
+      ctx.drawImage(this.wristCanvas, arm.shoulder.x - wr - wPad, arm.shoulder.y - wr - wPad);
+    }
   },
 
   drawPivots(ctx) {
@@ -845,17 +957,18 @@ const Game8 = {
   },
 
   drawParticles(ctx) {
+    const size = 4 * this.scale;
     for (let i = 0; i < this.particles.length; i++) {
       let p = this.particles[i];
-      ctx.globalAlpha = p.life;
       ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 4 * this.scale, 0, Math.PI * 2); ctx.fill();
+      // Drop alpha overdraw, just shrink the rect entirely instead for cheap FX
+      const s = size * Math.max(0, p.life) * 2;
+      ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
     }
-    ctx.globalAlpha = 1;
   },
 
   drawFloaters(ctx) {
-    ctx.font = `bold ${24 * this.scale}px Orbitron`;
+    ctx.font = this.fontFloater;
     ctx.textAlign = "center";
     for (let i = 0; i < this.floaters.length; i++) {
       let f = this.floaters[i];
@@ -869,16 +982,20 @@ const Game8 = {
   drawUI(ctx) {
     if (!this.gameStarted) {
       ctx.fillStyle = "white";
-      ctx.font = `bold ${30 * this.scale}px Orbitron`;
+      ctx.font = this.fontUI;
       ctx.textAlign = "center";
-      ctx.shadowBlur = 10 * this.scale;
-      ctx.shadowColor = "black";
+      ctx.fillStyle = "black";
+      ctx.fillText(
+        "HOLD ELBOW ON DOTS TO START",
+        this.CENTER_X + 2 * this.scale,
+        this.CENTER_Y - 48 * this.scale
+      );
+      ctx.fillStyle = "white";
       ctx.fillText(
         "HOLD ELBOW ON DOTS TO START",
         this.CENTER_X,
         this.CENTER_Y - 50 * this.scale
       );
-      ctx.shadowBlur = 0;
     }
 
     // ===== SCORE =====
@@ -891,7 +1008,7 @@ const Game8 = {
     // ===== LEGEND (Responsive Positions) =====
     const w = this.cssWidth;
 
-    ctx.font = `bold ${36 * this.scale}px Orbitron`;
+    ctx.font = this.fontLegend;
     ctx.textAlign = "center";
 
     // Left = 25% of screen width
@@ -915,7 +1032,7 @@ const Game8 = {
 
     if (this.currentMissingState) {
       ctx.fillStyle = "red";
-      ctx.font = `bold ${30 * this.scale}px Orbitron`;
+      ctx.font = this.fontUI;
       let msg = "";
       if (this.currentMissingState === "arm") msg = "BRING ARM BACK IN SCREEN";
       else if (this.currentMissingState === "elbow") msg = "BRING ELBOW BACK IN SCREEN";

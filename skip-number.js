@@ -47,7 +47,7 @@ const Game1 = {
   currentNumber: 1,
   maxNumber: 100,
   spawnTimer: null,
-  spawnInterval: 2000,
+  spawnInterval: 1200,
 
   pulseTime: 0,
   pulseSpeed: 2.2,
@@ -223,7 +223,7 @@ const Game1 = {
     this.xpPopFlash = 0;
     this.hintState = "full";
     this.noiseTime = 0;
-    this.spawnInterval = 2000;
+    this.spawnInterval = 1200;
     this.torusAngle = 0;
 
     this.mode      = "default";
