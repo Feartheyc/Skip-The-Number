@@ -90,6 +90,11 @@ const Game9 = {
   // Finger update throttling (Game9 only)
 _lastFingerUpdateTime: 0,
 FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
+
+
+loading: true,
+assetsToLoad: 0,
+assetsLoaded: 0,
   /* ============================================================
      INIT
   ============================================================ */
@@ -485,6 +490,13 @@ FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
   update(ctx, _fp, dtArg) {
     if (!this.running) return;
     const delta = (dtArg>0&&dtArg<1) ? dtArg*1000 : (dtArg>0) ? Math.min(dtArg,50) : 16;
+      // 🚨 LOADING STATE FIRST
+  if (this.loading) {
+    this.drawLoadingScreen(ctx);
+    return;
+  }
+
+
 
     // Tutorial state — same canvas, same loop
     if (this.gameState === "tutorial") {
@@ -785,15 +797,47 @@ FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
 
   /* ── Sprites ─────────────────────────────────────────────── */
   loadMascotSprites() {
-    this.mascotImages={idle:[],happy:[],confused:[]};
-    for (let i=0;i<=4;i++){const img=new Image();img.src=`MID-I/0${i}_MID-I.png`;this.mascotImages.idle.push(img);}
-    for (let i=0;i<=3;i++){const img=new Image();img.src=`MID-H/0${i}_MID-H.png`;this.mascotImages.happy.push(img);}
-    for (let i=0;i<=2;i++){const img=new Image();img.src=`MID-C/0${i}_MID-C.png`;this.mascotImages.confused.push(img);}
-  },
+  this.mascotImages = { idle:[], happy:[], confused:[] };
+
+  const loadImage = (src, arr) => {
+    this.assetsToLoad++;
+    const img = new Image();
+    img.src = src;
+    img.onload = () => {
+      this.assetsLoaded++;
+      this.checkAllAssetsLoaded();
+    };
+    arr.push(img);
+  };
+
+  for (let i=0;i<=4;i++) loadImage(`MID-I/0${i}_MID-I.png`, this.mascotImages.idle);
+  for (let i=0;i<=3;i++) loadImage(`MID-H/0${i}_MID-H.png`, this.mascotImages.happy);
+  for (let i=0;i<=2;i++) loadImage(`MID-C/0${i}_MID-C.png`, this.mascotImages.confused);
+},
   loadPortalSprites() {
-    this.portalFrames=[];
-    for (let i=0;i<=8;i++){const img=new Image();img.src=`D-1/0${i}_D-1.png`;this.portalFrames.push(img);}
-  },
+  this.portalFrames = [];
+
+  const loadImage = (src) => {
+    this.assetsToLoad++;
+    const img = new Image();
+    img.src = src;
+    img.onload = () => {
+      this.assetsLoaded++;
+      this.checkAllAssetsLoaded();
+    };
+    this.portalFrames.push(img);
+  };
+
+  for (let i=0;i<=8;i++) {
+    loadImage(`D-1/0${i}_D-1.png`);
+  }
+},
+
+checkAllAssetsLoaded() {
+  if (this.assetsLoaded >= this.assetsToLoad) {
+    this.loading = false;
+  }
+},
   updatePortalAnimation(delta) {
     this.portalFrameTimer+=delta;
     if (this.portalFrameTimer>this.portalFrameSpeed){this.portalFrameIndex=(this.portalFrameIndex+1)%Math.max(1,this.portalFrames.length);this.portalFrameTimer=0;}
@@ -852,4 +896,51 @@ FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
 
   /* ── Utility ─────────────────────────────────────────────── */
   _rrect(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();},
+
+  drawLoadingScreen(ctx) {
+  const W = this.cssWidth;
+  const H = this.cssHeight;
+
+  // Same dreamy gradient
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, "#60A5FA");
+  g.addColorStop(0.5, "#A78BFA");
+  g.addColorStop(1, "#F472B6");
+
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // Glow
+  const glow = ctx.createRadialGradient(this.CENTER_X, this.CENTER_Y, 0, this.CENTER_X, this.CENTER_Y, W * 0.7);
+  glow.addColorStop(0, "rgba(255,255,255,0.15)");
+  glow.addColorStop(1, "rgba(255,255,255,0)");
+
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // Title
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `bold ${40*this.scale}px 'Comic Sans MS'`;
+  ctx.textAlign = "center";
+  ctx.fillText("✨ Loading Ordinal Express...", this.CENTER_X, this.CENTER_Y - 40);
+
+  // Progress bar
+  const progress = this.assetsToLoad === 0 ? 0 : this.assetsLoaded / this.assetsToLoad;
+
+  const barW = 300 * this.scale;
+  const barH = 14 * this.scale;
+  const x = this.CENTER_X - barW/2;
+  const y = this.CENTER_Y + 20;
+
+  ctx.fillStyle = "rgba(255,255,255,0.2)";
+  ctx.fillRect(x, y, barW, barH);
+
+  ctx.fillStyle = "#a78bfa";
+  ctx.fillRect(x, y, barW * progress, barH);
+
+  // Percentage
+  ctx.font = `bold ${18*this.scale}px 'Comic Sans MS'`;
+  ctx.fillStyle = "#fff";
+  ctx.fillText(`${Math.round(progress * 100)}%`, this.CENTER_X, y + 40);
+}
 };
