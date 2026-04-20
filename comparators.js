@@ -76,7 +76,7 @@ const Game3 = {
 
   // Finger update throttling (Game9 only)
 _lastFingerUpdateTime: 0,
-FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
+FINGER_UPDATE_INTERVAL: 33, // ~45 FPS
 _cachedLandmarks: null,
   // ⚡ ADDITIVE: SFX Play Helper
   playSFX(name, vol = 0.5) {
