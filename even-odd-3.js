@@ -79,6 +79,14 @@ const Game8 = {
     this.CENTER_X = (canvasElement.width / dpr) / 2;
     this.CENTER_Y = (canvasElement.height / dpr) / 2;
 
+    // Caches and object pools must be initialized before resize() calls rebuildCaches()
+    this.particlePool = [];
+    this.floaterPool = [];
+    if (!this.edgeZoneCanvas) this.edgeZoneCanvas = document.createElement("canvas");
+    if (!this.ballCanvas) this.ballCanvas = document.createElement("canvas");
+    if (!this.armCanvas) this.armCanvas = document.createElement("canvas");
+    if (!this.wristCanvas) this.wristCanvas = document.createElement("canvas");
+
     this.resize();
     window.addEventListener("resize", () => this.resize());
 
@@ -229,6 +237,90 @@ const Game8 = {
     updateArm("left", lm[15], lm[19]);
   },
 
+  rebuildCaches() {
+    // 1. Edge Zones Cache
+    this.edgeZoneCanvas.width = this.cssWidth;
+    this.edgeZoneCanvas.height = this.cssHeight;
+    const eCtx = this.edgeZoneCanvas.getContext("2d");
+    eCtx.clearRect(0, 0, this.cssWidth, this.cssHeight);
+    
+    const w = this.cssWidth;
+    const h = this.cssHeight;
+    const e = this.edgeSize;
+    const gap = this.lineGap;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
+
+    eCtx.globalAlpha = 0.85;
+    eCtx.shadowBlur = 20;
+
+    eCtx.fillStyle = "rgba(255, 0, 0, 0.6)";
+    eCtx.shadowColor = "red";
+    eCtx.fillRect(0, 0, e, cy - gap);
+    eCtx.fillRect(0, 0, cx - gap, e);
+    eCtx.fillRect(w - e, cy + gap, e, h - (cy + gap));
+    eCtx.fillRect(cx + gap, h - e, w - (cx + gap), e);
+
+    eCtx.fillStyle = "rgba(0, 255, 255, 0.6)";
+    eCtx.shadowColor = "cyan";
+    eCtx.fillRect(0, cy + gap, e, h - (cy + gap));
+    eCtx.fillRect(0, h - e, cx - gap, e);
+    eCtx.fillRect(w - e, 0, e, cy - gap);
+    eCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
+
+    // 2. Ball Cache (Using white as base template)
+    // Ball needs some extra padding for shadowBlur
+    const ballPad = 30; 
+    const br = this.ballRadius;
+    this.ballCanvas.width = (br + ballPad) * 2;
+    this.ballCanvas.height = (br + ballPad) * 2;
+    const bCtx = this.ballCanvas.getContext("2d");
+    
+    bCtx.shadowBlur = 15;
+    bCtx.shadowColor = "#ffffff";
+    bCtx.fillStyle = "#ffffff";
+    bCtx.beginPath();
+    bCtx.arc(br + ballPad, br + ballPad, br, 0, Math.PI * 2);
+    bCtx.fill();
+
+    // 3. Arm Canvas
+    const armPad = 40;
+    const al = this.armLength;
+    this.armCanvas.width = al + armPad * 2;
+    this.armCanvas.height = armPad * 2;
+    const aCtx = this.armCanvas.getContext("2d");
+
+    aCtx.shadowBlur = 20;
+    aCtx.shadowColor = "#f36affff";
+    aCtx.strokeStyle = "#ac2fffff";
+    aCtx.lineWidth = 10 * this.scale;
+    aCtx.beginPath();
+    aCtx.moveTo(armPad, armPad);
+    aCtx.lineTo(armPad + al, armPad);
+    aCtx.stroke();
+    
+    aCtx.shadowBlur = 0;
+    aCtx.beginPath();
+    aCtx.arc(armPad + al, armPad, 8 * this.scale, 0, Math.PI * 2);
+    aCtx.fillStyle = "#b906b9ff";
+    aCtx.fill();
+
+    // 4. Wrist Canvas
+    const wPad = 30;
+    const wr = 18 * this.scale;
+    this.wristCanvas.width = (wr + wPad) * 2;
+    this.wristCanvas.height = (wr + wPad) * 2;
+    const wCtx = this.wristCanvas.getContext("2d");
+
+    wCtx.shadowBlur = 15;
+    wCtx.shadowColor = "#BB66FF";
+    wCtx.strokeStyle = "#BB66FF";
+    wCtx.lineWidth = 4 * this.scale;
+    wCtx.beginPath();
+    wCtx.arc(wr + wPad, wr + wPad, wr, 0, Math.PI * 2);
+    wCtx.stroke();
+  },
+
   resize() {
     // adopt the full viewport CSS dimensions for consistent scaling
     const cssW = window.innerWidth;
@@ -253,6 +345,8 @@ const Game8 = {
     // normalize drawing matrix
     const ctx = canvasElement.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    this.rebuildCaches();
   },
 
   update(ctx) {
@@ -628,18 +722,34 @@ const Game8 = {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = Math.random() * 5 + 2;
-      this.particles.push({
-        x, y,
-        vx: Math.cos(angle) * speed + biasX,
-        vy: Math.sin(angle) * speed + biasY,
-        life: 1.0,
-        color: color
-      });
+      
+      let p = this.particlePool.pop();
+      if (!p) p = {};
+      
+      p.x = x;
+      p.y = y;
+      p.vx = Math.cos(angle) * speed + biasX;
+      p.vy = Math.sin(angle) * speed + biasY;
+      p.life = 1.0;
+      p.color = color;
+      
+      this.particles.push(p);
     }
   },
 
   spawnFloatingText(x, y, text, color, dx = 0, dy = -2, life = 1.0) {
-    this.floaters.push({ x, y, text, color, life, dx, dy });
+    let f = this.floaterPool.pop();
+    if (!f) f = {};
+    
+    f.x = x;
+    f.y = y;
+    f.text = text;
+    f.color = color;
+    f.life = life;
+    f.dx = dx;
+    f.dy = dy;
+    
+    this.floaters.push(f);
   },
 
   updateParticles() {
@@ -647,7 +757,10 @@ const Game8 = {
       let p = this.particles[i];
       p.x += p.vx; p.y += p.vy;
       p.life -= 0.05;
-      if (p.life <= 0) this.particles.splice(i, 1);
+      if (p.life <= 0) {
+        this.particlePool.push(p);
+        this.particles.splice(i, 1);
+      }
     }
   },
 
@@ -657,7 +770,10 @@ const Game8 = {
       f.x += f.dx || 0;
       f.y += f.dy;
       f.life -= 0.02;
-      if (f.life <= 0) this.floaters.splice(i, 1);
+      if (f.life <= 0) {
+        this.floaterPool.push(f);
+        this.floaters.splice(i, 1);
+      }
     }
   },
 
@@ -677,35 +793,9 @@ const Game8 = {
   },
 
   drawEdgeZones(ctx) {
-    const w = this.cssWidth;
-    const h = this.cssHeight;
-    const e = this.edgeSize;
-    const gap = this.lineGap;
-    const cx = this.CENTER_X;
-    const cy = this.CENTER_Y;
-
-    ctx.globalAlpha = 0.85;
-    ctx.shadowBlur = 20;
-
-    // TOP LEFT & BOTTOM RIGHT (Red - Even)
-    ctx.fillStyle = "rgba(255, 0, 0, 0.6)";
-    ctx.shadowColor = "red";
-    ctx.fillRect(0, 0, e, cy - gap);                  // left upper vertical
-    ctx.fillRect(0, 0, cx - gap, e);                 // top left strip
-    ctx.fillRect(w - e, cy + gap, e, h - (cy + gap)); // right lower vertical
-    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e); // bottom right strip
-
-    // BOTTOM LEFT & TOP RIGHT (Blue - Odd)
-    ctx.fillStyle = "rgba(0, 255, 255, 0.6)";
-    ctx.shadowColor = "cyan";
-    ctx.fillRect(0, cy + gap, e, h - (cy + gap));     // left lower vertical
-    ctx.fillRect(0, h - e, cx - gap, e);             // bottom left strip
-    ctx.fillRect(w - e, 0, e, cy - gap);             // right upper vertical
-    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);    // top right strip
-
-
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 1;
+    if (this.edgeZoneCanvas) {
+      ctx.drawImage(this.edgeZoneCanvas, 0, 0);
+    }
   },
 
   drawCross(ctx) {
@@ -759,13 +849,11 @@ const Game8 = {
         ctx.globalAlpha = 1.0;
       }
 
-      ctx.beginPath();
-      ctx.fillStyle = b.color;
-      ctx.shadowBlur = 15;
-      ctx.shadowColor = b.color;
-      ctx.arc(b.x, b.y, this.ballRadius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.shadowBlur = 0;
+      if (this.ballCanvas) {
+        const bp = 30; // ball padding
+        const br = this.ballRadius;
+        ctx.drawImage(this.ballCanvas, b.x - br - bp, b.y - br - bp);
+      }
 
       ctx.fillStyle = "black";
       ctx.fillText(b.number, b.x, b.y);
@@ -790,33 +878,23 @@ const Game8 = {
       const tipX = pivot.x + Math.cos(angle) * this.armLength;
       const tipY = pivot.y + Math.sin(angle) * this.armLength;
 
-      // Stick
-      ctx.beginPath();
-      ctx.moveTo(pivot.x, pivot.y);
-      ctx.lineTo(tipX, tipY);
-      ctx.strokeStyle = "#ac2fffff";
-      ctx.lineWidth = 10 * this.scale;
-      ctx.shadowBlur = 20;
-      ctx.shadowColor = "#f36affff";
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      // Tip
-      ctx.beginPath();
-      ctx.arc(tipX, tipY, 8 * this.scale, 0, Math.PI * 2);
-      ctx.fillStyle = "#b906b9ff";
-      ctx.fill();
+      // Cached Stick & Tip
+      if (this.armCanvas) {
+        const armPad = 40;
+        ctx.save();
+        ctx.translate(pivot.x, pivot.y);
+        ctx.rotate(angle);
+        ctx.drawImage(this.armCanvas, -armPad, -armPad);
+        ctx.restore();
+      }
     }
 
     // Wrist highlight
-    ctx.beginPath();
-    ctx.arc(arm.shoulder.x, arm.shoulder.y, 18 * this.scale, 0, Math.PI * 2);
-    ctx.strokeStyle = "#BB66FF";
-    ctx.lineWidth = 4 * this.scale;
-    ctx.shadowBlur = 15;
-    ctx.shadowColor = "#BB66FF";
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+    if (this.wristCanvas) {
+      const wPad = 30;
+      const wr = 18 * this.scale;
+      ctx.drawImage(this.wristCanvas, arm.shoulder.x - wr - wPad, arm.shoulder.y - wr - wPad);
+    }
   },
 
   drawPivots(ctx) {
@@ -871,14 +949,18 @@ const Game8 = {
       ctx.fillStyle = "white";
       ctx.font = `bold ${30 * this.scale}px Orbitron`;
       ctx.textAlign = "center";
-      ctx.shadowBlur = 10 * this.scale;
-      ctx.shadowColor = "black";
+      ctx.fillStyle = "black";
+      ctx.fillText(
+        "HOLD ELBOW ON DOTS TO START",
+        this.CENTER_X + 2 * this.scale,
+        this.CENTER_Y - 48 * this.scale
+      );
+      ctx.fillStyle = "white";
       ctx.fillText(
         "HOLD ELBOW ON DOTS TO START",
         this.CENTER_X,
         this.CENTER_Y - 50 * this.scale
       );
-      ctx.shadowBlur = 0;
     }
 
     // ===== SCORE =====
