@@ -173,11 +173,7 @@ window.startGame = function (gameName) {
   if (gameName === "game1") {
     blackoutCanvas();
     ModeSelector.show((modeKey) => {
-      Tutorial.show("game1", modeKey, () => {
-        _activeGameId = "game1";
-        document.getElementById("input_video").style.opacity = "1";
-        launchGame1WithMode(modeKey);
-      });
+      launchGame1WithMode(modeKey);
     });
     return;
   }
@@ -185,17 +181,11 @@ window.startGame = function (gameName) {
   /* ── GAME 9 ── Tutorial (dreamy theme) → launch ──────────── */
   if (gameName === "Game9") {
     blackoutCanvas();
-    Tutorial.show("game9", null, () => {
+
       _activeGameId = "game9";
        Game9.init();
-      // document.getElementById("input_video").style.opacity = "1";
-      blackoutCanvas();
-      _noFingerFrames = 0;
-     
       window.currentGame = Game9;
       resizeCanvas();
-    });
-    return;
   }
 
   /* ── GAME 10 ── Tutorial (cosmic theme) → launch ─────────── */
