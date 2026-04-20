@@ -75,7 +75,7 @@ const Game8 = {
     this.currentMissingState = null;
     this.missingFrames = 0;
     // initial center in CSS coordinates; resize() will recompute
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     this.CENTER_X = (canvasElement.width / dpr) / 2;
     this.CENTER_Y = (canvasElement.height / dpr) / 2;
 
@@ -243,8 +243,62 @@ const Game8 = {
   },
 
   rebuildCaches() {
-    // We removed full-screen edgeZoneCanvas cache because massive transparent Image composition
-    // kills mobile GPU fill-rate. We'll render flat raw rects natively.
+    this.bgCanvas = document.createElement("canvas");
+    this.bgCanvas.width = this.cssWidth;
+    this.bgCanvas.height = this.cssHeight;
+    const bgCtx = this.bgCanvas.getContext("2d");
+
+    // draw grid
+    bgCtx.strokeStyle = "rgba(0, 255, 255, 0.05)";
+    bgCtx.lineWidth = 1;
+    const step = 40 * this.scale;
+    bgCtx.beginPath();
+    for (let x = 0; x < this.cssWidth; x += step) {
+      bgCtx.moveTo(x, 0); bgCtx.lineTo(x, this.cssHeight);
+    }
+    for (let y = 0; y < this.cssHeight; y += step) {
+      bgCtx.moveTo(0, y); bgCtx.lineTo(this.cssWidth, y);
+    }
+    bgCtx.stroke();
+
+    // draw edge zones
+    const w = this.cssWidth;
+    const h = this.cssHeight;
+    const e = this.edgeSize;
+    const gap = this.lineGap;
+    const cx = this.CENTER_X;
+    const cy = this.CENTER_Y;
+    const overS = e * 1.3;
+
+    bgCtx.globalAlpha = 0.85;
+
+    // =========== TOP LEFT & BOTTOM RIGHT (Red - Even) ===========
+    bgCtx.fillStyle = "rgba(255, 0, 0, 0.3)";
+    bgCtx.fillRect(0, 0, overS, cy - gap + 5);
+    bgCtx.fillRect(0, 0, cx - gap + 5, overS);
+    bgCtx.fillRect(w - overS, cy + gap - 5, overS, h);
+    bgCtx.fillRect(cx + gap - 5, h - overS, w, overS);
+
+    bgCtx.fillStyle = "rgba(255, 0, 0, 0.8)";
+    bgCtx.fillRect(0, 0, e, cy - gap);
+    bgCtx.fillRect(0, 0, cx - gap, e);
+    bgCtx.fillRect(w - e, cy + gap, e, h - (cy + gap));
+    bgCtx.fillRect(cx + gap, h - e, w - (cx + gap), e);
+
+    // =========== BOTTOM LEFT & TOP RIGHT (Blue - Odd) ===========
+    bgCtx.fillStyle = "rgba(0, 255, 255, 0.3)";
+    bgCtx.fillRect(0, cy + gap - 5, overS, h);
+    bgCtx.fillRect(0, h - overS, cx - gap + 5, overS);
+    bgCtx.fillRect(w - overS, 0, overS, cy - gap + 5);
+    bgCtx.fillRect(cx + gap - 5, 0, w, overS);
+
+    bgCtx.fillStyle = "rgba(0, 255, 255, 0.8)";
+    bgCtx.fillRect(0, cy + gap, e, h - (cy + gap));
+    bgCtx.fillRect(0, h - e, cx - gap, e);
+    bgCtx.fillRect(w - e, 0, e, cy - gap);
+    bgCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
+
+    bgCtx.globalAlpha = 1;
 
     // 2. Ball Cache (Using white as base template)
     // Ball needs some extra padding for shadowBlur
@@ -309,7 +363,7 @@ const Game8 = {
         this.cssWidth === cssW && this.cssHeight === cssH) return; // Skip!
 
     // adopt the full viewport CSS dimensions for consistent scaling
-    const dpr = Math.min(window.devicePixelRatio || 1, 2); // Cap DPR at 2
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // Cap DPR at 1.5
 
     // update canvas buffer size (main.js already does this but repeating is safe)
     canvasElement.width = cssW * dpr;
@@ -328,6 +382,11 @@ const Game8 = {
     // normalize drawing matrix
     const ctx = canvasElement.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    this.fontBall = `bold ${30 * this.scale}px Orbitron`;
+    this.fontUI = `bold ${30 * this.scale}px Orbitron`;
+    this.fontLegend = `bold ${36 * this.scale}px Orbitron`;
+    this.fontFloater = `bold ${24 * this.scale}px Orbitron`;
 
     this.rebuildCaches();
   },
@@ -580,7 +639,7 @@ const Game8 = {
         b.targetY = b.y + (b.vy / (b.speed || 1)) * farBoundary;
 
         b.hitCooldown = 8 * this.scale;
-        this.spawnExplosion(b.x, b.y, "white", 10);
+        this.spawnExplosion(b.x, b.y, "white", 5);
       }
     }
   },
@@ -636,11 +695,11 @@ const Game8 = {
         if (scoreType === "good") {
           this.updateScore(10, true);
           this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", nx * 1.5, ny * 1.5, 2.5);
-          this.spawnExplosion(b.x, b.y, "#00FF00", 15, nx * 3, ny * 3);
+          this.spawnExplosion(b.x, b.y, "#00FF00", 8, nx * 3, ny * 3);
         } else {
           this.updateScore(-5, false);
           this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", nx * 1.5, ny * 1.5, 2.5);
-          this.spawnExplosion(b.x, b.y, "#FF0000", 10, nx * 3, ny * 3);
+          this.spawnExplosion(b.x, b.y, "#FF0000", 5, nx * 3, ny * 3);
           this.shakeTimer = 25;
         }
         this.balls.splice(i, 1);
@@ -764,60 +823,11 @@ const Game8 = {
      DRAWING
   ============================== */
   drawBackground(ctx) {
-    ctx.strokeStyle = "rgba(0, 255, 255, 0.05)";
-    ctx.lineWidth = 1;
-    const step = 40 * this.scale;
-    ctx.beginPath();
-    for (let x = 0; x < this.cssWidth; x += step) {
-      ctx.moveTo(x, 0); ctx.lineTo(x, this.cssHeight);
-    }
-    for (let y = 0; y < this.cssHeight; y += step) {
-      ctx.moveTo(0, y); ctx.lineTo(this.cssWidth, y);
-    }
-    ctx.stroke();
+    if (this.bgCanvas) ctx.drawImage(this.bgCanvas, 0, 0);
   },
 
   drawEdgeZones(ctx) {
-    const w = this.cssWidth;
-    const h = this.cssHeight;
-    const e = this.edgeSize;
-    const gap = this.lineGap;
-    const cx = this.CENTER_X;
-    const cy = this.CENTER_Y;
-
-    // We do NOT use shadowBlur here anymore, drawing rects is faster than compositing huge offscreen images!
-    ctx.globalAlpha = 0.85;
-
-    // Simulate glow cheaply with low alpha border layers instead of shadow math
-    const overS = e * 1.3;
-
-    // =========== TOP LEFT & BOTTOM RIGHT (Red - Even) ===========
-    ctx.fillStyle = "rgba(255, 0, 0, 0.3)"; // Fake glow outer
-    ctx.fillRect(0, 0, overS, cy - gap + 5);
-    ctx.fillRect(0, 0, cx - gap + 5, overS);
-    ctx.fillRect(w - overS, cy + gap - 5, overS, h);
-    ctx.fillRect(cx + gap - 5, h - overS, w, overS);
-
-    ctx.fillStyle = "rgba(255, 0, 0, 0.8)"; // Inner solid
-    ctx.fillRect(0, 0, e, cy - gap);
-    ctx.fillRect(0, 0, cx - gap, e);
-    ctx.fillRect(w - e, cy + gap, e, h - (cy + gap));
-    ctx.fillRect(cx + gap, h - e, w - (cx + gap), e);
-
-    // =========== BOTTOM LEFT & TOP RIGHT (Blue - Odd) ===========
-    ctx.fillStyle = "rgba(0, 255, 255, 0.3)"; // Fake glow outer
-    ctx.fillRect(0, cy + gap - 5, overS, h);
-    ctx.fillRect(0, h - overS, cx - gap + 5, overS);
-    ctx.fillRect(w - overS, 0, overS, cy - gap + 5);
-    ctx.fillRect(cx + gap - 5, 0, w, overS);
-
-    ctx.fillStyle = "rgba(0, 255, 255, 0.8)"; // Inner solid
-    ctx.fillRect(0, cy + gap, e, h - (cy + gap));
-    ctx.fillRect(0, h - e, cx - gap, e);
-    ctx.fillRect(w - e, 0, e, cy - gap);
-    ctx.fillRect(cx + gap, 0, w - (cx + gap), e);
-
-    ctx.globalAlpha = 1;
+    // Handled in drawBackground cache
   },
 
   drawCross(ctx) {
@@ -849,27 +859,29 @@ const Game8 = {
   drawBalls(ctx) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.font = `bold ${30 * this.scale}px Orbitron`;
+    ctx.font = this.fontBall;
+
+    // Batch Trails
+    ctx.beginPath();
+    ctx.strokeStyle = "rgba(255,255,255,0.25)";
+    ctx.lineWidth = this.ballRadius * 1.5;
+    ctx.lineCap = "round";
+    ctx.globalAlpha = 0.25;
+    for (let i = 0; i < this.balls.length; i++) {
+      let b = this.balls[i];
+      if (b.trail.length < 2) continue;
+      let tIdx = b.trailIdx || 0;
+      ctx.moveTo(b.trail[tIdx].x, b.trail[tIdx].y);
+      for (let j = 1; j < b.trail.length; j++) {
+        let idx = (tIdx + j) % b.trail.length;
+        ctx.lineTo(b.trail[idx].x, b.trail[idx].y);
+      }
+    }
+    ctx.stroke();
+    ctx.globalAlpha = 1.0;
 
     for (let i = 0; i < this.balls.length; i++) {
       let b = this.balls[i];
-      // Trail
-      if (b.trail.length > 1) {
-        ctx.beginPath();
-        ctx.strokeStyle = b.color;
-        ctx.lineWidth = this.ballRadius * 1.5; // Increased from 1.2
-        ctx.lineCap = "round";
-        ctx.globalAlpha = 0.25; // Slightly lower alpha for longer trail
-
-        let tIdx = b.trailIdx || 0;
-        ctx.moveTo(b.trail[tIdx].x, b.trail[tIdx].y);
-        for (let j = 1; j < b.trail.length; j++) {
-          let idx = (tIdx + j) % b.trail.length;
-          ctx.lineTo(b.trail[idx].x, b.trail[idx].y);
-        }
-        ctx.stroke();
-        ctx.globalAlpha = 1.0;
-      }
 
       if (this.ballCanvas) {
         const bp = 30; // ball padding
@@ -945,19 +957,18 @@ const Game8 = {
   },
 
   drawParticles(ctx) {
+    const size = 4 * this.scale;
     for (let i = 0; i < this.particles.length; i++) {
       let p = this.particles[i];
-      ctx.globalAlpha = p.life;
       ctx.fillStyle = p.color;
-      // Using fillRect instead of arc for massive speed gains
-      const size = 4 * this.scale;
-      ctx.fillRect(p.x - size, p.y - size, size * 2, size * 2);
+      // Drop alpha overdraw, just shrink the rect entirely instead for cheap FX
+      const s = size * Math.max(0, p.life) * 2;
+      ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
     }
-    ctx.globalAlpha = 1;
   },
 
   drawFloaters(ctx) {
-    ctx.font = `bold ${24 * this.scale}px Orbitron`;
+    ctx.font = this.fontFloater;
     ctx.textAlign = "center";
     for (let i = 0; i < this.floaters.length; i++) {
       let f = this.floaters[i];
@@ -971,7 +982,7 @@ const Game8 = {
   drawUI(ctx) {
     if (!this.gameStarted) {
       ctx.fillStyle = "white";
-      ctx.font = `bold ${30 * this.scale}px Orbitron`;
+      ctx.font = this.fontUI;
       ctx.textAlign = "center";
       ctx.fillStyle = "black";
       ctx.fillText(
@@ -997,7 +1008,7 @@ const Game8 = {
     // ===== LEGEND (Responsive Positions) =====
     const w = this.cssWidth;
 
-    ctx.font = `bold ${36 * this.scale}px Orbitron`;
+    ctx.font = this.fontLegend;
     ctx.textAlign = "center";
 
     // Left = 25% of screen width
@@ -1021,7 +1032,7 @@ const Game8 = {
 
     if (this.currentMissingState) {
       ctx.fillStyle = "red";
-      ctx.font = `bold ${30 * this.scale}px Orbitron`;
+      ctx.font = this.fontUI;
       let msg = "";
       if (this.currentMissingState === "arm") msg = "BRING ARM BACK IN SCREEN";
       else if (this.currentMissingState === "elbow") msg = "BRING ELBOW BACK IN SCREEN";
