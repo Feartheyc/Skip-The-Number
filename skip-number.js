@@ -199,72 +199,76 @@ const Game1 = {
   /* ============================================================
      INIT
   ============================================================ */
-  init() {
-    const rect = document.getElementById("container").getBoundingClientRect();
-    this._applyResize(rect.width, rect.height);
+ init(modeKey = "default") {
+  const rect = document.getElementById("container").getBoundingClientRect();
+  this._applyResize(rect.width, rect.height);
 
-    this.notes = [];
-    this.popEffects = [];
-    this.explosions = [];
-    this.missQueue = [];
-    this.levelUpParticles = [];
-    this.chargeParticles = [];
+  this.notes = [];
+  this.popEffects = [];
+  this.explosions = [];
+  this.missQueue = [];
+  this.levelUpParticles = [];
+  this.chargeParticles = [];
 
-    this.score = 0;
-    this.combo = 0;
-    this.multiplier = 1;
-    this.hitTextTimer = 1;
-    this.currentNumber = 1;
-    this.xp = 0;
-    this.xpToNext = 8;
-    this.level = 1;
-    this.tier = 0;
-    this.levelUpActive = false;
-    this.xpPopFlash = 0;
-    this.hintState = "full";
-    this.noiseTime = 0;
-    this.spawnInterval = 1800;
-    this.torusAngle = 0;
+  this.score = 0;
+  this.combo = 0;
+  this.multiplier = 1;
+  this.hitTextTimer = 1;
+  this.currentNumber = 1;
+  this.xp = 0;
+  this.xpToNext = 8;
+  this.level = 1;
+  this.tier = 0;
+  this.levelUpActive = false;
+  this.xpPopFlash = 0;
+  this.hintState = "full";
+  this.noiseTime = 0;
+  this.spawnInterval = 1800;
+  this.torusAngle = 0;
 
-    this.mode      = "default";
-    this.skipAmount = this.getRandomSkip();
-    this.gameTitle  = "SKIP " + this.skipAmount;
-    this.noteSpeed  = this.speedCap;
+  this.mode = "default";
+  this.skipAmount = this.getRandomSkip();
+  this.gameTitle = "SKIP " + this.skipAmount;
+  this.noteSpeed = this.speedCap;
 
-    this.orbImage = new Image();
-    this.orbImage.src = "orb1.png";
+  this.orbImage = new Image();
+  this.orbImage.src = "orb1.png";
 
-    this._initBgStars();
+  this._initBgStars();
 
-    // Tutorial reset
-    this.gameState       = "tutorial";
-    this._tutHoldProgress = 0;
-    this._tutEnterAnim   = 0;
-    this._tutOrbT        = 0;
-    this._tutPulseT      = 0;
-    this._tutNoFingerFrames = 0;
-    this._initTutStars();
+  // ✅ FIX: use passed mode instead of resetting to default
+  this.gameState = "tutorial";
+  this._pendingMode = modeKey;
 
-    // Register listeners ONCE for the lifetime of the page
-    if (!this._listenersAttached) {
-      this._listenersAttached = true;
+  this._tutHoldProgress = 0;
+  this._tutEnterAnim = 0;
+  this._tutOrbT = 0;
+  this._tutPulseT = 0;
+  this._tutNoFingerFrames = 0;
 
-      window.addEventListener("resize", () => {
-        clearTimeout(this._resizeTimer);
-        this._resizeTimer = setTimeout(() => this._onResize(), 150);
-      });
-      window.addEventListener("orientationchange", () => {
-        clearTimeout(this._resizeTimer);
-        this._resizeTimer = setTimeout(() => this._onResize(), 300);
-      });
-      window.addEventListener("keydown", (e) => {
-        if (e.key === "1") this._setMode("pattern");
-        if (e.key === "2") this._setMode("cannon");
-        if (e.key === "3") this._setMode("orb");
-        if (e.key === "4") this._setMode("triple");
-      });
-    }
-  },
+  this._initTutStars();
+
+  if (!this._listenersAttached) {
+    this._listenersAttached = true;
+
+    window.addEventListener("resize", () => {
+      clearTimeout(this._resizeTimer);
+      this._resizeTimer = setTimeout(() => this._onResize(), 150);
+    });
+
+    window.addEventListener("orientationchange", () => {
+      clearTimeout(this._resizeTimer);
+      this._resizeTimer = setTimeout(() => this._onResize(), 300);
+    });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "1") this._setMode("pattern");
+      if (e.key === "2") this._setMode("cannon");
+      if (e.key === "3") this._setMode("orb");
+      if (e.key === "4") this._setMode("triple");
+    });
+  }
+},
 
   /* ── Resize — layout only, never resets gameplay ────────── */
   _onResize() {
@@ -291,28 +295,39 @@ const Game1 = {
 
   /* ── Mode switching (used by keys + ModeSelector result) ── */
   _setMode(modeKey) {
-    if (this.gameState === "tutorial") {
-      // Switching mode while tutorial is showing — restart tutorial for new mode
-      this._pendingMode = modeKey;
-      this._tutHoldProgress = 0;
-      this._tutEnterAnim = 0;
-      this._tutOrbT = 0;
-    } else {
-      // Mid-game switch (key press)
-      switch (modeKey) {
-        case "pattern": this.activatePatternMode();      break;
-        case "cannon":  this.activateCannonMode();       break;
-        case "orb":     this.activateOrbMode();          break;
-        case "triple":  this.activateTripleCannonMode(); break;
-        default: break;
-      }
+  if (this.gameState === "tutorial") {
+    // ✅ Switch tutorial content live
+    this._pendingMode = modeKey;
+
+    // Reset tutorial animation so new mode animates in
+    this._tutHoldProgress = 0;
+    this._tutEnterAnim = 0;
+    this._tutOrbT = 0;
+    this._tutPulseT = 0;
+
+  } else {
+    // In-game switching
+    switch (modeKey) {
+      case "pattern": this.activatePatternMode(); break;
+      case "cannon":  this.activateCannonMode(); break;
+      case "orb":     this.activateOrbMode(); break;
+      case "triple":  this.activateTripleCannonMode(); break;
     }
-  },
+  }
+},
 
   /* Called from main.js after ModeSelector resolves */
-  setModeBeforeStart(modeKey) {
-    this._pendingMode = modeKey || "default";
-  },
+ setModeBeforeStart(modeKey) {
+  this._pendingMode = modeKey || "default";
+
+  // If already in tutorial, refresh visuals immediately
+  if (this.gameState === "tutorial") {
+    this._tutHoldProgress = 0;
+    this._tutEnterAnim = 0;
+    this._tutOrbT = 0;
+    this._tutPulseT = 0;
+  }
+},
 
   /* ── Transition from tutorial → playing ─────────────────── */
   _startPlaying() {
