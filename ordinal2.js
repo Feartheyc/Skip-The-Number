@@ -98,7 +98,7 @@ const Game10 = {
 
   /* ── Finger throttle ─────────────────────────────────────── */
   _lastFingerUpdateTime: 0,
-  FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
+  FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
 
   /* ============================================================
      INIT
