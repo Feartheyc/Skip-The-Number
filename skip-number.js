@@ -1,12 +1,549 @@
 /* ============================================================
-   skip-number.js  (Game1) — v3
-   Changes vs v2:
-   • Tutorial state built into the game — no tutorial.js dependency
-   • Event listeners registered ONCE via _listenersAttached guard
-   • Resize is debounced and only re-layouts — never resets score
-   • No-finger prompt drawn on the game canvas, zero extra DOM
-   • Hold-to-start reads window.fingerPositions directly
-   • spawnInterval starts at 2000ms (doc6 values)
+   ring-sprite-system.js
+   Pre-renders 28 torus ring frames → OffscreenCanvas sprites.
+   Cache: IndexedDB ("RingSpriteCache", store "sprites", key "frames_v1").
+   Public API:
+     RingSpriteSystem.init(game1Ref, onReady)   ← call after tutorial ends
+     RingSpriteSystem.drawFrame(ctx, frameIndex) ← use instead of game1.drawRings()
+     RingSpriteSystem.getFrameCount()            ← 28
+     RingSpriteSystem.isReady()                  ← bool
+============================================================ */
+
+const RingSpriteSystem = (() => {
+
+  /* ── Config ──────────────────────────────────────────────── */
+  const FRAME_COUNT   =36;
+  const DB_NAME       = "RingSpriteCache";
+  const DB_VERSION    = 1;
+  const STORE_NAME    = "sprites";
+  const CACHE_KEY     = "frames_v1";
+
+  /* ── State ───────────────────────────────────────────────── */
+  let _ready          = false;
+  let _frames         = [];   // array of ImageBitmap (28 items)
+  let _game1          = null;
+  let _onReady        = null;
+  let _loadingScreen  = null;
+
+  /* ── Public ──────────────────────────────────────────────── */
+  function isReady()        { return _ready; }
+  function getFrameCount()  { return FRAME_COUNT; }
+
+  /**
+   * Main entry point.
+   * @param {object}   game1Ref  – reference to Game1 object (for layout params)
+   * @param {function} onReady   – called with no args once sprites are available
+   */
+  function init(game1Ref, onReady) {
+    _game1   = game1Ref;
+    _onReady = onReady;
+
+    _showLoadingScreen();
+    _tryLoadFromCache();
+  }
+
+  /**
+   * Draw the ring sprite for a given animation frame.
+   * frameIndex should advance by 1 each game frame (wraps automatically).
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {number} frameIndex  – integer 0..∞ (auto-wrapped)
+   * @param {number} cx          – center X
+   * @param {number} cy          – center Y
+   */
+  function drawFrame(ctx, frameIndex, cx, cy) {
+    if (!_ready || _frames.length === 0) return;
+    const idx = ((Math.floor(frameIndex) % FRAME_COUNT) + FRAME_COUNT) % FRAME_COUNT;
+    const bmp = _frames[idx];
+    // bmp is 512×512 centered; draw it centred on cx,cy
+    const hw = bmp.width  / 2;
+    const hh = bmp.height / 2;
+    ctx.drawImage(bmp, cx - hw, cy - hh);
+  }
+
+  /* ── Loading screen ──────────────────────────────────────── */
+  function _showLoadingScreen() {
+    // Overlay div drawn on top of the game canvas
+    const el = document.createElement("div");
+    el.id = "ring-sprite-loader";
+    el.style.cssText = `
+      position: fixed; inset: 0; z-index: 9999;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      background: radial-gradient(ellipse at 50% 40%, #1a2d4a 0%, #0f1e35 50%, #080f1c 100%);
+      font-family: 'Trebuchet MS', sans-serif;
+      color: #f0f4ff;
+      user-select: none;
+      pointer-events: none;
+    `;
+
+    el.innerHTML = `
+      <canvas id="ls-canvas" width="220" height="220"
+        style="display:block; margin-bottom:28px; opacity:0.92;"></canvas>
+
+      <div id="ls-title" style="
+        font-size: clamp(18px,4vw,28px);
+        font-weight: bold;
+        letter-spacing: 0.18em;
+        color: #f5c842;
+        text-shadow: 0 0 24px rgba(245,200,66,0.55);
+        margin-bottom: 10px;
+      ">PREPARING RING</div>
+
+      <div id="ls-sub" style="
+        font-size: clamp(11px,2.5vw,14px);
+        color: rgba(142,202,230,0.7);
+        margin-bottom: 28px;
+        letter-spacing: 0.06em;
+      ">Building sprite frames…</div>
+
+      <div style="
+        width: clamp(180px, 40vw, 320px);
+        height: 6px;
+        background: rgba(245,200,66,0.13);
+        border-radius: 3px;
+        overflow: hidden;
+      ">
+        <div id="ls-bar" style="
+          height: 100%;
+          width: 0%;
+          background: linear-gradient(90deg, #f5c842, #6de8b4);
+          border-radius: 3px;
+          box-shadow: 0 0 12px rgba(245,200,66,0.6);
+          transition: width 0.12s ease;
+        "></div>
+      </div>
+
+      <div id="ls-pct" style="
+        margin-top: 10px;
+        font-size: 12px;
+        color: rgba(240,244,255,0.45);
+        letter-spacing: 0.08em;
+      ">0%</div>
+    `;
+
+    document.body.appendChild(el);
+    _loadingScreen = el;
+
+    // Animate a mini ring on the loading canvas
+    _animateLoadingRing();
+  }
+
+  function _setLoadingProgress(pct) {
+    const bar = document.getElementById("ls-bar");
+    const txt = document.getElementById("ls-pct");
+    const sub = document.getElementById("ls-sub");
+    if (bar) bar.style.width = pct + "%";
+    if (txt) txt.textContent  = Math.round(pct) + "%";
+    if (sub && pct >= 100) sub.textContent = "Loading from cache…";
+  }
+
+  function _hideLoadingScreen() {
+    if (!_loadingScreen) return;
+    _loadingScreen.style.transition = "opacity 0.55s ease";
+    _loadingScreen.style.opacity    = "0";
+    setTimeout(() => {
+      if (_loadingScreen && _loadingScreen.parentNode)
+        _loadingScreen.parentNode.removeChild(_loadingScreen);
+      _loadingScreen = null;
+    }, 600);
+  }
+
+  /* Mini ring animation on loading canvas */
+  let _lsRafId = null;
+  function _animateLoadingRing() {
+    const canvas = document.getElementById("ls-canvas");
+    if (!canvas) return;
+    const ctx  = canvas.getContext("2d");
+    const cx   = 110, cy = 110;
+    let angle  = 0;
+    let pulse  = 0;
+
+    function frame() {
+      if (!document.getElementById("ls-canvas")) return; // unmounted
+      ctx.clearRect(0, 0, 220, 220);
+      angle += 0.012;
+      pulse += 0.04;
+
+      const Ro = 80 + Math.sin(pulse) * 4;
+      const Ri = 65 + Math.sin(pulse) * 2;
+
+      // Bloom
+      const bloom = ctx.createRadialGradient(cx, cy, Ri - 10, cx, cy, Ro + 18);
+      bloom.addColorStop(0, "rgba(0,0,0,0)");
+      bloom.addColorStop(0.4, "rgba(126,207,179,0.07)");
+      bloom.addColorStop(0.65, "rgba(201,147,58,0.14)");
+      bloom.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = bloom;
+      ctx.beginPath(); ctx.arc(cx, cy, Ro + 18, 0, Math.PI * 2); ctx.fill();
+
+      // Torus
+      const lx = Math.cos(angle), ly = Math.sin(angle);
+      const tg = ctx.createLinearGradient(
+        cx - lx * Ro, cy - ly * Ro, cx + lx * Ro, cy + ly * Ro
+      );
+      tg.addColorStop(0,    "#0a1525");
+      tg.addColorStop(0.22, "#1c3a2a");
+      tg.addColorStop(0.40, "#5a3010");
+      tg.addColorStop(0.55, "#c9933a");
+      tg.addColorStop(0.68, "#e8c87a");
+      tg.addColorStop(0.80, "#7ecfb3");
+      tg.addColorStop(1,    "#0a1525");
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, Ro, 0, Math.PI * 2);
+      ctx.arc(cx, cy, Ri, 0, Math.PI * 2, true);
+      ctx.fillStyle = tg;
+      ctx.shadowColor = "rgba(201,147,58,0.5)";
+      ctx.shadowBlur  = 22;
+      ctx.fill("evenodd");
+      ctx.shadowBlur  = 0;
+
+      // Outer rim
+      ctx.beginPath(); ctx.arc(cx, cy, Ro, 0, Math.PI * 2);
+      ctx.strokeStyle = "#d4a44a"; ctx.lineWidth = 1.8;
+      ctx.shadowColor = "rgba(212,164,74,0.7)"; ctx.shadowBlur = 12;
+      ctx.stroke(); ctx.shadowBlur = 0;
+
+      // Inner rim
+      ctx.beginPath(); ctx.arc(cx, cy, Ri, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(126,207,179,0.4)"; ctx.lineWidth = 1.2;
+      ctx.stroke();
+
+      // Specular
+      const sx = cx + Math.cos(angle) * Ro, sy = cy + Math.sin(angle) * Ro;
+      const sp = ctx.createRadialGradient(sx, sy, 0, sx, sy, 10);
+      sp.addColorStop(0, "rgba(255,250,230,0.9)");
+      sp.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = sp;
+      ctx.beginPath(); ctx.arc(sx, sy, 10, 0, Math.PI * 2); ctx.fill();
+
+      _lsRafId = requestAnimationFrame(frame);
+    }
+    _lsRafId = requestAnimationFrame(frame);
+  }
+
+  /* ── IndexedDB helpers ───────────────────────────────────── */
+  function _openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, DB_VERSION);
+      req.onupgradeneeded = e => {
+        e.target.result.createObjectStore(STORE_NAME);
+      };
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror   = e => reject(e.target.error);
+    });
+  }
+
+  async function _loadFromDB() {
+    try {
+      const db    = await _openDB();
+      const tx    = db.transaction(STORE_NAME, "readonly");
+      const store = tx.objectStore(STORE_NAME);
+      return await new Promise((resolve, reject) => {
+        const req    = store.get(CACHE_KEY);
+        req.onsuccess = e => resolve(e.target.result || null);
+        req.onerror   = e => reject(e.target.error);
+      });
+    } catch { return null; }
+  }
+
+  async function _saveToDB(blobArray) {
+    try {
+      const db    = await _openDB();
+      const tx    = db.transaction(STORE_NAME, "readwrite");
+      const store = tx.objectStore(STORE_NAME);
+      store.put(blobArray, CACHE_KEY);
+      await new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = rej; });
+    } catch (e) {
+      console.warn("[RingSprite] Could not save to IndexedDB:", e);
+    }
+  }
+
+  /* ── Cache flow ──────────────────────────────────────────── */
+  async function _tryLoadFromCache() {
+    _setLoadingProgress(5);
+
+    const cached = await _loadFromDB();
+    if (cached && Array.isArray(cached) && cached.length === FRAME_COUNT) {
+      // Fast path: decode blobs → ImageBitmaps
+      const sub = document.getElementById("ls-sub");
+      if (sub) sub.textContent = "Loading from cache…";
+      try {
+        const bitmaps = await Promise.all(
+          cached.map((blob, i) =>
+            createImageBitmap(blob).then(bmp => {
+              _setLoadingProgress(60 + (i / FRAME_COUNT) * 40);
+              return bmp;
+            })
+          )
+        );
+        _frames = bitmaps;
+        _finalize();
+        return;
+      } catch {
+        console.warn("[RingSprite] Cache decode failed, re-rendering.");
+      }
+    }
+
+    // Slow path: render all 28 frames
+    await _renderAllFrames();
+  }
+
+  /* ── Renderer ────────────────────────────────────────────── */
+  async function _renderAllFrames() {
+    const sub = document.getElementById("ls-sub");
+    if (sub) sub.textContent = "Rendering sprite frames…";
+
+    const g1      = _game1;
+    const SIZE    = 512;            // sprite sheet cell size
+    const cx      = SIZE / 2;
+    const cy      = SIZE / 2;
+
+    // We need layout params from game1 — compute ring radii scaled to 512
+    // Use a fixed reference: outer = 180px in 512 canvas
+    const Ro_base = 180;
+    const Ri_base = Ro_base * 0.80;
+    const pulsePk = 10;            // max outer pulse offset (scaled)
+    const pulsePi = 5;             // max inner pulse offset
+
+    const blobs   = [];
+    const bitmaps = [];
+
+    for (let f = 0; f < FRAME_COUNT; f++) {
+      // Progress 10 → 60
+      _setLoadingProgress(10 + (f / FRAME_COUNT) * 50);
+
+      // Spread one tick per frame across 28 frames
+      const t       = (f / FRAME_COUNT);
+      const pTime   = t * Math.PI * 2;          // pulseTime (full cycle)
+      const tAngle  = t * Math.PI * 2;          // torusAngle (full rotation)
+
+      const outerOff = Math.sin(pTime) * pulsePk;
+      const innerOff = Math.sin(pTime) * pulsePi;
+      const Ro = Ro_base + Math.max(0, outerOff);
+      const Ri = Ri_base + Math.max(0, innerOff);
+      const Rm = (Ro + Ri) / 2;
+      const r  = (Ro - Ri) / 2;
+      const lx = Math.cos(tAngle);
+      const ly = Math.sin(tAngle);
+
+      // Render to OffscreenCanvas
+      const oc  = new OffscreenCanvas(SIZE, SIZE);
+      const ctx = oc.getContext("2d");
+
+      // Bloom
+      const bloom = ctx.createRadialGradient(cx, cy, Ri - r * 2.5, cx, cy, Ro + r * 3.5);
+      bloom.addColorStop(0,    "rgba(0,0,0,0)");
+      bloom.addColorStop(0.30, "rgba(126,207,179,0.07)");
+      bloom.addColorStop(0.52, "rgba(201,147,58,0.14)");
+      bloom.addColorStop(0.70, "rgba(142,202,230,0.09)");
+      bloom.addColorStop(1,    "rgba(0,0,0,0)");
+      ctx.fillStyle = bloom;
+      ctx.beginPath(); ctx.arc(cx, cy, Ro + r * 3.5, 0, Math.PI * 2); ctx.fill();
+
+      // Torus body
+      const gx0 = cx - lx * (Ro + r), gy0 = cy - ly * (Ro + r);
+      const gx1 = cx + lx * (Ro + r), gy1 = cy + ly * (Ro + r);
+      const tg = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
+      tg.addColorStop(0,    "#0a1525");
+      tg.addColorStop(0.22, "#1c3a2a");
+      tg.addColorStop(0.40, "#5a3010");
+      tg.addColorStop(0.55, "#c9933a");
+      tg.addColorStop(0.68, "#e8c87a");
+      tg.addColorStop(0.80, "#7ecfb3");
+      tg.addColorStop(1,    "#0a1525");
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, Ro, 0, Math.PI * 2);
+      ctx.arc(cx, cy, Ri, 0, Math.PI * 2, true);
+      ctx.fillStyle = tg;
+      ctx.shadowColor = "rgba(201,147,58,0.4)";
+      ctx.shadowBlur  = 36;
+      ctx.fill("evenodd");
+      ctx.shadowBlur  = 0;
+
+      // Hole darkening
+      const hd = ctx.createRadialGradient(cx, cy, Ri * 0.65, cx, cy, Ri);
+      hd.addColorStop(0, "rgba(4,10,20,0.82)");
+      hd.addColorStop(0.6, "rgba(4,10,20,0.45)");
+      hd.addColorStop(1, "rgba(4,10,20,0.0)");
+      ctx.beginPath(); ctx.arc(cx, cy, Ri, 0, Math.PI * 2);
+      ctx.fillStyle = hd; ctx.fill();
+
+      // Outer rim
+      ctx.beginPath(); ctx.arc(cx, cy, Ro, 0, Math.PI * 2);
+      ctx.strokeStyle = "#d4a44a"; ctx.lineWidth = 2.8;
+      ctx.shadowColor = "rgba(212,164,74,0.6)"; ctx.shadowBlur = 18;
+      ctx.stroke(); ctx.shadowBlur = 0;
+
+      // Inner rim
+      ctx.beginPath(); ctx.arc(cx, cy, Ri, 0, Math.PI * 2);
+      ctx.strokeStyle = "rgba(126,207,179,0.38)"; ctx.lineWidth = 1.8;
+      ctx.shadowColor = "rgba(126,207,179,0.25)"; ctx.shadowBlur = 10;
+      ctx.stroke(); ctx.shadowBlur = 0;
+
+      // Shimmer arc
+      const shimStart = tAngle - Math.PI * 0.35;
+      const shimEnd   = tAngle + Math.PI * 0.35;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Rm + r * 0.3, shimStart, shimEnd);
+      ctx.arc(cx, cy, Rm - r * 0.3, shimEnd, shimStart, true);
+      ctx.closePath();
+      const sg = ctx.createLinearGradient(
+        cx + Math.cos(tAngle) * (Rm - r * 0.3), cy + Math.sin(tAngle) * (Rm - r * 0.3),
+        cx + Math.cos(tAngle) * (Rm + r * 0.3), cy + Math.sin(tAngle) * (Rm + r * 0.3)
+      );
+      sg.addColorStop(0,   "rgba(255,255,255,0.0)");
+      sg.addColorStop(0.4, "rgba(255,240,200,0.18)");
+      sg.addColorStop(0.7, "rgba(200,240,255,0.22)");
+      sg.addColorStop(1,   "rgba(255,255,255,0.0)");
+      ctx.fillStyle = sg; ctx.fill();
+
+      // Outer specular
+      const sx  = cx + Math.cos(tAngle) * Ro;
+      const sy  = cy + Math.sin(tAngle) * Ro;
+      const sp  = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.8);
+      sp.addColorStop(0,   "rgba(255,250,230,0.95)");
+      sp.addColorStop(0.3, "rgba(245,215,140,0.55)");
+      sp.addColorStop(1,   "rgba(0,0,0,0)");
+      ctx.fillStyle = sp;
+      ctx.beginPath(); ctx.arc(sx, sy, r * 1.8, 0, Math.PI * 2); ctx.fill();
+
+      // Inner specular
+      const sx2 = cx + Math.cos(tAngle + Math.PI * 0.18) * Ri;
+      const sy2 = cy + Math.sin(tAngle + Math.PI * 0.18) * Ri;
+      const sp2 = ctx.createRadialGradient(sx2, sy2, 0, sx2, sy2, r * 1.2);
+      sp2.addColorStop(0,   "rgba(180,255,230,0.55)");
+      sp2.addColorStop(0.5, "rgba(126,207,179,0.2)");
+      sp2.addColorStop(1,   "rgba(0,0,0,0)");
+      ctx.fillStyle = sp2;
+      ctx.beginPath(); ctx.arc(sx2, sy2, r * 1.2, 0, Math.PI * 2); ctx.fill();
+
+      // Convert to blob for caching
+      const blob   = await oc.convertToBlob({ type: "image/png" });
+      const bitmap = await createImageBitmap(blob);
+      blobs.push(blob);
+      bitmaps.push(bitmap);
+
+      // Yield to keep UI responsive every 4 frames
+      if (f % 4 === 3) await _yield();
+    }
+
+    _frames = bitmaps;
+    _setLoadingProgress(100);
+
+    // Persist blobs to IndexedDB (fire-and-forget)
+    _saveToDB(blobs);
+
+    _finalize();
+  }
+
+  function _yield() {
+    return new Promise(r => setTimeout(r, 0));
+  }
+
+  function _finalize() {
+    if (_lsRafId) { cancelAnimationFrame(_lsRafId); _lsRafId = null; }
+    _ready = true;
+    setTimeout(() => {
+      _hideLoadingScreen();
+      if (typeof _onReady === "function") _onReady();
+    }, 350); // brief pause so 100% bar is visible
+  }
+
+  /* ── Public surface ──────────────────────────────────────── */
+  return { init, drawFrame, isReady, getFrameCount };
+
+})();
+
+/* ============================================================
+   HOW TO INTEGRATE INTO skip-number.js / Game1
+   ============================================================
+
+  1. Include this file BEFORE skip-number.js in your HTML.
+
+  2. In Game1._startPlaying(), BEFORE the switch(m) statement, add:
+
+       _startPlaying() {
+         this.gameState = "loading";          // ← new intermediate state
+         this._spriteFrame = 0;               // frame counter
+
+         RingSpriteSystem.init(this, () => {
+           // Called once sprites are ready & loading screen fades
+           this.gameState = "playing";
+           const m = this._pendingMode || "default";
+           switch (m) {
+             case "pattern": this.activatePatternMode();      break;
+             case "cannon":  this.activateCannonMode();       break;
+             case "orb":     this.activateOrbMode();          break;
+             case "triple":  this.activateTripleCannonMode(); break;
+             default: this._restartSpawnTimer(); break;
+           }
+         });
+       },
+
+  3. In Game1.drawRings(ctx, dt), replace the ENTIRE method body with:
+
+       drawRings(ctx, dt) {
+         if (RingSpriteSystem.isReady()) {
+           // ── Sprite path (fast) ────────────────────────
+           this.pulseTime  += this.pulseSpeed * dt;
+           this.torusAngle  = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
+
+           // Advance frame at 60fps → 1 full animation cycle per ~28 frames
+           this._spriteFrame = (this._spriteFrame || 0) + dt * 60;
+
+           RingSpriteSystem.drawFrame(
+             ctx,
+             this._spriteFrame,
+             this.centerX,
+             this.centerY
+           );
+         } else {
+           // ── Fallback: original procedural path ────────
+           // (paste the original drawRings body here as a safety net)
+           this._drawRingsProcedural(ctx, dt);
+         }
+       },
+
+       // Rename original drawRings content to _drawRingsProcedural:
+       _drawRingsProcedural(ctx, dt) {
+         // ... original drawRings code ...
+       },
+
+  4. In Game1.update(), guard the "loading" state so it's a no-op
+     (the loading screen DOM sits on top, so nothing needs to be drawn):
+
+       update(ctx, fingers, dt = 1/60) {
+         if (this.gameState === "tutorial") { ... return; }
+         if (this.gameState === "loading")  { return; }   // ← add this line
+         // ... rest of playing logic
+       },
+
+  NOTE ON SCALING:
+  The sprites are rendered at 512×512 with Ro_base=180.
+  If your game canvas is a different size the ring POSITION is always correct
+  (it's centered via cx/cy in drawFrame), but the RADIUS will differ from the
+  procedural version.  To match exactly, pass your actual outer radius when
+  calling RingSpriteSystem.init() and the renderer will use it.
+  A simpler workaround: use ctx.save()/scale()/restore() around drawFrame:
+
+      const scale = this.baseOuterRadius / 180;   // 180 = sprite's Ro_base
+      ctx.save();
+      ctx.translate(this.centerX, this.centerY);
+      ctx.scale(scale, scale);
+      RingSpriteSystem.drawFrame(ctx, this._spriteFrame, 0, 0);
+      ctx.restore();
+
+============================================================ */
+/* ============================================================
+   skip-number.js  (Game1) — v4  [Ring Sprite Edition]
+   Changes vs v3:
+   • Depends on ring-sprite-system.js (must be loaded first)
+   • After tutorial → gameState = "loading" while sprites build
+   • drawRings() uses pre-rendered ImageBitmap sprites (28 frames)
+   • Falls back to procedural _drawRingsProcedural() if sprites fail
+   • Loading screen is provided by RingSpriteSystem (same theme)
 ============================================================ */
 
 const Game1 = {
@@ -50,7 +587,7 @@ const Game1 = {
   spawnInterval: 1800,
 
   pulseTime: 0,
-  pulseSpeed: 2.2,
+  pulseSpeed: 1,
   pulseAmountOuter: 10,
   pulseAmountInner: 5,
   torusAngle: 0,
@@ -125,16 +662,19 @@ const Game1 = {
   _listenersAttached: false,
   _resizeTimer: null,
 
+  /* ── Sprite state ───────────────────────────────────────── */
+  _spriteFrame: 0,   // accumulates at dt*60 per game tick
+
   /* ── Tutorial state ─────────────────────────────────────── */
-  gameState: "tutorial",   // "tutorial" | "playing"
-  _pendingMode: "default", // set before init, consumed after tutorial
-  _tutHoldProgress: 0,     // 0..1 over 3 seconds
-  _tutEnterAnim: 0,        // 0..1 fade-in
-  _tutOrbT: 0,             // time for animated visuals
+  gameState: "tutorial",   // "tutorial" | "loading" | "playing"
+  _pendingMode: "default",
+  _tutHoldProgress: 0,
+  _tutEnterAnim: 0,
+  _tutOrbT: 0,
   _tutPulseT: 0,
   _tutStars: [],
   _tutNoFingerFrames: 0,
-  _tutNoFingerThreshold: 90, // ~1.5s at 60fps
+  _tutNoFingerThreshold: 90,
   HOLD_SEC: 3.0,
 
   /* ── Tutorial mode data ─────────────────────────────────── */
@@ -197,88 +737,88 @@ const Game1 = {
   },
 
   _lastFingerUpdateTime: 0,
-FINGER_UPDATE_INTERVAL: 33,
-  
+  FINGER_UPDATE_INTERVAL: 33,
+  _cachedFingers: [],
+
 
   /* ============================================================
      INIT
   ============================================================ */
- init(modeKey = "default") {
-  const rect = document.getElementById("container").getBoundingClientRect();
-  this._applyResize(rect.width, rect.height);
+  init(modeKey = "default") {
+    const rect = document.getElementById("container").getBoundingClientRect();
+    this._applyResize(rect.width, rect.height);
 
-  this.notes = [];
-  this.popEffects = [];
-  this.explosions = [];
-  this.missQueue = [];
-  this.levelUpParticles = [];
-  this.chargeParticles = [];
+    this.notes = [];
+    this.popEffects = [];
+    this.explosions = [];
+    this.missQueue = [];
+    this.levelUpParticles = [];
+    this.chargeParticles = [];
 
-  this.score = 0;
-  this.combo = 0;
-  this.multiplier = 1;
-  this.hitTextTimer = 1;
-  this.currentNumber = 1;
-  this.xp = 0;
-  this.xpToNext = 8;
-  this.level = 1;
-  this.tier = 0;
-  this.levelUpActive = false;
-  this.xpPopFlash = 0;
-  this.hintState = "full";
-  this.noiseTime = 0;
-  this.spawnInterval = 1800;
-  this.torusAngle = 0;
+    this.score = 0;
+    this.combo = 0;
+    this.multiplier = 1;
+    this.hitTextTimer = 1;
+    this.currentNumber = 1;
+    this.xp = 0;
+    this.xpToNext = 8;
+    this.level = 1;
+    this.tier = 0;
+    this.levelUpActive = false;
+    this.xpPopFlash = 0;
+    this.hintState = "full";
+    this.noiseTime = 0;
+    this.spawnInterval = 1800;
+    this.torusAngle = 0;
+    this._spriteFrame = 0;
 
-  this.mode = "default";
-  this.skipAmount = this.getRandomSkip();
-  this.gameTitle = "SKIP " + this.skipAmount;
-  this.noteSpeed = this.speedCap;
+    this.mode = "default";
+    this.skipAmount = this.getRandomSkip();
+    this.gameTitle = "SKIP " + this.skipAmount;
+    this.noteSpeed = this.speedCap;
 
-  this.orbImage = new Image();
-  this.orbImage.src = "orb1.png";
+    this.orbImage = new Image();
+    this.orbImage.src = "orb1.png";
 
-  this._initBgStars();
+    this._initBgStars();
 
-  // ✅ FIX: use passed mode instead of resetting to default
-  this.gameState = "tutorial";
-  this._pendingMode = modeKey;
+    this.gameState = "tutorial";
+    this._pendingMode = modeKey;
 
-  this._tutHoldProgress = 0;
-  this._tutEnterAnim = 0;
-  this._tutOrbT = 0;
-  this._tutPulseT = 0;
-  this._tutNoFingerFrames = 0;
+    this._tutHoldProgress = 0;
+    this._tutEnterAnim = 0;
+    this._tutOrbT = 0;
+    this._tutPulseT = 0;
+    this._tutNoFingerFrames = 0;
 
-  this._initTutStars();
+    this._initTutStars();
 
-  if (!this._listenersAttached) {
-    this._listenersAttached = true;
+    if (!this._listenersAttached) {
+      this._listenersAttached = true;
 
-    window.addEventListener("resize", () => {
-      clearTimeout(this._resizeTimer);
-      this._resizeTimer = setTimeout(() => this._onResize(), 150);
-    });
+      window.addEventListener("resize", () => {
+        clearTimeout(this._resizeTimer);
+        this._resizeTimer = setTimeout(() => this._onResize(), 150);
+      });
 
-    window.addEventListener("orientationchange", () => {
-      clearTimeout(this._resizeTimer);
-      this._resizeTimer = setTimeout(() => this._onResize(), 300);
-    });
+      window.addEventListener("orientationchange", () => {
+        clearTimeout(this._resizeTimer);
+        this._resizeTimer = setTimeout(() => this._onResize(), 300);
+      });
 
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "1") this._setMode("pattern");
-      if (e.key === "2") this._setMode("cannon");
-      if (e.key === "3") this._setMode("orb");
-      if (e.key === "4") this._setMode("triple");
-    });
-  }
-},
+      window.addEventListener("keydown", (e) => {
+        if (e.key === "1") this._setMode("pattern");
+        if (e.key === "2") this._setMode("cannon");
+        if (e.key === "3") this._setMode("orb");
+        if (e.key === "4") this._setMode("triple");
+      });
+    }
+  },
 
   /* ── Resize — layout only, never resets gameplay ────────── */
   _onResize() {
     const w = window.innerWidth, h = window.innerHeight;
     this._applyResize(w, h);
-    // Only rebuild stars — never touch score/combo/notes
     this._initBgStars();
     if (this.gameState === "tutorial") this._initTutStars();
   },
@@ -297,53 +837,52 @@ FINGER_UPDATE_INTERVAL: 33,
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
   },
 
-  /* ── Mode switching (used by keys + ModeSelector result) ── */
+  /* ── Mode switching ─────────────────────────────────────── */
   _setMode(modeKey) {
-  if (this.gameState === "tutorial") {
-    // ✅ Switch tutorial content live
-    this._pendingMode = modeKey;
-
-    // Reset tutorial animation so new mode animates in
-    this._tutHoldProgress = 0;
-    this._tutEnterAnim = 0;
-    this._tutOrbT = 0;
-    this._tutPulseT = 0;
-
-  } else {
-    // In-game switching
-    switch (modeKey) {
-      case "pattern": this.activatePatternMode(); break;
-      case "cannon":  this.activateCannonMode(); break;
-      case "orb":     this.activateOrbMode(); break;
-      case "triple":  this.activateTripleCannonMode(); break;
+    if (this.gameState === "tutorial") {
+      this._pendingMode = modeKey;
+      this._tutHoldProgress = 0;
+      this._tutEnterAnim = 0;
+      this._tutOrbT = 0;
+      this._tutPulseT = 0;
+    } else {
+      switch (modeKey) {
+        case "pattern": this.activatePatternMode(); break;
+        case "cannon":  this.activateCannonMode(); break;
+        case "orb":     this.activateOrbMode(); break;
+        case "triple":  this.activateTripleCannonMode(); break;
+      }
     }
-  }
-},
+  },
 
-  /* Called from main.js after ModeSelector resolves */
- setModeBeforeStart(modeKey) {
-  this._pendingMode = modeKey || "default";
+  setModeBeforeStart(modeKey) {
+    this._pendingMode = modeKey || "default";
+    if (this.gameState === "tutorial") {
+      this._tutHoldProgress = 0;
+      this._tutEnterAnim = 0;
+      this._tutOrbT = 0;
+      this._tutPulseT = 0;
+    }
+  },
 
-  // If already in tutorial, refresh visuals immediately
-  if (this.gameState === "tutorial") {
-    this._tutHoldProgress = 0;
-    this._tutEnterAnim = 0;
-    this._tutOrbT = 0;
-    this._tutPulseT = 0;
-  }
-},
-
-  /* ── Transition from tutorial → playing ─────────────────── */
+  /* ── Transition: tutorial → loading → playing ───────────── */
   _startPlaying() {
-    this.gameState = "playing";
-    const m = this._pendingMode || "default";
-    switch (m) {
-      case "pattern": this.activatePatternMode();      break;
-      case "cannon":  this.activateCannonMode();       break;
-      case "orb":     this.activateOrbMode();          break;
-      case "triple":  this.activateTripleCannonMode(); break;
-      default: this._restartSpawnTimer(); break;
-    }
+    // Move to "loading" state first — the loading screen sits on top of the
+    // canvas as a DOM overlay, so update() is a no-op during this phase.
+    this.gameState = "loading";
+
+    RingSpriteSystem.init(this, () => {
+      // RingSpriteSystem hides the loading screen automatically, then calls us.
+      this.gameState = "playing";
+      const m = this._pendingMode || "default";
+      switch (m) {
+        case "pattern": this.activatePatternMode();      break;
+        case "cannon":  this.activateCannonMode();       break;
+        case "orb":     this.activateOrbMode();          break;
+        case "triple":  this.activateTripleCannonMode(); break;
+        default: this._restartSpawnTimer(); break;
+      }
+    });
   },
 
   /* ============================================================
@@ -365,7 +904,7 @@ FINGER_UPDATE_INTERVAL: 33,
   },
 
   /* ============================================================
-     TUTORIAL — main draw (called from update when gameState === "tutorial")
+     TUTORIAL — main draw
   ============================================================ */
   _updateTutorial(ctx, fingers, dt) {
     this._tutEnterAnim  = Math.min(1, this._tutEnterAnim + dt * 2);
@@ -378,62 +917,64 @@ FINGER_UPDATE_INTERVAL: 33,
     const td  = this._TMODES[this._pendingMode] || this._TMODES.default;
     const tColor = td.color;
 
-    // ── Background
+    // Background
     const bg = ctx.createRadialGradient(this.centerX, this.centerY * 0.6, 0, this.centerX, H * 0.5, Math.max(W, H) * 0.75);
     bg.addColorStop(0, "#1a2d4a");
-    bg.addColorStop(0.5, "#0f1e35"); 
+    bg.addColorStop(0.5, "#0f1e35");
     bg.addColorStop(1, "#080f1c");
-    ctx.globalAlpha = alpha; 
-    ctx.fillStyle = bg; 
-    ctx.fillRect(0, 0, W, H); 
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
     ctx.globalAlpha = 1;
 
     for (const s of this._tutStars) {
       s.tw += s.ts;
       ctx.globalAlpha = alpha * Math.max(0, s.a + Math.sin(s.tw) * 0.12);
       ctx.fillStyle = "#c8dff0";
-      ctx.beginPath(); 
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); 
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
       ctx.fill();
     }
     ctx.globalAlpha = alpha;
 
-    // ── Card
+    // Card
     const isMob = W < 540;
     const cardW = Math.min(W - 32, isMob ? 360 : 700);
     const cardH = Math.min(H - 60, isMob ? 580 : 540);
     const cardX = this.centerX - cardW / 2;
     const cardY = this.centerY - cardH / 2;
     const cR    = 20;
-    const hr    = s => { const h = (s||"").replace("#",""); 
-    const r=parseInt(h.slice(0,2),16);
-    const g=parseInt(h.slice(2,4),16);
-    const b=parseInt(h.slice(4,6),16); 
-    return isNaN(r)?"140,180,220":`${r},${g},${b}`; };
+    const hr    = s => {
+      const h = (s||"").replace("#","");
+      const r=parseInt(h.slice(0,2),16);
+      const g=parseInt(h.slice(2,4),16);
+      const b=parseInt(h.slice(4,6),16);
+      return isNaN(r)?"140,180,220":`${r},${g},${b}`;
+    };
 
-    ctx.shadowColor = tColor; 
+    ctx.shadowColor = tColor;
     ctx.shadowBlur = 28;
     ctx.fillStyle = "rgba(8,18,36,0.96)";
-    ctx.beginPath(); 
-    ctx.roundRect(cardX, cardY, cardW, cardH, cR); 
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, cardH, cR);
     ctx.fill();
     ctx.shadowBlur = 0;
-    ctx.strokeStyle = `rgba(${hr(tColor)},0.38)`; 
-    ctx.lineWidth = 1.5; 
+    ctx.strokeStyle = `rgba(${hr(tColor)},0.38)`;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
     ctx.fillStyle = `rgba(${hr(tColor)},0.16)`;
-    ctx.beginPath(); 
-    ctx.roundRect(cardX, cardY, cardW, 56, [cR, cR, 0, 0]); 
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, 56, [cR, cR, 0, 0]);
     ctx.fill();
 
     // Header
     ctx.font = `bold ${isMob?22:28}px 'Trebuchet MS', sans-serif`;
-    ctx.fillStyle = tColor; 
-    ctx.textAlign = "center"; 
+    ctx.fillStyle = tColor;
+    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.shadowColor = tColor; 
+    ctx.shadowColor = tColor;
     ctx.shadowBlur = 14;
-    ctx.fillText(td.icon + "  " + td.title, this.centerX, cardY + 28); 
+    ctx.fillText(td.icon + "  " + td.title, this.centerX, cardY + 28);
     ctx.shadowBlur = 0;
 
     ctx.font = `${isMob?12:14}px 'Trebuchet MS', sans-serif`;
@@ -445,11 +986,11 @@ FINGER_UPDATE_INTERVAL: 33,
     const visW = isMob ? cardW - 24 : cardW * 0.42;
     const visH = isMob ? 130 : cardH - 200;
     ctx.fillStyle = "rgba(8,16,36,0.68)";
-    ctx.beginPath(); 
-    ctx.roundRect(visX, visY, visW, visH, 12); 
+    ctx.beginPath();
+    ctx.roundRect(visX, visY, visW, visH, 12);
     ctx.fill();
-    ctx.strokeStyle = `rgba(${hr(tColor)},0.14)`; 
-    ctx.lineWidth = 1; 
+    ctx.strokeStyle = `rgba(${hr(tColor)},0.14)`;
+    ctx.lineWidth = 1;
     ctx.stroke();
     this._drawTutVisual(ctx, td.visual, visX, visY, visW, visH, this._tutOrbT, tColor);
 
@@ -464,34 +1005,33 @@ FINGER_UPDATE_INTERVAL: 33,
       const ea   = 1 - Math.pow(1 - prog, 3);
       ctx.globalAlpha = alpha * ea;
       ctx.fillStyle = i % 2 === 0 ? "rgba(20,40,70,0.45)" : "rgba(10,24,44,0.3)";
-      ctx.beginPath(); 
-      ctx.roundRect(rulesX, rulesY + i * rowH, rulesW, rowH - 4, 8); 
+      ctx.beginPath();
+      ctx.roundRect(rulesX, rulesY + i * rowH, rulesW, rowH - 4, 8);
       ctx.fill();
-      ctx.font = `${isMob?15:17}px 'Trebuchet MS', sans-serif`; 
+      ctx.font = `${isMob?15:17}px 'Trebuchet MS', sans-serif`;
       ctx.fillStyle = "#f0f4ff";
-      ctx.textAlign = "left"; 
+      ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText(rule.icon, rulesX + 10, rulesY + i * rowH + rowH / 2 - 2);
-      ctx.font = `${isMob?11:13}px 'Trebuchet MS', sans-serif`; 
+      ctx.font = `${isMob?11:13}px 'Trebuchet MS', sans-serif`;
       ctx.fillStyle = "rgba(240,244,255,0.85)";
       ctx.fillText(rule.text, rulesX + 36, rulesY + i * rowH + rowH / 2 - 2);
     }
     ctx.globalAlpha = alpha;
 
-    // ── Hold section
+    // Hold section
     const holdY = cardY + cardH - (isMob ? 82 : 86);
-    ctx.strokeStyle = `rgba(${hr(tColor)},0.15)`; 
+    ctx.strokeStyle = `rgba(${hr(tColor)},0.15)`;
     ctx.lineWidth = 1;
-    ctx.beginPath(); 
-    ctx.moveTo(cardX + 20, holdY - 6); 
-    ctx.lineTo(cardX + cardW - 20, holdY - 6); 
+    ctx.beginPath();
+    ctx.moveTo(cardX + 20, holdY - 6);
+    ctx.lineTo(cardX + cardW - 20, holdY - 6);
     ctx.stroke();
 
     const hasFing = fingers.length > 0;
     if (hasFing) {
       this._tutHoldProgress = Math.min(1, this._tutHoldProgress + dt / this.HOLD_SEC);
       if (this._tutHoldProgress >= 1) {
-        // Trigger game start after a brief flash
         ctx.globalAlpha = 1;
         this._startPlaying();
         return;
@@ -504,11 +1044,11 @@ FINGER_UPDATE_INTERVAL: 33,
       const blink = Math.sin(this._tutPulseT * 3) > 0;
       ctx.font = `bold ${isMob?13:15}px 'Trebuchet MS', sans-serif`;
       ctx.fillStyle = blink ? "#f5c842" : "rgba(245,200,66,0.55)";
-      ctx.textAlign = "center"; 
+      ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.shadowColor = "#f5c842"; 
+      ctx.shadowColor = "#f5c842";
       ctx.shadowBlur = blink ? 12 : 0;
-      ctx.fillText("☝ Raise your index finger to the camera", this.centerX, holdY + 18); 
+      ctx.fillText("☝ Raise your index finger to the camera", this.centerX, holdY + 18);
       ctx.shadowBlur = 0;
       ctx.font = `${isMob?11:13}px 'Trebuchet MS', sans-serif`;
       ctx.fillStyle = "rgba(142,202,230,0.65)";
@@ -516,59 +1056,58 @@ FINGER_UPDATE_INTERVAL: 33,
     } else {
       const pct = Math.round(this._tutHoldProgress * 100);
       ctx.font = `bold ${isMob?13:15}px 'Trebuchet MS', sans-serif`;
-      ctx.fillStyle = tColor; 
-      ctx.textAlign = "center"; 
+      ctx.fillStyle = tColor;
+      ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.shadowColor = tColor; 
+      ctx.shadowColor = tColor;
       ctx.shadowBlur = 10;
-      ctx.fillText(`Hold still... ${pct}%`, this.centerX, holdY + 16); 
+      ctx.fillText(`Hold still... ${pct}%`, this.centerX, holdY + 16);
       ctx.shadowBlur = 0;
       const barW = cardW * 0.6, barH = 8;
       const barX = this.centerX - barW / 2, barY = holdY + 34;
       ctx.fillStyle = "rgba(20,40,70,0.8)";
-      ctx.beginPath(); 
-      ctx.roundRect(barX, barY, barW, barH, 4); 
+      ctx.beginPath();
+      ctx.roundRect(barX, barY, barW, barH, 4);
       ctx.fill();
-      ctx.fillStyle = tColor; 
-      ctx.shadowColor = tColor; 
+      ctx.fillStyle = tColor;
+      ctx.shadowColor = tColor;
       ctx.shadowBlur = 10;
-      ctx.beginPath(); 
-      ctx.roundRect(barX, barY, barW * this._tutHoldProgress, barH, 4); 
-      ctx.fill(); ctx.shadowBlur = 0;
+      ctx.beginPath();
+      ctx.roundRect(barX, barY, barW * this._tutHoldProgress, barH, 4);
+      ctx.fill();
+      ctx.shadowBlur = 0;
     }
 
-    // ── Finger dot (drawn on tutorial canvas directly)
+    // Finger dot on tutorial
     if (hasFing) {
       const fx = fingers[0].x, fy = fingers[0].y;
       const FING_R = 28;
-      // Hold ring
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(fx, fy, FING_R + 10, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(${hr(tColor)},0.18)`; 
-      ctx.lineWidth = 5; 
+      ctx.strokeStyle = `rgba(${hr(tColor)},0.18)`;
+      ctx.lineWidth = 5;
       ctx.stroke();
       if (this._tutHoldProgress > 0.01) {
-        ctx.beginPath(); 
+        ctx.beginPath();
         ctx.arc(fx, fy, FING_R + 10, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this._tutHoldProgress);
-        ctx.strokeStyle = tColor; 
+        ctx.strokeStyle = tColor;
         ctx.lineWidth = 5;
-        ctx.shadowColor = tColor; 
-        ctx.shadowBlur = 14; 
-        ctx.stroke(); 
+        ctx.shadowColor = tColor;
+        ctx.shadowBlur = 14;
+        ctx.stroke();
         ctx.shadowBlur = 0;
       }
-      // Green dot
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(fx, fy, 22, 0, Math.PI * 2);
-      ctx.shadowColor = "rgba(126,207,179,0.7)"; 
+      ctx.shadowColor = "rgba(126,207,179,0.7)";
       ctx.shadowBlur = 28;
-      ctx.fillStyle = "rgba(94,180,150,0.45)"; 
+      ctx.fillStyle = "rgba(94,180,150,0.45)";
       ctx.fill();
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(fx, fy, 10, 0, Math.PI * 2);
-      ctx.shadowBlur = 12; 
-      ctx.fillStyle = "#b0f0da"; 
-      ctx.fill(); 
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = "#b0f0da";
+      ctx.fill();
       ctx.shadowBlur = 0;
     }
 
@@ -582,49 +1121,49 @@ FINGER_UPDATE_INTERVAL: 33,
 
     if (mode === "skip") {
       const r = Math.min(pw, ph) * 0.36;
-      ctx.strokeStyle = "rgba(212,164,74,0.7)"; 
+      ctx.strokeStyle = "rgba(212,164,74,0.7)";
       ctx.lineWidth = 3;
-      ctx.shadowColor = this.C.gold; 
+      ctx.shadowColor = this.C.gold;
       ctx.shadowBlur = 10;
-      ctx.beginPath(); 
-      ctx.arc(pw/2, ph/2, r, 0, Math.PI*2); 
+      ctx.beginPath();
+      ctx.arc(pw/2, ph/2, r, 0, Math.PI*2);
       ctx.stroke();
-      ctx.strokeStyle = "rgba(126,207,179,0.35)"; 
-      ctx.lineWidth = 2; 
+      ctx.strokeStyle = "rgba(126,207,179,0.35)";
+      ctx.lineWidth = 2;
       ctx.shadowBlur = 0;
-      ctx.beginPath(); 
-      ctx.arc(pw/2, ph/2, r*0.72, 0, Math.PI*2); 
+      ctx.beginPath();
+      ctx.arc(pw/2, ph/2, r*0.72, 0, Math.PI*2);
       ctx.stroke();
       const notes = [{a:0.4,d:1.0,v:3,c:true},{a:1.8,d:0.75,v:5,c:false},{a:3.5,d:0.9,v:6,c:true},{a:5.0,d:0.6,v:7,c:false}];
       for (const n of notes) {
         const pr = ((t*0.38+n.d)%1.0), dist = r*1.65*(1-pr*0.6);
         const nx=pw/2+Math.cos(n.a)*dist, ny=ph/2+Math.sin(n.a)*dist;
-        ctx.beginPath(); 
+        ctx.beginPath();
         ctx.arc(nx,ny,15,0,Math.PI*2);
-        ctx.fillStyle=n.c?"#0e3028":"#2a1010"; 
-        ctx.shadowColor=n.c?this.C.correct:this.C.wrong; 
-        ctx.shadowBlur=12; 
+        ctx.fillStyle=n.c?"#0e3028":"#2a1010";
+        ctx.shadowColor=n.c?this.C.correct:this.C.wrong;
+        ctx.shadowBlur=12;
         ctx.fill();
-        ctx.strokeStyle=n.c?this.C.correct:this.C.wrong; 
-        ctx.lineWidth=2; 
-        ctx.stroke(); 
+        ctx.strokeStyle=n.c?this.C.correct:this.C.wrong;
+        ctx.lineWidth=2;
+        ctx.stroke();
         ctx.shadowBlur=0;
-        ctx.fillStyle="#f0f4ff"; 
+        ctx.fillStyle="#f0f4ff";
         ctx.font="bold 11px 'Trebuchet MS',sans-serif";
-        ctx.textAlign="center"; 
-        ctx.textBaseline="middle"; 
+        ctx.textAlign="center";
+        ctx.textBaseline="middle";
         ctx.fillText(n.v,nx,ny);
       }
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(pw/2,ph/2,10,0,Math.PI*2);
       ctx.fillStyle="rgba(94,180,150,0.4)";
-      ctx.shadowColor=this.C.correct; 
-      ctx.shadowBlur=18; 
+      ctx.shadowColor=this.C.correct;
+      ctx.shadowBlur=18;
       ctx.fill();
-      ctx.beginPath(); 
-      ctx.arc(pw/2,ph/2,5,0,Math.PI*2); 
-      ctx.fillStyle="#b0f0da"; 
-      ctx.fill(); 
+      ctx.beginPath();
+      ctx.arc(pw/2,ph/2,5,0,Math.PI*2);
+      ctx.fillStyle="#b0f0da";
+      ctx.fill();
       ctx.shadowBlur=0;
       this._tutFingerLegend(ctx, pw/2, ph-12);
 
@@ -634,99 +1173,99 @@ FINGER_UPDATE_INTERVAL: 33,
       const sX=(pw-totalW)/2,bY=ph/2-8;
       for (let i=0;i<nums.length;i++) {
         const isC=(i%cycle)>=skip,bx=sX+i*(bW+gap);
-        ctx.beginPath(); 
+        ctx.beginPath();
         ctx.roundRect(bx,bY,bW,bH,5);
-        ctx.fillStyle=isC?"#0e3028":"#0a1525"; 
+        ctx.fillStyle=isC?"#0e3028":"#0a1525";
         ctx.fill();
-        ctx.strokeStyle=isC?this.C.correct:"rgba(140,180,220,0.3)"; 
-        ctx.lineWidth=2; 
+        ctx.strokeStyle=isC?this.C.correct:"rgba(140,180,220,0.3)";
+        ctx.lineWidth=2;
         ctx.stroke();
-        ctx.fillStyle="#f0f4ff"; 
+        ctx.fillStyle="#f0f4ff";
         ctx.font="bold 11px 'Trebuchet MS',sans-serif";
-        ctx.textAlign="center"; 
-        ctx.textBaseline="middle"; 
+        ctx.textAlign="center";
+        ctx.textBaseline="middle";
         ctx.fillText(nums[i],bx+bW/2,bY+bH/2);
       }
-      ctx.font="10px 'Trebuchet MS',sans-serif"; 
+      ctx.font="10px 'Trebuchet MS',sans-serif";
       ctx.textAlign="center";
-      ctx.fillStyle="rgba(232,124,109,0.85)"; 
+      ctx.fillStyle="rgba(232,124,109,0.85)";
       ctx.fillText("← SKIP 2 →",sX+(skip*(bW+gap))/2-gap/2,bY-11);
-      ctx.fillStyle="rgba(109,232,180,0.85)"; 
+      ctx.fillStyle="rgba(109,232,180,0.85)";
       ctx.fillText("← COLLECT 3 →",sX+skip*(bW+gap)+(collect*(bW+gap))/2-gap/2,bY-11);
       this._tutFingerLegend(ctx, pw/2, ph-12);
 
     } else if (mode === "cannon") {
       const cnx=pw/2,cny=ph/2+8,ang=-0.6+Math.sin(t*0.5)*0.3;
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(cnx,cny,20,0,Math.PI*2);
-      ctx.fillStyle="#2a4a6e"; 
-      ctx.shadowColor=this.C.accent; 
-      ctx.shadowBlur=10; 
-      ctx.fill(); 
-      ctx.shadowBlur=0;
-      ctx.save(); 
-      ctx.translate(cnx,cny); 
-      ctx.rotate(ang-Math.PI/2);
-      ctx.fillStyle="#3a6080"; 
-      ctx.beginPath(); 
-      ctx.roundRect(-7,-38,14,38,3); 
+      ctx.fillStyle="#2a4a6e";
+      ctx.shadowColor=this.C.accent;
+      ctx.shadowBlur=10;
       ctx.fill();
-      ctx.strokeStyle=this.C.accent; 
-      ctx.lineWidth=1.5; 
-      ctx.stroke(); 
+      ctx.shadowBlur=0;
+      ctx.save();
+      ctx.translate(cnx,cny);
+      ctx.rotate(ang-Math.PI/2);
+      ctx.fillStyle="#3a6080";
+      ctx.beginPath();
+      ctx.roundRect(-7,-38,14,38,3);
+      ctx.fill();
+      ctx.strokeStyle=this.C.accent;
+      ctx.lineWidth=1.5;
+      ctx.stroke();
       ctx.restore();
       const flyT=(t*0.5)%1, fnx=cnx+Math.cos(ang)*(28+flyT*70), fny=cny+Math.sin(ang)*(28+flyT*70);
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(fnx,fny,14,0,Math.PI*2);
-      ctx.fillStyle="#0e3028"; 
-      ctx.shadowColor=this.C.correct; 
-      ctx.shadowBlur=10; 
+      ctx.fillStyle="#0e3028";
+      ctx.shadowColor=this.C.correct;
+      ctx.shadowBlur=10;
       ctx.fill();
       ctx.strokeStyle=this.C.correct;
-      ctx.lineWidth=2; 
-      ctx.stroke(); 
+      ctx.lineWidth=2;
+      ctx.stroke();
       ctx.shadowBlur=0;
-      ctx.fillStyle="#f0f4ff"; 
+      ctx.fillStyle="#f0f4ff";
       ctx.font="bold 11px 'Trebuchet MS',sans-serif";
-      ctx.textAlign="center"; 
-      ctx.textBaseline="middle"; 
+      ctx.textAlign="center";
+      ctx.textBaseline="middle";
       ctx.fillText("6",fnx,fny);
       this._tutFingerLegend(ctx, pw/2, ph-4);
 
     } else if (mode === "orb") {
       const orx=pw/2,ory=ph/2,oA=t*0.8;
       const og=ctx.createRadialGradient(orx,ory,0,orx,ory,28);
-      og.addColorStop(0,"rgba(192,132,252,0.5)"); 
+      og.addColorStop(0,"rgba(192,132,252,0.5)");
       og.addColorStop(1,"rgba(14,30,50,0)");
-      ctx.fillStyle=og; 
-      ctx.beginPath(); 
-      ctx.arc(orx,ory,28,0,Math.PI*2); 
+      ctx.fillStyle=og;
+      ctx.beginPath();
+      ctx.arc(orx,ory,28,0,Math.PI*2);
       ctx.fill();
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(orx,ory,18,0,Math.PI*2);
-      ctx.fillStyle="#1a3a5c"; 
-      ctx.shadowColor="#c084fc"; 
-      ctx.shadowBlur=14; 
+      ctx.fillStyle="#1a3a5c";
+      ctx.shadowColor="#c084fc";
+      ctx.shadowBlur=14;
       ctx.fill();
-      ctx.strokeStyle="#c084fc"; 
-      ctx.lineWidth=2; 
-      ctx.stroke(); 
+      ctx.strokeStyle="#c084fc";
+      ctx.lineWidth=2;
+      ctx.stroke();
       ctx.shadowBlur=0;
       const sR=50+Math.sin(t*1.2)*14, snx=orx+Math.cos(oA)*sR, sny=ory+Math.sin(oA)*sR;
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(snx,sny,14,0,Math.PI*2);
-      ctx.fillStyle="#0e3028"; 
-      ctx.shadowColor=this.C.correct; 
-      ctx.shadowBlur=10; 
+      ctx.fillStyle="#0e3028";
+      ctx.shadowColor=this.C.correct;
+      ctx.shadowBlur=10;
       ctx.fill();
-      ctx.strokeStyle=this.C.correct; 
-      ctx.lineWidth=2; 
-      ctx.stroke(); 
+      ctx.strokeStyle=this.C.correct;
+      ctx.lineWidth=2;
+      ctx.stroke();
       ctx.shadowBlur=0;
-      ctx.fillStyle="#f0f4ff"; 
+      ctx.fillStyle="#f0f4ff";
       ctx.font="bold 11px 'Trebuchet MS',sans-serif";
-      ctx.textAlign="center"; 
-      ctx.textBaseline="middle"; 
+      ctx.textAlign="center";
+      ctx.textBaseline="middle";
       ctx.fillText("9",snx,sny);
       this._tutFingerLegend(ctx, pw/2, ph-12);
 
@@ -735,27 +1274,27 @@ FINGER_UPDATE_INTERVAL: 33,
       for (let i=0;i<3;i++) {
         const a=(i/3)*Math.PI*2-Math.PI/2+t*0.18;
         const ox=tcx+Math.cos(a)*triR,oy=tcy+Math.sin(a)*triR,isG=i===gi;
-        ctx.beginPath(); 
+        ctx.beginPath();
         ctx.arc(ox,oy,13,0,Math.PI*2);
-        ctx.fillStyle="#1a3a5c"; 
-        ctx.shadowColor=isG?this.C.gold:this.C.accent; 
-        ctx.shadowBlur=isG?16:8; 
-        ctx.fill(); 
+        ctx.fillStyle="#1a3a5c";
+        ctx.shadowColor=isG?this.C.gold:this.C.accent;
+        ctx.shadowBlur=isG?16:8;
+        ctx.fill();
         ctx.shadowBlur=0;
-        ctx.strokeStyle=isG?this.C.gold:"rgba(142,202,230,0.4)"; 
-        ctx.lineWidth=isG?2.5:1.5; 
+        ctx.strokeStyle=isG?this.C.gold:"rgba(142,202,230,0.4)";
+        ctx.lineWidth=isG?2.5:1.5;
         ctx.stroke();
         if (isG) {
           const pulse=0.5+Math.sin(t*5)*0.3;
-          ctx.strokeStyle=`rgba(245,200,66,${pulse})`; 
+          ctx.strokeStyle=`rgba(245,200,66,${pulse})`;
           ctx.lineWidth=1.5;
-          ctx.beginPath(); 
-          ctx.arc(ox,oy,16+pulse*4,0,Math.PI*2); 
+          ctx.beginPath();
+          ctx.arc(ox,oy,16+pulse*4,0,Math.PI*2);
           ctx.stroke();
         }
       }
-      ctx.font="10px 'Trebuchet MS',sans-serif"; 
-      ctx.fillStyle=this.C.gold; 
+      ctx.font="10px 'Trebuchet MS',sans-serif";
+      ctx.fillStyle=this.C.gold;
       ctx.textAlign="center";
       ctx.fillText("✦ glowing = fires next",pw/2,ph-14);
       this._tutFingerLegend(ctx, pw/2, ph-4);
@@ -764,22 +1303,22 @@ FINGER_UPDATE_INTERVAL: 33,
   },
 
   _tutFingerLegend(ctx, x, y) {
-    ctx.beginPath(); 
-    ctx.arc(x-46,y,8,0,Math.PI*2); 
-    ctx.fillStyle="rgba(94,180,150,0.35)"; 
+    ctx.beginPath();
+    ctx.arc(x-46,y,8,0,Math.PI*2);
+    ctx.fillStyle="rgba(94,180,150,0.35)";
     ctx.fill();
-    ctx.beginPath(); 
-    ctx.arc(x-46,y,4,0,Math.PI*2); 
-    ctx.fillStyle="#b0f0da"; 
+    ctx.beginPath();
+    ctx.arc(x-46,y,4,0,Math.PI*2);
+    ctx.fillStyle="#b0f0da";
     ctx.fill();
-    ctx.fillStyle="rgba(140,180,220,0.65)"; 
+    ctx.fillStyle="rgba(140,180,220,0.65)";
     ctx.font="11px 'Trebuchet MS',sans-serif";
-    ctx.textAlign="left"; 
-    ctx.textBaseline="middle"; 
+    ctx.textAlign="left";
+    ctx.textBaseline="middle";
     ctx.fillText("= your index finger",x-36,y);
   },
 
-  /* ── No-finger in-game prompt (drawn on canvas) ─────────── */
+  /* ── No-finger in-game prompt ───────────────────────────── */
   _drawNoFingerPrompt(ctx, dt) {
     const fingers = window.fingerPositions || [];
     if (fingers.length > 0) {
@@ -798,14 +1337,14 @@ FINGER_UPDATE_INTERVAL: 33,
     const bx  = W / 2 - bw / 2, by = H - 110;
     ctx.globalAlpha = blink ? 0.95 : 0.55;
     ctx.fillStyle = "rgba(8,18,36,0.92)";
-    ctx.beginPath(); 
-    ctx.roundRect(bx, by, bw, bh, bh/2); 
+    ctx.beginPath();
+    ctx.roundRect(bx, by, bw, bh, bh/2);
     ctx.fill();
     ctx.strokeStyle = blink ? "#f5c842" : "rgba(245,200,66,0.4)";
-    ctx.lineWidth = 1; 
+    ctx.lineWidth = 1;
     ctx.stroke();
-    ctx.fillStyle = "#f5c842"; 
-    ctx.textAlign = "center"; 
+    ctx.fillStyle = "#f5c842";
+    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(copy, W / 2, by + bh / 2);
     ctx.globalAlpha = 1;
@@ -883,8 +1422,7 @@ FINGER_UPDATE_INTERVAL: 33,
       }
       this._updateHintState();
       if (this.level % 3 === 0) {
-        this.spawnInterval = Math.max(1000, this.spawnInterval - 40
-        );
+        this.spawnInterval = Math.max(1000, this.spawnInterval - 40);
         this._restartSpawnTimer();
       }
       this._triggerLevelUpBurst();
@@ -930,11 +1468,11 @@ FINGER_UPDATE_INTERVAL: 33,
     this.levelUpTimer -= dt * 1000;
     if (this.xpPopFlash > 0) this.xpPopFlash = Math.max(0, this.xpPopFlash - dt * 3);
     for (const p of this.levelUpParticles) {
-      p.x += p.vx * dt; 
+      p.x += p.vx * dt;
       p.y += p.vy * dt;
-      p.vx *= 0.94; 
-      p.vy *= 0.94; 
-      p.vy += 120 * dt; 
+      p.vx *= 0.94;
+      p.vy *= 0.94;
+      p.vy += 120 * dt;
       p.life -= dt * 1.1;
     }
     this.levelUpParticles = this.levelUpParticles.filter(p => p.life > 0);
@@ -946,31 +1484,31 @@ FINGER_UPDATE_INTERVAL: 33,
     const prog = 1 - this.levelUpTimer / this.levelUpDuration;
     for (const p of this.levelUpParticles) {
       ctx.globalAlpha = Math.max(0, p.life) * 0.9;
-      ctx.fillStyle = p.color; 
-      ctx.shadowColor = p.color; 
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color;
       ctx.shadowBlur = 12;
-      ctx.beginPath(); 
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); 
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
       ctx.fill();
     }
-    ctx.shadowBlur = 0; 
+    ctx.shadowBlur = 0;
     ctx.globalAlpha = 1;
     if (prog > 0.05 && prog < 0.8) {
       const alpha = Math.sin(prog / 0.8 * Math.PI);
-      ctx.save(); 
+      ctx.save();
       ctx.globalAlpha = alpha;
       ctx.translate(this.centerX, this.centerY - 110);
       ctx.scale(0.8 + alpha * 0.3, 0.8 + alpha * 0.3);
-      ctx.textAlign = "center"; 
+      ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.font = "bold 44px 'Trebuchet MS', sans-serif";
-      ctx.shadowColor = this.C.gold; 
-      ctx.shadowBlur = 28; 
+      ctx.shadowColor = this.C.gold;
+      ctx.shadowBlur = 28;
       ctx.fillStyle = this.C.gold;
       ctx.fillText("LEVEL " + this.level + "!", 0, 0);
       ctx.font = "bold 22px 'Trebuchet MS', sans-serif";
-      ctx.fillStyle = this.tierColors[this.tier]; 
-      ctx.shadowColor = this.tierColors[this.tier]; 
+      ctx.fillStyle = this.tierColors[this.tier];
+      ctx.shadowColor = this.tierColors[this.tier];
       ctx.shadowBlur = 14;
       ctx.fillText(this.tierNames[this.tier], 0, 46);
       ctx.restore();
@@ -989,31 +1527,30 @@ FINGER_UPDATE_INTERVAL: 33,
     const colors = { subtle:"#f5c842", none:"#8ecae6", decoy:"#e87c6d", chaos:"#c084fc" };
     const col = colors[this.hintState] || "#ffffff";
     const W = this.centerX * 2, bannerY = this.centerY * 0.38;
-    ctx.save(); 
+    ctx.save();
     ctx.globalAlpha = alpha;
     ctx.font = "bold 30px 'Trebuchet MS', sans-serif";
-    const tw = 
-    ctx.measureText(this._hintChangeMessage).width;
+    const tw = ctx.measureText(this._hintChangeMessage).width;
     const bw = tw + 56, bh = 56, bx = W/2 - bw/2, by = bannerY - bh/2, br = bh/2;
-    ctx.beginPath(); 
-    ctx.moveTo(bx+br,by); 
-    ctx.arcTo(bx+bw,by,bx+bw,by+bh,br); 
-    ctx.arcTo(bx+bw,by+bh,bx,by+bh,br); 
-    ctx.arcTo(bx,by+bh,bx,by,br); 
-    ctx.arcTo(bx,by,bx+bw,by,br); 
+    ctx.beginPath();
+    ctx.moveTo(bx+br,by);
+    ctx.arcTo(bx+bw,by,bx+bw,by+bh,br);
+    ctx.arcTo(bx+bw,by+bh,bx,by+bh,br);
+    ctx.arcTo(bx,by+bh,bx,by,br);
+    ctx.arcTo(bx,by,bx+bw,by,br);
     ctx.closePath();
-    ctx.fillStyle="rgba(8,14,28,0.88)"; 
+    ctx.fillStyle="rgba(8,14,28,0.88)";
     ctx.fill();
-    ctx.strokeStyle=col; 
-    ctx.lineWidth=2; 
-    ctx.shadowColor=col; 
-    ctx.shadowBlur=16; 
-    ctx.stroke(); 
+    ctx.strokeStyle=col;
+    ctx.lineWidth=2;
+    ctx.shadowColor=col;
+    ctx.shadowBlur=16;
+    ctx.stroke();
     ctx.shadowBlur=0;
-    ctx.fillStyle=col; 
-    ctx.textAlign="center"; 
-    ctx.textBaseline="middle"; 
-    ctx.shadowColor=col; 
+    ctx.fillStyle=col;
+    ctx.textAlign="center";
+    ctx.textBaseline="middle";
+    ctx.shadowColor=col;
     ctx.shadowBlur=10;
     ctx.fillText(this._hintChangeMessage, W/2, bannerY);
     ctx.restore();
@@ -1023,26 +1560,26 @@ FINGER_UPDATE_INTERVAL: 33,
     const fill = this.level >= this.maxLevel ? 1 : this.xp / this.xpToNext;
     const tc   = this.tierColors[this.tier];
     const start = -Math.PI / 2;
-    ctx.beginPath(); 
+    ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI*2);
-    ctx.strokeStyle = this.C.xpTrack; 
-    ctx.lineWidth = 6; 
+    ctx.strokeStyle = this.C.xpTrack;
+    ctx.lineWidth = 6;
     ctx.stroke();
     if (fill > 0.01) {
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(cx, cy, radius, start, start + Math.PI*2*fill);
-      ctx.strokeStyle = tc; 
-      ctx.lineWidth = 6; 
-      ctx.shadowColor = tc; 
-      ctx.shadowBlur = 12 + this.xpPopFlash*20; 
-      ctx.stroke(); 
+      ctx.strokeStyle = tc;
+      ctx.lineWidth = 6;
+      ctx.shadowColor = tc;
+      ctx.shadowBlur = 12 + this.xpPopFlash*20;
+      ctx.stroke();
       ctx.shadowBlur = 0;
     }
     if (this.xpPopFlash > 0) {
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.arc(cx, cy, radius + 12*this.xpPopFlash, 0, Math.PI*2);
-      ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash*0.55})`; 
-      ctx.lineWidth = 5*this.xpPopFlash; 
+      ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash*0.55})`;
+      ctx.lineWidth = 5*this.xpPopFlash;
       ctx.stroke();
     }
   },
@@ -1050,17 +1587,17 @@ FINGER_UPDATE_INTERVAL: 33,
   /* ── HUD ─────────────────────────────────────────────────── */
   _pill(ctx, x, y, w, h) {
     const r = h / 2;
-    ctx.beginPath(); 
-    ctx.moveTo(x+r,y); 
-    ctx.arcTo(x+w,y,x+w,y+h,r); 
-    ctx.arcTo(x+w,y+h,x,y+h,r); 
-    ctx.arcTo(x,y+h,x,y,r); 
-    ctx.arcTo(x,y,x+w,y,r); 
+    ctx.beginPath();
+    ctx.moveTo(x+r,y);
+    ctx.arcTo(x+w,y,x+w,y+h,r);
+    ctx.arcTo(x+w,y+h,x,y+h,r);
+    ctx.arcTo(x,y+h,x,y,r);
+    ctx.arcTo(x,y,x+w,y,r);
     ctx.closePath();
-    ctx.fillStyle = this.C.hudBg; 
+    ctx.fillStyle = this.C.hudBg;
     ctx.fill();
-    ctx.strokeStyle = this.C.hudBorder; 
-    ctx.lineWidth = 1; 
+    ctx.strokeStyle = this.C.hudBorder;
+    ctx.lineWidth = 1;
     ctx.stroke();
   },
 
@@ -1068,65 +1605,65 @@ FINGER_UPDATE_INTERVAL: 33,
     const W = this.centerX * 2, H = this.centerY * 2;
     const f = "bold 20px 'Trebuchet MS', sans-serif";
     if (isLauncher) {
-      ctx.fillStyle = this.C.hudBg; 
+      ctx.fillStyle = this.C.hudBg;
       ctx.fillRect(0, 0, W, 50);
-      ctx.strokeStyle = this.C.hudBorder; 
+      ctx.strokeStyle = this.C.hudBorder;
       ctx.lineWidth = 1;
-      ctx.beginPath(); 
+      ctx.beginPath();
       ctx.moveTo(0,50);
-       ctx.lineTo(W,50); 
-       ctx.stroke();
-      ctx.font = f; 
+      ctx.lineTo(W,50);
+      ctx.stroke();
+      ctx.font = f;
       ctx.textBaseline = "middle";
-      ctx.fillStyle = "#e8f4ff"; 
-      ctx.textAlign = "left"; 
+      ctx.fillStyle = "#e8f4ff";
+      ctx.textAlign = "left";
       ctx.fillText("⭐ "+this.score, 16, 25);
-      ctx.fillStyle = this.C.gold; 
+      ctx.fillStyle = this.C.gold;
       ctx.textAlign = "center";
-      ctx.font = "bold 17px 'Trebuchet MS', sans-serif"; 
+      ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
       ctx.fillText(this.gameTitle, W/2, 25);
       ctx.textAlign = "right";
       ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
-      ctx.font = "bold 17px 'Trebuchet MS', sans-serif"; 
+      ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
       ctx.fillText("x"+this.combo+" combo", W-16, 25);
     } else {
-      this._pill(ctx, 14, 14, 155, 42); 
-      ctx.font = f; 
-      ctx.fillStyle = "#e8f4ff"; 
-      ctx.textAlign = "left"; 
-      ctx.textBaseline = "middle"; 
-      ctx.fillText("⭐ "+this.score, 28, 35);
-      this._pill(ctx, W-174, 14, 160, 42); 
-      ctx.textAlign = "right";
-      ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0"; 
-      ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, 35);
-      ctx.textAlign = "center"; 
+      this._pill(ctx, 14, 14, 155, 42);
+      ctx.font = f;
+      ctx.fillStyle = "#e8f4ff";
+      ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillStyle = this.C.gold; 
+      ctx.fillText("⭐ "+this.score, 28, 35);
+      this._pill(ctx, W-174, 14, 160, 42);
+      ctx.textAlign = "right";
+      ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
+      ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, 35);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = this.C.gold;
       ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
-      ctx.shadowColor = "rgba(245,200,66,0.4)"; 
+      ctx.shadowColor = "rgba(245,200,66,0.4)";
       ctx.shadowBlur = 14;
-      ctx.fillText(this.gameTitle, W/2, 34); 
+      ctx.fillText(this.gameTitle, W/2, 34);
       ctx.shadowBlur = 0;
     }
     const ringCX = W/2, ringCY = isLauncher ? H-60 : H-48, ringR = 26;
     this._drawXPRing(ctx, ringCX, ringCY, ringR);
-    ctx.font = "bold 13px 'Trebuchet MS', sans-serif"; 
-    ctx.textAlign = "center"; 
+    ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = this.tierColors[this.tier]; 
-    ctx.shadowColor = this.tierColors[this.tier]; 
+    ctx.fillStyle = this.tierColors[this.tier];
+    ctx.shadowColor = this.tierColors[this.tier];
     ctx.shadowBlur = 8;
-    ctx.fillText("Lv."+this.level, ringCX, ringCY); 
+    ctx.fillText("Lv."+this.level, ringCX, ringCY);
     ctx.shadowBlur = 0;
     const diffLabels = { full:"🟢 Training", subtle:"🟡 Subtle", none:"🔵 Blind", decoy:"🔴 Decoy", chaos:"🟣 Chaos" };
-    ctx.textAlign = "right"; 
-    ctx.textBaseline = "bottom"; 
-    ctx.font = "13px 'Trebuchet MS', sans-serif"; 
+    ctx.textAlign = "right";
+    ctx.textBaseline = "bottom";
+    ctx.font = "13px 'Trebuchet MS', sans-serif";
     ctx.globalAlpha = 0.7;
-    ctx.fillStyle = this.tierColors[this.tier]; 
+    ctx.fillStyle = this.tierColors[this.tier];
     ctx.fillText(this.tierNames[this.tier], W-12, H-8);
-    ctx.fillStyle = "#c8dff0"; 
+    ctx.fillStyle = "#c8dff0";
     ctx.fillText(diffLabels[this.hintState]||"", W-12, H-26);
     ctx.globalAlpha = 1;
   },
@@ -1134,157 +1671,263 @@ FINGER_UPDATE_INTERVAL: 33,
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
-  update(ctx, fingers, dt = 1/60) {
-    // Tutorial state — runs on the same canvas, same loop
-    if (this.gameState === "tutorial") {
-      this._updateTutorial(ctx, fingers, dt);
-      return;
+ update(ctx, fingers, dt = 1/60) {
+  // Tutorial state
+  if (this.gameState === "tutorial") {
+    this._updateTutorial(ctx, fingers, dt);
+    return;
+  }
+
+  // Loading state
+  if (this.gameState === "loading") {
+    return;
+  }
+
+  // ── PLAYING ──
+  this._drawBg(ctx);
+  this._drawBgStars(ctx);
+
+  this._updateLevelUp(dt);
+  this.noiseTime += dt * 1.8;
+  this._driftSpeed(dt);
+
+  const isLauncher = (
+    this.mode === "cannon" ||
+    this.mode === "orb" ||
+    this.mode === "triple"
+  );
+
+  // Rings (only default + pattern)
+  if (!isLauncher) {
+    this.drawRings(ctx, dt);
+  }
+
+  // ── MODE HANDLING ──
+  if (this.mode === "cannon") {
+    this.updateCannonNotes(ctx, dt);
+    this.drawCannon(ctx, dt);
+    this.drawExplosions(ctx);
+    this.drawLauncherZone(ctx);
+    this.drawCharging(ctx);
+    this.updateCharging(dt);
+
+  } else if (this.mode === "orb") {
+    this.updateCannonNotes(ctx, dt);
+    this.drawOrbLauncher(ctx, dt);
+    this.drawExplosions(ctx);
+    this.drawLauncherZone(ctx);
+    this.drawCharging(ctx);
+    this.updateCharging(dt);
+
+  } else if (this.mode === "triple") {
+    this.updateCannonNotes(ctx, dt);
+    this.drawTripleCannons(ctx, dt);
+    this.drawExplosions(ctx);
+    this.drawLauncherZone(ctx);
+
+  } else {
+    // Default + Pattern
+    this.drawNotes(ctx, dt);
+  }
+
+  // Triple cannon delayed shot
+  if (this.mode === "triple" && this.previewTimer > 0) {
+    this.previewTimer -= dt;
+    if (this.previewTimer <= 0) {
+      this.executeTripleShot();
     }
+  }
 
-    // Playing state
-    this._drawBg(ctx);
-    this._drawBgStars(ctx);
-    this._updateLevelUp(dt);
-    this.noiseTime += dt * 1.8;
-    this._driftSpeed(dt);
+  // Effects
+  this.drawPopEffects(ctx);
 
-    const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
-    if (!isLauncher) this.drawRings(ctx, dt);
+  // ── INPUT (IMPORTANT FIX AREA) ──
+  fingers.forEach(finger => {
+    this.drawFinger(ctx, finger.x, finger.y);
 
-    if      (this.mode === "cannon") { this.updateCannonNotes(ctx, dt); this.drawCannon(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
-    else if (this.mode === "orb")    { this.updateCannonNotes(ctx, dt); this.drawOrbLauncher(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
-    else if (this.mode === "triple") { this.updateCannonNotes(ctx, dt); this.drawTripleCannons(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); }
-    else                             { this.drawNotes(ctx, dt); }
-
-    if (this.mode === "triple" && this.previewTimer > 0) {
-      this.previewTimer -= dt;
-      if (this.previewTimer <= 0) this.executeTripleShot();
+    if (isLauncher) {
+      this.checkCannonCollision(finger.x, finger.y);
+    } else {
+      this.checkCollision(finger.x, finger.y);
     }
+  });
 
-    this.drawPopEffects(ctx);
-
-    fingers.forEach(finger => {
-      this.drawFinger(ctx, finger.x, finger.y);
-      if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
-      else            this.checkCollision(finger.x, finger.y);
-    });
-
-    this._drawHUD(ctx, isLauncher);
-    this._drawLevelUpBurst(ctx);
-    this._drawHintChangeAnnouncement(ctx, dt);
-    this.drawHitText(ctx);
-    this._drawNoFingerPrompt(ctx, dt);
-  },
+  // UI
+  this._drawHUD(ctx, isLauncher);
+  this._drawLevelUpBurst(ctx);
+  this._drawHintChangeAnnouncement(ctx, dt);
+  this.drawHitText(ctx);
+  this._drawNoFingerPrompt(ctx, dt);
+},
 
   /* ── Finger ─────────────────────────────────────────────── */
   drawFinger(ctx, x, y) {
-    ctx.save();
-    ctx.beginPath(); 
-    ctx.arc(x, y, this.baseOuterRadius * 0.065, 0, Math.PI*2);
-    ctx.shadowColor = "rgba(126,207,179,0.7)"; 
-    ctx.shadowBlur = 28;
-    ctx.fillStyle = "rgba(94,180,150,0.45)"; 
-    ctx.fill();
-    ctx.beginPath(); 
-    ctx.arc(x, y, this.baseOuterRadius * 0.030, 0, Math.PI*2);
-    ctx.shadowBlur = 12; 
-    ctx.fillStyle = "#b0f0da"; 
-    ctx.fill();
-    ctx.restore();
+  const outerR = this.baseOuterRadius * 0.055;
+  const innerR = this.baseOuterRadius * 0.025;
+
+  ctx.save();
+
+  // Outer glow
+  ctx.beginPath();
+  ctx.arc(x, y, outerR, 0, Math.PI * 2);
+  ctx.shadowColor = "rgba(126,207,179,0.6)";
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = "rgba(94,180,150,0.35)";
+  ctx.fill();
+
+  // Inner core
+  ctx.beginPath();
+  ctx.arc(x, y, innerR, 0, Math.PI * 2);
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = "#b0f0da";
+  ctx.fill();
+
+  ctx.restore();
+},
+
+
+  _updateFingerCache(fingers) {
+  const now = performance.now();
+
+  if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
+    this._cachedFingers = fingers;
+    this._lastFingerUpdateTime = now;
+  }
+
+  return this._cachedFingers;
+},
+  /* ============================================================
+     RING DRAWING — sprite-first, procedural fallback
+  ============================================================ */
+
+  /**
+   * Public method called each frame.
+   * Uses pre-rendered ImageBitmap sprites when ready,
+   * falls back to the full procedural path otherwise.
+   */
+  drawRings(ctx, dt) {
+    // Advance animation counters regardless of which path we take
+    this.pulseTime  += this.pulseSpeed * dt;
+    this.torusAngle  = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
+
+    if (RingSpriteSystem.isReady()) {
+      /* ── Fast sprite path ─────────────────────────────────
+         _spriteFrame accumulates at 60fps-equivalent pace.
+         One full 28-frame cycle = 28/60 ≈ 0.47s, matching
+         the original torusAngle rotation speed.              */
+      this._spriteFrame += dt * 10;
+
+      // The sprite was rendered at 512×512 with Ro_base = 180.
+      // Scale it so the ring matches the actual game radius.
+      const scale = this.baseOuterRadius / 180;
+
+      ctx.save();
+      ctx.translate(this.centerX, this.centerY);
+      ctx.scale(scale, scale);
+      RingSpriteSystem.drawFrame(ctx, this._spriteFrame, 0, 0);
+      ctx.restore();
+    } else {
+      // Procedural fallback (original logic)
+      this._drawRingsProcedural(ctx);
+    }
   },
 
-  /* ── Torus rings ─────────────────────────────────────────── */
-  drawRings(ctx, dt) {
-    this.pulseTime += this.pulseSpeed * dt;
-    this.torusAngle = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
-    const outerOff = Math.sin(this.pulseTime) * this.pulseAmountOuter;
-    const innerOff = Math.sin(this.pulseTime) * this.pulseAmountInner;
-    this.currentOuterRadius = this.baseOuterRadius + Math.max(0, outerOff);
-    this.currentInnerRadius = this.baseInnerRadius + Math.max(0, innerOff);
+  /**
+   * Original full procedural ring renderer — used as fallback
+   * and to borrow the visual recipe for the sprite renderer.
+   */
+  _drawRingsProcedural(ctx) {
     const cx = this.centerX, cy = this.centerY;
-    const Ro = this.currentOuterRadius, Ri = this.currentInnerRadius;
+    const Ro = this.currentOuterRadius
+             + Math.max(0, Math.sin(this.pulseTime) * this.pulseAmountOuter);
+    const Ri = this.currentInnerRadius
+             + Math.max(0, Math.sin(this.pulseTime) * this.pulseAmountInner);
+    this.currentOuterRadius = Ro;
+    this.currentInnerRadius = Ri;
     const Rm = (Ro + Ri) / 2, r = (Ro - Ri) / 2;
     const lx = Math.cos(this.torusAngle), ly = Math.sin(this.torusAngle);
-    ctx.save(); 
+    ctx.save();
     ctx.translate(cx, cy);
     const bloom = ctx.createRadialGradient(0,0,Ri-r*2.5,0,0,Ro+r*3.5);
-    bloom.addColorStop(0,"rgba(0,0,0,0)"); 
-    bloom.addColorStop(0.30,"rgba(126,207,179,0.07)"); 
-    bloom.addColorStop(0.52,"rgba(201,147,58,0.14)"); 
-    bloom.addColorStop(0.70,"rgba(142,202,230,0.09)"); 
+    bloom.addColorStop(0,"rgba(0,0,0,0)");
+    bloom.addColorStop(0.30,"rgba(126,207,179,0.07)");
+    bloom.addColorStop(0.52,"rgba(201,147,58,0.14)");
+    bloom.addColorStop(0.70,"rgba(142,202,230,0.09)");
     bloom.addColorStop(1,"rgba(0,0,0,0)");
-    ctx.fillStyle=bloom; 
-    ctx.beginPath(); 
-    ctx.arc(0,0,Ro+r*3.5,0,Math.PI*2); 
+    ctx.fillStyle=bloom;
+    ctx.beginPath();
+    ctx.arc(0,0,Ro+r*3.5,0,Math.PI*2);
     ctx.fill();
     const gx0=-lx*(Ro+r),gy0=-ly*(Ro+r),gx1=lx*(Ro+r),gy1=ly*(Ro+r);
     const tg=ctx.createLinearGradient(gx0,gy0,gx1,gy1);
-    tg.addColorStop(0,"#0a1525"); 
-    tg.addColorStop(0.22,"#1c3a2a"); 
-    tg.addColorStop(0.40,"#5a3010"); 
-    tg.addColorStop(0.55,"#c9933a"); 
-    tg.addColorStop(0.68,"#e8c87a"); 
-    tg.addColorStop(0.80,"#7ecfb3"); 
+    tg.addColorStop(0,"#0a1525");
+    tg.addColorStop(0.22,"#1c3a2a");
+    tg.addColorStop(0.40,"#5a3010");
+    tg.addColorStop(0.55,"#c9933a");
+    tg.addColorStop(0.68,"#e8c87a");
+    tg.addColorStop(0.80,"#7ecfb3");
     tg.addColorStop(1,"#0a1525");
-    ctx.beginPath(); 
-    ctx.arc(0,0,Ro,0,Math.PI*2); 
+    ctx.beginPath();
+    ctx.arc(0,0,Ro,0,Math.PI*2);
     ctx.arc(0,0,Ri,0,Math.PI*2,true);
-    ctx.fillStyle=tg; 
-    ctx.shadowColor="rgba(201,147,58,0.4)"; 
-    ctx.shadowBlur=36; ctx.fill("evenodd"); 
+    ctx.fillStyle=tg;
+    ctx.shadowColor="rgba(201,147,58,0.4)";
+    ctx.shadowBlur=36;
+    ctx.fill("evenodd");
     ctx.shadowBlur=0;
     const hd=ctx.createRadialGradient(0,0,Ri*0.65,0,0,Ri);
-    hd.addColorStop(0,"rgba(4,10,20,0.82)"); 
-    hd.addColorStop(0.6,"rgba(4,10,20,0.45)"); 
+    hd.addColorStop(0,"rgba(4,10,20,0.82)");
+    hd.addColorStop(0.6,"rgba(4,10,20,0.45)");
     hd.addColorStop(1,"rgba(4,10,20,0.0)");
-    ctx.beginPath(); 
-    ctx.arc(0,0,Ri,0,Math.PI*2); 
-    ctx.fillStyle=hd; 
+    ctx.beginPath();
+    ctx.arc(0,0,Ri,0,Math.PI*2);
+    ctx.fillStyle=hd;
     ctx.fill();
-    ctx.beginPath(); 
-    ctx.arc(0,0,Ro,0,Math.PI*2); 
-    ctx.strokeStyle="#d4a44a"; 
-    ctx.lineWidth=2.8; 
-    ctx.shadowColor="rgba(212,164,74,0.6)"; 
-    ctx.shadowBlur=18; 
-    ctx.stroke(); 
+    ctx.beginPath();
+    ctx.arc(0,0,Ro,0,Math.PI*2);
+    ctx.strokeStyle="#d4a44a";
+    ctx.lineWidth=2.8;
+    ctx.shadowColor="rgba(212,164,74,0.6)";
+    ctx.shadowBlur=18;
+    ctx.stroke();
     ctx.shadowBlur=0;
-    ctx.beginPath(); 
-    ctx.arc(0,0,Ri,0,Math.PI*2); 
-    ctx.strokeStyle="rgba(126,207,179,0.38)"; 
-    ctx.lineWidth=1.8; 
-    ctx.shadowColor="rgba(126,207,179,0.25)"; 
-    ctx.shadowBlur=10; ctx.stroke(); 
+    ctx.beginPath();
+    ctx.arc(0,0,Ri,0,Math.PI*2);
+    ctx.strokeStyle="rgba(126,207,179,0.38)";
+    ctx.lineWidth=1.8;
+    ctx.shadowColor="rgba(126,207,179,0.25)";
+    ctx.shadowBlur=10;
+    ctx.stroke();
     ctx.shadowBlur=0;
     const shimStart=this.torusAngle-Math.PI*0.35, shimEnd=this.torusAngle+Math.PI*0.35;
-    ctx.beginPath(); 
-    ctx.arc(0,0,Rm+r*0.3,shimStart,shimEnd); 
-    ctx.arc(0,0,Rm-r*0.3,shimEnd,shimStart,true); 
+    ctx.beginPath();
+    ctx.arc(0,0,Rm+r*0.3,shimStart,shimEnd);
+    ctx.arc(0,0,Rm-r*0.3,shimEnd,shimStart,true);
     ctx.closePath();
     const sg=ctx.createLinearGradient(Math.cos(this.torusAngle)*(Rm-r*0.3),Math.sin(this.torusAngle)*(Rm-r*0.3),Math.cos(this.torusAngle)*(Rm+r*0.3),Math.sin(this.torusAngle)*(Rm+r*0.3));
-    sg.addColorStop(0,"rgba(255,255,255,0.0)"); 
-    sg.addColorStop(0.4,"rgba(255,240,200,0.18)"); 
-    sg.addColorStop(0.7,"rgba(200,240,255,0.22)"); 
+    sg.addColorStop(0,"rgba(255,255,255,0.0)");
+    sg.addColorStop(0.4,"rgba(255,240,200,0.18)");
+    sg.addColorStop(0.7,"rgba(200,240,255,0.22)");
     sg.addColorStop(1,"rgba(255,255,255,0.0)");
-    ctx.fillStyle=sg; 
+    ctx.fillStyle=sg;
     ctx.fill();
     const sx=Math.cos(this.torusAngle)*Ro, sy=Math.sin(this.torusAngle)*Ro;
     const spec=ctx.createRadialGradient(sx,sy,0,sx,sy,r*1.8);
-    spec.addColorStop(0,"rgba(255,250,230,0.95)"); 
-    spec.addColorStop(0.3,"rgba(245,215,140,0.55)"); 
+    spec.addColorStop(0,"rgba(255,250,230,0.95)");
+    spec.addColorStop(0.3,"rgba(245,215,140,0.55)");
     spec.addColorStop(1,"rgba(0,0,0,0)");
-    ctx.fillStyle=spec; 
-    ctx.beginPath(); 
-    ctx.arc(sx,sy,r*1.8,0,Math.PI*2); 
+    ctx.fillStyle=spec;
+    ctx.beginPath();
+    ctx.arc(sx,sy,r*1.8,0,Math.PI*2);
     ctx.fill();
     const sx2=Math.cos(this.torusAngle+Math.PI*0.18)*Ri, sy2=Math.sin(this.torusAngle+Math.PI*0.18)*Ri;
     const spec2=ctx.createRadialGradient(sx2,sy2,0,sx2,sy2,r*1.2);
-    spec2.addColorStop(0,"rgba(180,255,230,0.55)"); 
-    spec2.addColorStop(0.5,"rgba(126,207,179,0.2)"); 
+    spec2.addColorStop(0,"rgba(180,255,230,0.55)");
+    spec2.addColorStop(0.5,"rgba(126,207,179,0.2)");
     spec2.addColorStop(1,"rgba(0,0,0,0)");
-    ctx.fillStyle=spec2; 
-    ctx.beginPath(); 
-    ctx.arc(sx2,sy2,r*1.2,0,Math.PI*2); 
+    ctx.fillStyle=spec2;
+    ctx.beginPath();
+    ctx.arc(sx2,sy2,r*1.2,0,Math.PI*2);
     ctx.fill();
     ctx.restore();
   },
@@ -1325,10 +1968,11 @@ FINGER_UPDATE_INTERVAL: 33,
       if (h === "subtle" && isVisC) ha = 0.07;
       const hc = isVisC ? `rgba(109,232,180,${ha})` : isVisW ? `rgba(232,124,109,${ha})` : `rgba(140,180,220,${ha})`;
       const grd = ctx.createRadialGradient(note.x,note.y,r*0.2,note.x,note.y,r*1.4);
-      grd.addColorStop(0,hc); grd.addColorStop(1,"rgba(0,0,0,0)");
-      ctx.fillStyle=grd; 
-      ctx.beginPath(); 
-      ctx.arc(note.x,note.y,r*1.4,0,Math.PI*2); 
+      grd.addColorStop(0,hc);
+      grd.addColorStop(1,"rgba(0,0,0,0)");
+      ctx.fillStyle=grd;
+      ctx.beginPath();
+      ctx.arc(note.x,note.y,r*1.4,0,Math.PI*2);
       ctx.fill();
     }
     let bodyFill, rimColor, shadowCol;
@@ -1339,32 +1983,32 @@ FINGER_UPDATE_INTERVAL: 33,
       rimColor  = `rgba(${Math.round(100+vis.shimmerAmt*80)},${Math.round(160+vis.shimmerAmt*40)},${Math.round(200+vis.shimmerAmt*30)},${0.55+vis.shimmerAmt*0.35})`;
       shadowCol = `rgba(90,150,200,${0.25+vis.shimmerAmt*0.2})`;
     }
-    ctx.shadowColor=shadowCol; 
+    ctx.shadowColor=shadowCol;
     ctx.shadowBlur=20;
-    ctx.beginPath(); 
-    ctx.arc(note.x,note.y,r,0,Math.PI*2); 
-    ctx.fillStyle=bodyFill; 
+    ctx.beginPath();
+    ctx.arc(note.x,note.y,r,0,Math.PI*2);
+    ctx.fillStyle=bodyFill;
     ctx.fill();
-    ctx.strokeStyle=rimColor; 
-    ctx.lineWidth=2.5; 
-    ctx.stroke(); 
+    ctx.strokeStyle=rimColor;
+    ctx.lineWidth=2.5;
+    ctx.stroke();
     ctx.shadowBlur=0;
-    ctx.beginPath(); 
+    ctx.beginPath();
     ctx.arc(note.x-r*0.27,note.y-r*0.27,r*0.20,0,Math.PI*2);
-    ctx.fillStyle = isVisC && h !== "subtle" ? "rgba(200,255,230,0.30)" : "rgba(200,230,255,0.22)"; 
+    ctx.fillStyle = isVisC && h !== "subtle" ? "rgba(200,255,230,0.30)" : "rgba(200,230,255,0.22)";
     ctx.fill();
     if (h === "subtle" && !isC) {
-      ctx.globalAlpha=0.18; 
+      ctx.globalAlpha=0.18;
       ctx.fillStyle="#aac8e0";
       ctx.font=`bold ${Math.round(r*0.42)}px 'Trebuchet MS', sans-serif`;
-      ctx.textAlign="center"; 
+      ctx.textAlign="center";
       ctx.textBaseline="middle";
-      ctx.fillText("?",note.x,note.y-r*0.55); 
+      ctx.fillText("?",note.x,note.y-r*0.55);
       ctx.globalAlpha=1;
     }
-    ctx.fillStyle=this.C.noteText; 
+    ctx.fillStyle=this.C.noteText;
     ctx.font=`bold ${Math.round(r*0.72)}px 'Trebuchet MS', sans-serif`;
-    ctx.textAlign="center"; 
+    ctx.textAlign="center";
     ctx.textBaseline="middle";
     ctx.fillText(note.value,note.x,note.y);
     ctx.restore();
@@ -1426,16 +2070,16 @@ FINGER_UPDATE_INTERVAL: 33,
       const p=this.popEffects[i]; p.life+=0.025;
       if (p.life>=1) { this.popEffects.splice(i,1); continue; }
       const ease=1-Math.pow(1-p.life,2), alpha=Math.max(0,1-ease), scale=1+ease*0.5;
-      ctx.save(); 
-      ctx.globalAlpha=alpha; 
-      ctx.translate(p.x,p.y); 
+      ctx.save();
+      ctx.globalAlpha=alpha;
+      ctx.translate(p.x,p.y);
       ctx.scale(scale,scale);
-      ctx.fillStyle=p.color; 
-      ctx.shadowColor=p.color; 
+      ctx.fillStyle=p.color;
+      ctx.shadowColor=p.color;
       ctx.shadowBlur=16;
-      ctx.beginPath(); 
-      ctx.arc(0,0,32,0,Math.PI*2); 
-      ctx.fill(); 
+      ctx.beginPath();
+      ctx.arc(0,0,32,0,Math.PI*2);
+      ctx.fill();
       ctx.restore();
     }
   },
@@ -1453,16 +2097,17 @@ FINGER_UPDATE_INTERVAL: 33,
       if (this.lastHitType==="CORRECT") color=this.C.correct;
       else if (this.lastHitType==="WRONG") color=this.C.wrong;
       else if (this.lastHitType.includes("SKIPPED")) color=this.C.gold;
-      ctx.save(); 
-      ctx.globalAlpha=alpha; 
+      ctx.save();
+      ctx.globalAlpha=alpha;
       ctx.fillStyle=color;
-      ctx.font="bold 34px 'Trebuchet MS', sans-serif"; 
-      ctx.textAlign="center"; 
+      ctx.font="bold 34px 'Trebuchet MS', sans-serif";
+      ctx.textAlign="center";
       ctx.textBaseline="middle";
       ctx.shadowColor=color;
-       ctx.shadowBlur=18;
+      ctx.shadowBlur=18;
       ctx.fillText(this.lastHitType, this.centerX, this.centerY-130);
-      ctx.restore(); this.hitTextTimer--;
+      ctx.restore();
+      this.hitTextTimer--;
     }
   },
 
@@ -1484,16 +2129,16 @@ FINGER_UPDATE_INTERVAL: 33,
   },
 
   _resetLauncherState() {
-    this.notes=[]; 
-    this.explosions=[]; 
-    this.combo=0; 
+    this.notes=[];
+    this.explosions=[];
+    this.combo=0;
     this.multiplier=1;
-    this.cannonAngle=0; 
+    this.cannonAngle=0;
     this.cannonTargetAngle=0;
-    this.pendingShot=null; 
-    this.previewCannons=[]; 
+    this.pendingShot=null;
+    this.previewCannons=[];
     this.previewTimer=0;
-    this.skipAmount=this.getRandomSkip(); 
+    this.skipAmount=this.getRandomSkip();
     this.noteSpeed=this.speedCap;
     this._restartSpawnTimer();
   },
@@ -1506,7 +2151,7 @@ FINGER_UPDATE_INTERVAL: 33,
     const num=this.currentNumber++;
     if (this.currentNumber>this.maxNumber) this.currentNumber=1;
     this.pendingShot={angle,speed:this.noteSpeed,value:num,id:num};
-    this.cannonTargetAngle=angle+Math.PI/2; 
+    this.cannonTargetAngle=angle+Math.PI/2;
     this.startCharging();
   },
 
@@ -1535,34 +2180,34 @@ FINGER_UPDATE_INTERVAL: 33,
     diff=Math.atan2(Math.sin(diff),Math.cos(diff));
     this.cannonAngle+=diff*0.18;
     if (this.pendingShot && Math.abs(diff)<0.05) this.fireCannon();
-    ctx.save(); 
-    ctx.translate(this.centerX,this.centerY); 
+    ctx.save();
+    ctx.translate(this.centerX,this.centerY);
     ctx.rotate(this.cannonAngle);
     const bg=ctx.createRadialGradient(0,0,size*0.1,0,0,size*0.6);
-    bg.addColorStop(0,"#2a4a6e"); 
+    bg.addColorStop(0,"#2a4a6e");
     bg.addColorStop(1,"#152035");
     ctx.beginPath();
     ctx.arc(0,0,size*0.6,0,Math.PI*2);
-    ctx.fillStyle=bg; 
-    ctx.shadowColor=this.C.accent; 
-    ctx.shadowBlur=18; 
+    ctx.fillStyle=bg;
+    ctx.shadowColor=this.C.accent;
+    ctx.shadowBlur=18;
     ctx.fill();
-     ctx.shadowBlur=0;
+    ctx.shadowBlur=0;
     ctx.fillStyle="#3a6080";
     ctx.beginPath();
     const bx=-size*0.13,by=-this.cannonLength,bw=size*0.26,bh=this.cannonLength;
-    ctx.moveTo(bx+6,by); 
-    ctx.lineTo(bx+bw-6,by); 
+    ctx.moveTo(bx+6,by);
+    ctx.lineTo(bx+bw-6,by);
     ctx.quadraticCurveTo(bx+bw,by,bx+bw,by+6);
-    ctx.lineTo(bx+bw,by+bh); 
-    ctx.lineTo(bx,by+bh); 
-    ctx.lineTo(bx,by+6); 
-    ctx.quadraticCurveTo(bx,by,bx+6,by); 
-    ctx.closePath(); 
+    ctx.lineTo(bx+bw,by+bh);
+    ctx.lineTo(bx,by+bh);
+    ctx.lineTo(bx,by+6);
+    ctx.quadraticCurveTo(bx,by,bx+6,by);
+    ctx.closePath();
     ctx.fill();
-    ctx.strokeStyle=this.C.accent; 
-    ctx.lineWidth=1.5; 
-    ctx.stroke(); 
+    ctx.strokeStyle=this.C.accent;
+    ctx.lineWidth=1.5;
+    ctx.stroke();
     ctx.restore();
   },
 
@@ -1570,9 +2215,9 @@ FINGER_UPDATE_INTERVAL: 33,
     if (!this.pendingShot) return;
     const {angle,speed,value,id}=this.pendingShot;
     this.notes.push({x:this.centerX,y:this.centerY,radius:this.baseOuterRadius*0.12,value,id:id||value,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,spawnProtected:true});
-    this.pendingShot=null; 
-    this.isCharging=false; 
-    this.charge=0; 
+    this.pendingShot=null;
+    this.isCharging=false;
+    this.charge=0;
     this.chargeParticles=[];
   },
 
@@ -1594,23 +2239,23 @@ FINGER_UPDATE_INTERVAL: 33,
     let diff=this.orbTargetAngle-this.orbAngle;
     diff=Math.atan2(Math.sin(diff),Math.cos(diff)); this.orbAngle+=diff*0.18;
     ctx.save();
-    ctx.translate(this.centerX,this.centerY); 
+    ctx.translate(this.centerX,this.centerY);
     ctx.rotate(this.orbAngle);
     if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth>0) {
       const img=this.orbImage,sc=sz/Math.max(img.width,img.height);
-      ctx.scale(1,-1); 
+      ctx.scale(1,-1);
       ctx.drawImage(img,-img.width*sc/2,-img.height*sc/2,img.width*sc,img.height*sc);
     } else {
       const g=ctx.createRadialGradient(0,0,0,0,0,sz/2);
-      g.addColorStop(0,"#8ecae6"); 
-      g.addColorStop(0.55,"#1a3a5c"); 
+      g.addColorStop(0,"#8ecae6");
+      g.addColorStop(0.55,"#1a3a5c");
       g.addColorStop(1,"rgba(14,30,50,0)");
-      ctx.fillStyle=g; 
-      ctx.shadowColor=this.C.accent; 
+      ctx.fillStyle=g;
+      ctx.shadowColor=this.C.accent;
       ctx.shadowBlur=28;
-      ctx.beginPath(); 
-      ctx.arc(0,0,sz/2,0,Math.PI*2); 
-      ctx.fill(); 
+      ctx.beginPath();
+      ctx.arc(0,0,sz/2,0,Math.PI*2);
+      ctx.fill();
       ctx.shadowBlur=0;
     }
     ctx.restore();
@@ -1628,40 +2273,41 @@ FINGER_UPDATE_INTERVAL: 33,
   drawTripleCannons(ctx) {
     const sz=this.baseOuterRadius*0.6;
     let diff=this.tripleTargetAngle-this.tripleBaseAngle;
-    diff=Math.atan2(Math.sin(diff),Math.cos(diff)); 
+    diff=Math.atan2(Math.sin(diff),Math.cos(diff));
     this.tripleBaseAngle+=diff*0.18;
     if (this.pendingShot && this.previewTimer<=0 && this.previewCannons.length===0 && Math.abs(diff)<0.05) this.fireTriple();
     for (let i=0;i<this.tripleCannons.length;i++) {
       const cannon=this.tripleCannons[i], angle=this.tripleBaseAngle+cannon.offset;
-      ctx.save(); 
-      ctx.translate(this.centerX,this.centerY); 
+      ctx.save();
+      ctx.translate(this.centerX,this.centerY);
       ctx.rotate(angle);
       if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth>0) {
         const img=this.orbImage,sc=sz/Math.max(img.width,img.height);
-        ctx.scale(1,-1); 
+        ctx.scale(1,-1);
         ctx.drawImage(img,-img.width*sc/2,-img.height*sc/2,img.width*sc,img.height*sc);
       } else {
         const g=ctx.createRadialGradient(0,0,0,0,0,sz/2);
-        g.addColorStop(0,"#8ecae6"); 
+        g.addColorStop(0,"#8ecae6");
         g.addColorStop(1,"rgba(14,30,50,0)");
-        ctx.fillStyle=g; 
-        ctx.beginPath(); 
-        ctx.arc(0,0,sz*0.8,0,Math.PI*2*0.8); 
+        ctx.fillStyle=g;
+        ctx.beginPath();
+        ctx.arc(0,0,sz*0.8,0,Math.PI*2*0.8);
         ctx.fill();
       }
       if (this.previewCannons.includes(i) && this.previewTimer>0) {
         const pulse=0.8+Math.sin(Date.now()*0.01)*0.2, miniR=sz*0.18, offY=-sz*0.6;
-        ctx.save(); 
-        ctx.globalCompositeOperation="lighter"; ctx.scale(1,-1);
+        ctx.save();
+        ctx.globalCompositeOperation="lighter";
+        ctx.scale(1,-1);
         const g2=ctx.createRadialGradient(0,offY,0,0,offY,miniR);
-        g2.addColorStop(0,"rgba(245,200,66,1)"); 
-        g2.addColorStop(0.4,"rgba(245,200,66,0.55)"); 
+        g2.addColorStop(0,"rgba(245,200,66,1)");
+        g2.addColorStop(0.4,"rgba(245,200,66,0.55)");
         g2.addColorStop(1,"rgba(245,200,66,0)");
-        ctx.fillStyle=g2; 
-        ctx.beginPath(); 
+        ctx.fillStyle=g2;
+        ctx.beginPath();
         ctx.arc(0,offY,miniR*pulse,0,Math.PI*2);
-         ctx.fill(); 
-         ctx.restore();
+        ctx.fill();
+        ctx.restore();
       }
       ctx.restore();
     }
@@ -1699,14 +2345,14 @@ FINGER_UPDATE_INTERVAL: 33,
     if (Math.sqrt(dx*dx+dy*dy)>this.launcherSafeRadius) note.spawnProtected=false;
   },
   drawLauncherZone(ctx) {
-    ctx.save(); 
-    ctx.setLineDash([6,9]); 
-    ctx.strokeStyle="rgba(140,180,220,0.18)"; 
+    ctx.save();
+    ctx.setLineDash([6,9]);
+    ctx.strokeStyle="rgba(140,180,220,0.18)";
     ctx.lineWidth=2;
-    ctx.beginPath(); 
-    ctx.arc(this.centerX,this.centerY,this.launcherSafeRadius,0,Math.PI*2); 
+    ctx.beginPath();
+    ctx.arc(this.centerX,this.centerY,this.launcherSafeRadius,0,Math.PI*2);
     ctx.stroke();
-    ctx.setLineDash([]); 
+    ctx.setLineDash([]);
     ctx.restore();
   },
   startCharging() { this.charge=0; this.isCharging=true; this.chargeParticles=[]; },
@@ -1719,34 +2365,34 @@ FINGER_UPDATE_INTERVAL: 33,
     }
     for (let i=this.chargeParticles.length-1; i>=0; i--) {
       const p=this.chargeParticles[i];
-      p.x+=(this.centerX-p.x)*0.08; 
+      p.x+=(this.centerX-p.x)*0.08;
       p.y+=(this.centerY-p.y)*0.08;
-      p.life-=dt*1.2; 
+      p.life-=dt*1.2;
       if (p.life<=0) this.chargeParticles.splice(i,1);
     }
   },
   drawCharging(ctx) {
     if (!this.isCharging) return;
-    ctx.save(); 
+    ctx.save();
     ctx.globalCompositeOperation="lighter";
     for (const p of this.chargeParticles) {
       ctx.globalAlpha=p.life*0.7;
-       ctx.fillStyle=this.C.gold; 
-       ctx.shadowColor=this.C.gold; 
-       ctx.shadowBlur=12;
-      ctx.beginPath(); 
-      ctx.arc(p.x,p.y,5,0,Math.PI*2); 
+      ctx.fillStyle=this.C.gold;
+      ctx.shadowColor=this.C.gold;
+      ctx.shadowBlur=12;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,5,0,Math.PI*2);
       ctx.fill();
     }
     ctx.restore();
     const gr=this.baseOuterRadius*0.18*(0.5+this.charge*0.8);
     const g=ctx.createRadialGradient(this.centerX,this.centerY,0,this.centerX,this.centerY,gr);
-    g.addColorStop(0,`rgba(245,200,66,${0.65*this.charge})`); 
+    g.addColorStop(0,`rgba(245,200,66,${0.65*this.charge})`);
     g.addColorStop(1,"rgba(245,200,66,0)");
-    ctx.fillStyle=g; 
-    ctx.beginPath(); 
+    ctx.fillStyle=g;
+    ctx.beginPath();
     ctx.arc(this.centerX,this.centerY,gr,0,Math.PI*2);
-     ctx.fill();
+    ctx.fill();
   },
 
   /* ── Explosions ──────────────────────────────────────────── */
@@ -1763,14 +2409,14 @@ FINGER_UPDATE_INTERVAL: 33,
       if (p.life>=1) { this.explosions.splice(i,1); continue; }
       p.x+=p.vx*0.016; p.y+=p.vy*0.016;
       const alpha=Math.max(0,1-p.life);
-      ctx.save(); 
+      ctx.save();
       ctx.globalAlpha=alpha;
-       ctx.fillStyle=p.color; 
-       ctx.shadowColor=p.color;
-        ctx.shadowBlur=10;
-      ctx.beginPath(); 
-      ctx.arc(p.x,p.y,this.baseOuterRadius*0.038,0,Math.PI*2); 
-      ctx.fill(); 
+      ctx.fillStyle=p.color;
+      ctx.shadowColor=p.color;
+      ctx.shadowBlur=10;
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,this.baseOuterRadius*0.038,0,Math.PI*2);
+      ctx.fill();
       ctx.restore();
     }
   },
@@ -1781,34 +2427,33 @@ FINGER_UPDATE_INTERVAL: 33,
     return w[Math.floor(Math.random()*w.length)];
   },
 
-  /* fullReset is only for absolute emergencies — normal resize
-     calls _onResize() which never touches score/combo/lives     */
   fullReset() {
-    this.notes=[]; 
-    this.popEffects=[]; 
-    this.explosions=[]; 
+    this.notes=[];
+    this.popEffects=[];
+    this.explosions=[];
     this.missQueue=[];
-    this.currentNumber=1; 
-    this.score=0; 
-    this.combo=0; 
+    this.currentNumber=1;
+    this.score=0;
+    this.combo=0;
     this.multiplier=1;
-    this.xp=0; 
-    this.level=1; 
-    this.xpToNext=8; 
+    this.xp=0;
+    this.level=1;
+    this.xpToNext=8;
     this.tier=0;
     this.noteSpeed=this.speedCap;
-     this.hintState="full";
-      this.noiseTime=0;
+    this.hintState="full";
+    this.noiseTime=0;
     this.spawnInterval=1800;
-    this.pendingShot=null; 
+    this.pendingShot=null;
     this.previewCannons=[];
-     this.previewTimer=0;
-    this.isCharging=false; 
-    this.charge=0; 
+    this.previewTimer=0;
+    this.isCharging=false;
+    this.charge=0;
     this.chargeParticles=[];
-    this.torusAngle=0; 
+    this.torusAngle=0;
     this.pulseTime=0;
-    this.skipAmount=this.getRandomSkip(); 
+    this._spriteFrame=0;
+    this.skipAmount=this.getRandomSkip();
     this.gameTitle="SKIP "+this.skipAmount;
     this._restartSpawnTimer();
   },

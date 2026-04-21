@@ -89,7 +89,7 @@ const Game9 = {
 
   // Finger update throttling (Game9 only)
 _lastFingerUpdateTime: 0,
-FINGER_UPDATE_INTERVAL: 22, // ~45 FPS
+FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
 
 
 loading: true,
@@ -216,16 +216,25 @@ assetsLoaded: 0,
 
     // Dreamy background (matches game exactly)
     const g = ctx.createLinearGradient(0, 0, 0, H);
-    g.addColorStop(0, "#60A5FA"); g.addColorStop(0.5, "#A78BFA"); g.addColorStop(1, "#F472B6");
-    ctx.globalAlpha = alpha; ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    g.addColorStop(0, "#60A5FA"); 
+    g.addColorStop(0.5, "#A78BFA"); 
+    g.addColorStop(1, "#F472B6");
+    ctx.globalAlpha = alpha; 
+    ctx.fillStyle = g; 
+    ctx.fillRect(0, 0, W, H);
     const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, W*0.6);
-    glow.addColorStop(0,"rgba(255,255,255,0.14)"); glow.addColorStop(1,"rgba(255,255,255,0)");
-    ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+    glow.addColorStop(0,"rgba(255,255,255,0.14)");
+     glow.addColorStop(1,"rgba(255,255,255,0)");
+    ctx.fillStyle = glow; 
+    ctx.fillRect(0, 0, W, H);
     // Stars
     for (const s of this._tutStars) {
       s.tw += s.ts;
       ctx.globalAlpha = alpha * Math.max(0, s.a + Math.sin(s.tw)*0.12);
-      ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill();
+      ctx.fillStyle = "#ffffff";
+       ctx.beginPath(); 
+       ctx.arc(s.x,s.y,s.r,0,Math.PI*2); 
+       ctx.fill();
     }
     ctx.globalAlpha = alpha;
 
@@ -234,21 +243,35 @@ assetsLoaded: 0,
     const cardW  = Math.min(W-32, isMob?360:700);
     const cardH  = Math.min(H-60, isMob?580:540);
     const cardX  = cx - cardW/2, cardY = cy - cardH/2, cR = 20;
-    const hr = s => { const h=(s||"").replace("#",""); const r=parseInt(h.slice(0,2),16),g2=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16); return isNaN(r)?"160,120,252":`${r},${g2},${b}`; };
+    const hr = s => { const h=(s||"").replace("#","");
+       const r=parseInt(h.slice(0,2),16),g2=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16);
+        return isNaN(r)?"160,120,252":`${r},${g2},${b}`; };
 
     // Card
-    ctx.shadowColor = tColor; ctx.shadowBlur = 28;
+    ctx.shadowColor = tColor;
+    ctx.shadowBlur = 28;
     ctx.fillStyle = "rgba(30,10,55,0.92)";
-    ctx.beginPath(); ctx.roundRect(cardX,cardY,cardW,cardH,cR); ctx.fill(); ctx.shadowBlur=0;
-    ctx.strokeStyle=`rgba(${hr(tColor)},0.45)`; ctx.lineWidth=1.5; ctx.stroke();
+    ctx.beginPath(); 
+    ctx.roundRect(cardX,cardY,cardW,cardH,cR); 
+    ctx.fill(); 
+    ctx.shadowBlur=0;
+    ctx.strokeStyle=`rgba(${hr(tColor)},0.45)`; 
+    ctx.lineWidth=1.5; 
+    ctx.stroke();
     ctx.fillStyle=`rgba(${hr(tColor)},0.16)`;
-    ctx.beginPath(); ctx.roundRect(cardX,cardY,cardW,56,[cR,cR,0,0]); ctx.fill();
+    ctx.beginPath(); 
+    ctx.roundRect(cardX,cardY,cardW,56,[cR,cR,0,0]);
+     ctx.fill();
 
     // Header
     ctx.font=`bold ${isMob?22:28}px 'Comic Sans MS', cursive`;
-    ctx.fillStyle=tColor; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.shadowColor=tColor; ctx.shadowBlur=14;
-    ctx.fillText("🏠  ORDINAL EXPRESS", cx, cardY+28); ctx.shadowBlur=0;
+    ctx.fillStyle=tColor; 
+    ctx.textAlign="center"; 
+    ctx.textBaseline="middle";
+    ctx.shadowColor=tColor; 
+    ctx.shadowBlur=14;
+    ctx.fillText("🏠  ORDINAL EXPRESS", cx, cardY+28);
+     ctx.shadowBlur=0;
     ctx.font=`${isMob?12:14}px 'Comic Sans MS', cursive`;
     ctx.fillStyle="rgba(255,255,255,0.68)";
     ctx.fillText("Like a delivery game — carry the number to the right ordinal door!", cx, cardY+58);
@@ -258,8 +281,12 @@ assetsLoaded: 0,
     const visW=isMob?cardW-24:cardW*0.42;
     const visH=isMob?140:cardH-200;
     ctx.fillStyle="rgba(20,5,45,0.7)";
-    ctx.beginPath(); ctx.roundRect(visX,visY,visW,visH,12); ctx.fill();
-    ctx.strokeStyle=`rgba(${hr(tColor)},0.14)`; ctx.lineWidth=1; ctx.stroke();
+    ctx.beginPath(); 
+    ctx.roundRect(visX,visY,visW,visH,12); 
+    ctx.fill();
+    ctx.strokeStyle=`rgba(${hr(tColor)},0.14)`; 
+    ctx.lineWidth=1; 
+    ctx.stroke();
     this._drawTutVisual(ctx, visX, visY, visW, visH, this._tutOrbT);
 
     // Rules
@@ -278,19 +305,28 @@ assetsLoaded: 0,
       const prog=Math.max(0,Math.min(1,(this._tutEnterAnim-i*0.08)/0.6));
       ctx.globalAlpha=alpha*(1-Math.pow(1-prog,3));
       ctx.fillStyle=i%2===0?"rgba(40,10,80,0.55)":"rgba(25,5,50,0.4)";
-      ctx.beginPath(); ctx.roundRect(rulesX,rulesY+i*rowH,rulesW,rowH-4,8); ctx.fill();
-      ctx.font=`${isMob?15:17}px 'Comic Sans MS', cursive`; ctx.fillStyle="#ffffff";
-      ctx.textAlign="left"; ctx.textBaseline="middle";
+      ctx.beginPath(); 
+      ctx.roundRect(rulesX,rulesY+i*rowH,rulesW,rowH-4,8); 
+      ctx.fill();
+      ctx.font=`${isMob?15:17}px 'Comic Sans MS', cursive`; 
+      ctx.fillStyle="#ffffff";
+      ctx.textAlign="left"; 
+      ctx.textBaseline="middle";
       ctx.fillText(rules[i].icon, rulesX+10, rulesY+i*rowH+rowH/2-2);
-      ctx.font=`${isMob?11:13}px 'Comic Sans MS', cursive`; ctx.fillStyle="rgba(255,255,255,0.85)";
+      ctx.font=`${isMob?11:13}px 'Comic Sans MS', cursive`;
+      ctx.fillStyle="rgba(255,255,255,0.85)";
       ctx.fillText(rules[i].text, rulesX+36, rulesY+i*rowH+rowH/2-2);
     }
     ctx.globalAlpha = alpha;
 
     // Hold section
     const holdY=cardY+cardH-(isMob?82:86);
-    ctx.strokeStyle="rgba(253,224,71,0.18)"; ctx.lineWidth=1;
-    ctx.beginPath(); ctx.moveTo(cardX+20,holdY-6); ctx.lineTo(cardX+cardW-20,holdY-6); ctx.stroke();
+    ctx.strokeStyle="rgba(253,224,71,0.18)";
+     ctx.lineWidth=1;
+    ctx.beginPath(); 
+    ctx.moveTo(cardX+20,holdY-6);
+     ctx.lineTo(cardX+cardW-20,holdY-6); 
+    ctx.stroke();
 
     const hasFing = fingers.length > 0;
     if (hasFing) {
@@ -304,9 +340,12 @@ assetsLoaded: 0,
       const blink = Math.sin(this._tutPulseT*3) > 0;
       ctx.font=`bold ${isMob?13:15}px 'Comic Sans MS', cursive`;
       ctx.fillStyle=blink?"#fbbf24":"rgba(251,191,36,0.55)";
-      ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.shadowColor="#fbbf24"; ctx.shadowBlur=blink?12:0;
-      ctx.fillText("☝ Raise your finger to the camera!", cx, holdY+18); ctx.shadowBlur=0;
+      ctx.textAlign="center"; 
+      ctx.textBaseline="middle";
+      ctx.shadowColor="#fbbf24"; 
+      ctx.shadowBlur=blink?12:0;
+      ctx.fillText("☝ Raise your finger to the camera!", cx, holdY+18); 
+      ctx.shadowBlur=0;
       ctx.font=`${isMob?11:13}px 'Comic Sans MS', cursive`;
       ctx.fillStyle="rgba(253,224,71,0.65)";
       ctx.fillText("Hold still for 3 seconds to start playing", cx, holdY+40);
