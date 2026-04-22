@@ -865,25 +865,26 @@ const Game1 = {
   },
 
   /* ── Transition: tutorial → loading → playing ───────────── */
-  _startPlaying() {
-    // Move to "loading" state first — the loading screen sits on top of the
-    // canvas as a DOM overlay, so update() is a no-op during this phase.
+_startPlaying() {
+  const m = this._pendingMode || "default";
+
+  // Only use sprite loading for these modes
+  const useSprites = (m === "default" || m === "pattern");
+
+  if (useSprites) {
     this.gameState = "loading";
 
     RingSpriteSystem.init(this, () => {
-      // RingSpriteSystem hides the loading screen automatically, then calls us.
       this.gameState = "playing";
-      const m = this._pendingMode || "default";
-      switch (m) {
-        case "pattern": this.activatePatternMode();      break;
-        case "cannon":  this.activateCannonMode();       break;
-        case "orb":     this.activateOrbMode();          break;
-        case "triple":  this.activateTripleCannonMode(); break;
-        default: this._restartSpawnTimer(); break;
-      }
+      this._activateMode(m);
     });
-  },
 
+  } else {
+    // 🚀 Skip loading completely
+    this.gameState = "playing";
+    this._activateMode(m);
+  }
+},
   /* ============================================================
      TUTORIAL — stars
   ============================================================ */
@@ -2433,6 +2434,17 @@ const Game1 = {
     this.gameTitle="SKIP "+this.skipAmount;
     this._restartSpawnTimer();
   },
+
+
+  _activateMode(m) {
+  switch (m) {
+    case "pattern": this.activatePatternMode(); break;
+    case "cannon":  this.activateCannonMode(); break;
+    case "orb":     this.activateOrbMode(); break;
+    case "triple":  this.activateTripleCannonMode(); break;
+    default: this._restartSpawnTimer(); break;
+  }
+}
 };
 
 
