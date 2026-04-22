@@ -12,7 +12,7 @@
 const RingSpriteSystem = (() => {
 
   /* ── Config ──────────────────────────────────────────────── */
-  const FRAME_COUNT   =36;
+  const FRAME_COUNT   = 28;
   const DB_NAME       = "RingSpriteCache";
   const DB_VERSION    = 1;
   const STORE_NAME    = "sprites";
@@ -587,7 +587,7 @@ const Game1 = {
   spawnInterval: 1800,
 
   pulseTime: 0,
-  pulseSpeed: 1,
+  pulseSpeed: 2.2,
   pulseAmountOuter: 10,
   pulseAmountInner: 5,
   torusAngle: 0,
@@ -738,7 +738,6 @@ const Game1 = {
 
   _lastFingerUpdateTime: 0,
   FINGER_UPDATE_INTERVAL: 33,
-  _cachedFingers: [],
 
 
   /* ============================================================
@@ -1390,19 +1389,44 @@ const Game1 = {
     }
   },
 
+  _bgGradient: null,
+  _bgGradientKey: "",
+
   _drawBg(ctx) {
     const W = this.centerX * 2, H = this.centerY * 2;
-    const g = ctx.createRadialGradient(this.centerX, this.centerY * 0.6, 0, this.centerX, H * 0.5, Math.max(W, H) * 0.75);
-    g.addColorStop(0, "#1a2d4a"); g.addColorStop(0.5, "#0f1e35"); g.addColorStop(1, "#080f1c");
-    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+    // Recreate gradient only when canvas size changes
+    const key = `${W}x${H}`;
+    if (key !== this._bgGradientKey) {
+      this._bgGradientKey = key;
+      const g = ctx.createRadialGradient(this.centerX, this.centerY * 0.6, 0, this.centerX, H * 0.5, Math.max(W, H) * 0.75);
+      g.addColorStop(0, "#1a2d4a"); g.addColorStop(0.5, "#0f1e35"); g.addColorStop(1, "#080f1c");
+      this._bgGradient = g;
+    }
+    ctx.fillStyle = this._bgGradient;
+    ctx.fillRect(0, 0, W, H);
   },
 
   _drawBgStars(ctx) {
+    // Group stars by quantised alpha to minimise state changes.
+    // We bucket into 6 alpha levels; within each bucket draw one path.
+    const buckets = {};
     for (const s of this.bgStars) {
       s.tw += s.ts;
-      ctx.globalAlpha = Math.max(0, s.a + Math.sin(s.tw) * 0.12);
-      ctx.fillStyle = "#c8dff0";
-      ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+      const a = Math.max(0, s.a + Math.sin(s.tw) * 0.12);
+      // quantise to 6 levels (0.00, 0.10, 0.20, 0.30, 0.40, 0.50)
+      const key = (Math.round(a * 10) / 10).toFixed(1);
+      if (!buckets[key]) buckets[key] = [];
+      buckets[key].push(s);
+    }
+    ctx.fillStyle = "#c8dff0";
+    for (const [alpha, stars] of Object.entries(buckets)) {
+      ctx.globalAlpha = parseFloat(alpha);
+      ctx.beginPath();
+      for (const s of stars) {
+        ctx.moveTo(s.x + s.r, s.y);
+        ctx.arc(s.x, s.y, s.r, 0, 6.2832);
+      }
+      ctx.fill();
     }
     ctx.globalAlpha = 1;
   },
@@ -1442,17 +1466,29 @@ const Game1 = {
     }
   },
 
+  // Reused visual result object — avoids allocating a new object every note every frame
+  _visResult: { showCorrect: false, showWrong: false, shimmerAmt: 0 },
+
   _noteVisual(isCorrect, noteId) {
-    const h = this.hintState;
-    const t = this.noiseTime + noteId * 137.5;
-    const sh = Math.abs(Math.sin(t * 0.7));
-    if (h === "full")   return { showCorrect: isCorrect,  showWrong: !isCorrect, shimmerAmt: 0 };
-    if (h === "subtle") return { showCorrect: isCorrect,  showWrong: false,      shimmerAmt: 0 };
-    if (h === "none")   return { showCorrect: false,      showWrong: false,      shimmerAmt: 0 };
-    if (h === "decoy")  return { showCorrect: !isCorrect, showWrong: isCorrect,  shimmerAmt: 0 };
-    return { showCorrect: sh > 0.6, showWrong: sh < 0.25, shimmerAmt: sh };
+    const h  = this.hintState;
+    const v  = this._visResult;
+    if (h === "full") {
+      v.showCorrect = isCorrect; v.showWrong = !isCorrect; v.shimmerAmt = 0;
+    } else if (h === "subtle") {
+      v.showCorrect = isCorrect; v.showWrong = false;      v.shimmerAmt = 0;
+    } else if (h === "none") {
+      v.showCorrect = false;     v.showWrong = false;      v.shimmerAmt = 0;
+    } else if (h === "decoy") {
+      v.showCorrect = !isCorrect; v.showWrong = isCorrect; v.shimmerAmt = 0;
+    } else {
+      const t  = this.noiseTime + noteId * 137.5;
+      const sh = Math.abs(Math.sin(t * 0.7));
+      v.showCorrect = sh > 0.6; v.showWrong = sh < 0.25; v.shimmerAmt = sh;
+    }
+    return v;
   },
 
+  
   _triggerLevelUpBurst() {
     this.levelUpActive = true; this.levelUpTimer = this.levelUpDuration;
     this.levelUpParticles = [];
@@ -1482,16 +1518,16 @@ const Game1 = {
   _drawLevelUpBurst(ctx) {
     if (!this.levelUpActive) return;
     const prog = 1 - this.levelUpTimer / this.levelUpDuration;
+    ctx.shadowBlur = 10;
     for (const p of this.levelUpParticles) {
       ctx.globalAlpha = Math.max(0, p.life) * 0.9;
-      ctx.fillStyle = p.color;
+      ctx.fillStyle   = p.color;
       ctx.shadowColor = p.color;
-      ctx.shadowBlur = 12;
       ctx.beginPath();
-      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, p.r, 0, 6.2832);
       ctx.fill();
     }
-    ctx.shadowBlur = 0;
+    ctx.shadowBlur  = 0;
     ctx.globalAlpha = 1;
     if (prog > 0.05 && prog < 0.8) {
       const alpha = Math.sin(prog / 0.8 * Math.PI);
@@ -1671,131 +1707,69 @@ const Game1 = {
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
- update(ctx, fingers, dt = 1/60) {
-  // Tutorial state
-  if (this.gameState === "tutorial") {
-    this._updateTutorial(ctx, fingers, dt);
-    return;
-  }
-
-  // Loading state
-  if (this.gameState === "loading") {
-    return;
-  }
-
-  // ── PLAYING ──
-  this._drawBg(ctx);
-  this._drawBgStars(ctx);
-
-  this._updateLevelUp(dt);
-  this.noiseTime += dt * 1.8;
-  this._driftSpeed(dt);
-
-  const isLauncher = (
-    this.mode === "cannon" ||
-    this.mode === "orb" ||
-    this.mode === "triple"
-  );
-
-  // Rings (only default + pattern)
-  if (!isLauncher) {
-    this.drawRings(ctx, dt);
-  }
-
-  // ── MODE HANDLING ──
-  if (this.mode === "cannon") {
-    this.updateCannonNotes(ctx, dt);
-    this.drawCannon(ctx, dt);
-    this.drawExplosions(ctx);
-    this.drawLauncherZone(ctx);
-    this.drawCharging(ctx);
-    this.updateCharging(dt);
-
-  } else if (this.mode === "orb") {
-    this.updateCannonNotes(ctx, dt);
-    this.drawOrbLauncher(ctx, dt);
-    this.drawExplosions(ctx);
-    this.drawLauncherZone(ctx);
-    this.drawCharging(ctx);
-    this.updateCharging(dt);
-
-  } else if (this.mode === "triple") {
-    this.updateCannonNotes(ctx, dt);
-    this.drawTripleCannons(ctx, dt);
-    this.drawExplosions(ctx);
-    this.drawLauncherZone(ctx);
-
-  } else {
-    // Default + Pattern
-    this.drawNotes(ctx, dt);
-  }
-
-  // Triple cannon delayed shot
-  if (this.mode === "triple" && this.previewTimer > 0) {
-    this.previewTimer -= dt;
-    if (this.previewTimer <= 0) {
-      this.executeTripleShot();
+  update(ctx, fingers, dt = 1/60) {
+    // Tutorial state
+    if (this.gameState === "tutorial") {
+      this._updateTutorial(ctx, fingers, dt);
+      return;
     }
-  }
 
-  // Effects
-  this.drawPopEffects(ctx);
-
-  // ── INPUT (IMPORTANT FIX AREA) ──
-  fingers.forEach(finger => {
-    this.drawFinger(ctx, finger.x, finger.y);
-
-    if (isLauncher) {
-      this.checkCannonCollision(finger.x, finger.y);
-    } else {
-      this.checkCollision(finger.x, finger.y);
+    // Loading state — RingSpriteSystem overlay handles the visual
+    if (this.gameState === "loading") {
+      return;
     }
-  });
 
-  // UI
-  this._drawHUD(ctx, isLauncher);
-  this._drawLevelUpBurst(ctx);
-  this._drawHintChangeAnnouncement(ctx, dt);
-  this.drawHitText(ctx);
-  this._drawNoFingerPrompt(ctx, dt);
-},
+    // Playing state
+    this._drawBg(ctx);
+    this._drawBgStars(ctx);
+    this._updateLevelUp(dt);
+    this.noiseTime += dt * 1.8;
+    this._driftSpeed(dt);
+
+    const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
+    if (!isLauncher) this.drawRings(ctx, dt);
+
+    if      (this.mode === "cannon") { this.updateCannonNotes(ctx, dt); this.drawCannon(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
+    else if (this.mode === "orb")    { this.updateCannonNotes(ctx, dt); this.drawOrbLauncher(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
+    else if (this.mode === "triple") { this.updateCannonNotes(ctx, dt); this.drawTripleCannons(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); }
+    else                             { this.drawNotes(ctx, dt); }
+
+    if (this.mode === "triple" && this.previewTimer > 0) {
+      this.previewTimer -= dt;
+      if (this.previewTimer <= 0) this.executeTripleShot();
+    }
+
+    this.drawPopEffects(ctx);
+
+    fingers.forEach(finger => {
+      this.drawFinger(ctx, finger.x, finger.y);
+      if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
+      else            this.checkCollision(finger.x, finger.y);
+    });
+
+    this._drawHUD(ctx, isLauncher);
+    this._drawLevelUpBurst(ctx);
+    this._drawHintChangeAnnouncement(ctx, dt);
+    this.drawHitText(ctx);
+    this._drawNoFingerPrompt(ctx, dt);
+  },
 
   /* ── Finger ─────────────────────────────────────────────── */
   drawFinger(ctx, x, y) {
-  const outerR = this.baseOuterRadius * 0.055;
-  const innerR = this.baseOuterRadius * 0.025;
+    ctx.shadowColor = "rgba(126,207,179,0.55)";
+    ctx.shadowBlur  = 10;
+    ctx.fillStyle   = "rgba(94,180,150,0.38)";
+    ctx.beginPath();
+    ctx.arc(x, y, this.baseOuterRadius * 0.055, 0, 6.2832);
+    ctx.fill();
+    ctx.fillStyle  = "#b0f0da";
+    ctx.shadowBlur = 5;
+    ctx.beginPath();
+    ctx.arc(x, y, this.baseOuterRadius * 0.025, 0, 6.2832);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  },
 
-  ctx.save();
-
-  // Outer glow
-  ctx.beginPath();
-  ctx.arc(x, y, outerR, 0, Math.PI * 2);
-  ctx.shadowColor = "rgba(126,207,179,0.6)";
-  ctx.shadowBlur = 20;
-  ctx.fillStyle = "rgba(94,180,150,0.35)";
-  ctx.fill();
-
-  // Inner core
-  ctx.beginPath();
-  ctx.arc(x, y, innerR, 0, Math.PI * 2);
-  ctx.shadowBlur = 8;
-  ctx.fillStyle = "#b0f0da";
-  ctx.fill();
-
-  ctx.restore();
-},
-
-
-  _updateFingerCache(fingers) {
-  const now = performance.now();
-
-  if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
-    this._cachedFingers = fingers;
-    this._lastFingerUpdateTime = now;
-  }
-
-  return this._cachedFingers;
-},
   /* ============================================================
      RING DRAWING — sprite-first, procedural fallback
   ============================================================ */
@@ -1807,7 +1781,7 @@ const Game1 = {
    */
   drawRings(ctx, dt) {
     // Advance animation counters regardless of which path we take
-    this.pulseTime  += this.pulseSpeed * dt;
+    this.pulseTime  += this.pulseSpeed * dt 
     this.torusAngle  = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
 
     if (RingSpriteSystem.isReady()) {
@@ -1815,7 +1789,7 @@ const Game1 = {
          _spriteFrame accumulates at 60fps-equivalent pace.
          One full 28-frame cycle = 28/60 ≈ 0.47s, matching
          the original torusAngle rotation speed.              */
-      this._spriteFrame += dt * 10;
+      this._spriteFrame += dt * 12;
 
       // The sprite was rendered at 512×512 with Ro_base = 180.
       // Scale it so the ring matches the actual game radius.
@@ -2066,22 +2040,24 @@ const Game1 = {
 
   /* ── Pop effects ─────────────────────────────────────────── */
   drawPopEffects(ctx) {
-    for (let i = this.popEffects.length-1; i >= 0; i--) {
-      const p=this.popEffects[i]; p.life+=0.025;
-      if (p.life>=1) { this.popEffects.splice(i,1); continue; }
-      const ease=1-Math.pow(1-p.life,2), alpha=Math.max(0,1-ease), scale=1+ease*0.5;
-      ctx.save();
-      ctx.globalAlpha=alpha;
-      ctx.translate(p.x,p.y);
-      ctx.scale(scale,scale);
-      ctx.fillStyle=p.color;
-      ctx.shadowColor=p.color;
-      ctx.shadowBlur=16;
+    // Single shadow pass for all particles
+    ctx.shadowBlur = 12;
+    for (let i = this.popEffects.length - 1; i >= 0; i--) {
+      const p = this.popEffects[i];
+      p.life += 0.025;
+      if (p.life >= 1) { this.popEffects.splice(i, 1); continue; }
+      const ease  = 1 - Math.pow(1 - p.life, 2);
+      const alpha = Math.max(0, 1 - ease);
+      const scale = 1 + ease * 0.5;
+      ctx.globalAlpha  = alpha;
+      ctx.fillStyle    = p.color;
+      ctx.shadowColor  = p.color;
       ctx.beginPath();
-      ctx.arc(0,0,32,0,Math.PI*2);
+      ctx.arc(p.x, p.y, 32 * scale, 0, 6.2832);
       ctx.fill();
-      ctx.restore();
     }
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
   },
 
   /* ── Hit text ────────────────────────────────────────────── */
@@ -2404,21 +2380,21 @@ const Game1 = {
     }
   },
   drawExplosions(ctx) {
-    for (let i=this.explosions.length-1; i>=0; i--) {
-      const p=this.explosions[i]; p.life+=0.03;
-      if (p.life>=1) { this.explosions.splice(i,1); continue; }
-      p.x+=p.vx*0.016; p.y+=p.vy*0.016;
-      const alpha=Math.max(0,1-p.life);
-      ctx.save();
-      ctx.globalAlpha=alpha;
-      ctx.fillStyle=p.color;
-      ctx.shadowColor=p.color;
-      ctx.shadowBlur=10;
+    ctx.shadowBlur = 8;
+    for (let i = this.explosions.length - 1; i >= 0; i--) {
+      const p = this.explosions[i];
+      p.life += 0.03;
+      if (p.life >= 1) { this.explosions.splice(i, 1); continue; }
+      p.x += p.vx * 0.016; p.y += p.vy * 0.016;
+      ctx.globalAlpha = Math.max(0, 1 - p.life);
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color;
       ctx.beginPath();
-      ctx.arc(p.x,p.y,this.baseOuterRadius*0.038,0,Math.PI*2);
+      ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, 6.2832);
       ctx.fill();
-      ctx.restore();
     }
+    ctx.shadowBlur  = 0;
+    ctx.globalAlpha = 1;
   },
 
   /* ── Utility ─────────────────────────────────────────────── */
@@ -2458,3 +2434,7 @@ const Game1 = {
     this._restartSpawnTimer();
   },
 };
+
+
+
+
