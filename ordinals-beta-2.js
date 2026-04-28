@@ -73,11 +73,16 @@ const Game11 = {
     y: 0,
     vx: 0,
     vy: 0,
-    speed: 10,
-    maxSpeed: 10,
+    accel: 0.022,
+    maxSpeed: 1.1,
+    friction: 0.970,
     size: 140,
     carryingNumber: false
   },
+  _fingerSmoothX: null,
+  _fingerSmoothY: null,
+  _targetFingerX: null,
+  _targetFingerY: null,
 
   mascotImages: {
     idle: [],
@@ -184,8 +189,8 @@ const Game11 = {
   // 🌈 Background Evolution
   backgroundHueShift: 0,
   lastFingerUpdateTime: 0,
-  FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
-FINGER_SMOOTH: 0.2,
+  FINGER_UPDATE_INTERVAL: 16,
+  FINGER_SMOOTH: 0.85,  // Increased for almost instant finger sync
   init() {
     try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock("landscape").catch(e => console.log("Orientation lock failed:", e)); } } catch (e) { }
 
@@ -195,6 +200,10 @@ FINGER_SMOOTH: 0.2,
     this.score = 0;
     this.running = true;
     this.lastTime = performance.now();
+    this._fingerSmoothX = null;
+    this._fingerSmoothY = null;
+    this._targetFingerX = null;
+    this._targetFingerY = null;
 
     this.loadMascotSprites();
     this.loadPortalSprites();
@@ -239,6 +248,12 @@ FINGER_SMOOTH: 0.2,
         this.mascot.vy = 0;
         this.mascot.carryingNumber = false;
         this.mascotState = "idle";
+        this._fingerSmoothX = null;
+        this._fingerSmoothY = null;
+        this._targetFingerX = null;
+        this._targetFingerY = null;
+        this.fingerX = null;
+        this.fingerY = null;
 
         // 4️⃣ Reset Starfield (Randomize positions again)
         this.initStarfield();
@@ -480,25 +495,26 @@ FINGER_SMOOTH: 0.2,
     ctx.restore(); // End of screen shake
   },
 
-  updateFingerPosition(currentTime = performance.now()) {
-
-  // ⏱️ Limit updates to every 22ms (~45 FPS)
-  if (currentTime - this.lastFingerUpdateTime < 22) {
-    return;
-  }
-
-  this.lastFingerUpdateTime = currentTime;
-
-  if (!window.fingerPositions || window.fingerPositions.length === 0) {
-    this.fingerX = null;
-    this.fingerY = null;
-    return;
-  }
-
-  const finger = window.fingerPositions[0];
-  this.fingerX = finger.x;
-  this.fingerY = finger.y;
-},
+  updateFingerPosition(now = performance.now()) {
+    if (!window.fingerPositions || window.fingerPositions.length === 0) {
+      this.fingerX = null; this.fingerY = null; return;
+    }
+    const fp = window.fingerPositions[0];
+    if (this._fingerSmoothX === null) {
+      this._fingerSmoothX = fp.x; this._fingerSmoothY = fp.y;
+      this._targetFingerX = fp.x; this._targetFingerY = fp.y;
+    }
+    /* Update target every frame */
+    this._targetFingerX = fp.x;
+    this._targetFingerY = fp.y;
+    
+    /* Smooth at FINGER_SMOOTH (0.55 = fast but not jittery) */
+    this._fingerSmoothX += (this._targetFingerX - this._fingerSmoothX) * this.FINGER_SMOOTH;
+    this._fingerSmoothY += (this._targetFingerY - this._fingerSmoothY) * this.FINGER_SMOOTH;
+    
+    this.fingerX = this._fingerSmoothX;
+    this.fingerY = this._fingerSmoothY;
+  },
 
   get doorRadius() {
     return this.DOOR_RADIUS * this.scale;
@@ -727,74 +743,34 @@ FINGER_SMOOTH: 0.2,
       const dist = Math.sqrt(dx * dx + dy * dy);
 
       if (dist > 5) {
-
         this.mascot.x += dx * 0.08;
         this.mascot.y += dy * 0.08;
-
       } else {
-
         this.mode1Confirming = false;
-
         const suffixes = ["st", "nd", "rd", "th"];
-        this.mode1TargetSuffix =
-          suffixes[Math.floor(Math.random() * 4)];
-
+        this.mode1TargetSuffix = suffixes[Math.floor(Math.random() * 4)];
         this.spawnMode1Numbers();
       }
-
       return;
     }
 
     if (this.fingerX === null || this.fingerY === null) return;
 
-    /* ===== FINGER SMOOTHING FILTER ===== */
-
-    if (!this.smoothedFingerX) {
-      this.smoothedFingerX = this.fingerX;
-      this.smoothedFingerY = this.fingerY;
-    }
-
-    const smoothFactor = 0.25;
-
-    this.smoothedFingerX += (this.fingerX - this.smoothedFingerX) * smoothFactor;
-    this.smoothedFingerY += (this.fingerY - this.smoothedFingerY) * smoothFactor;
-
-    const dx = this.smoothedFingerX - this.mascot.x;
-    const dy = this.smoothedFingerY - this.mascot.y;
-
-    const distance = Math.sqrt(dx * dx + dy * dy);
-
-    /* ===== ACCELERATION MOVEMENT ===== */
-
-    if (distance > 2) {
-
-      const accel = 0.9;
-
-      this.mascot.vx += (dx / distance) * accel;
-      this.mascot.vy += (dy / distance) * accel;
-
-    }
-
-    /* ===== SPEED LIMIT ===== */
-
-    const speed = Math.sqrt(
-      this.mascot.vx * this.mascot.vx +
-      this.mascot.vy * this.mascot.vy
-    );
-
-    if (speed > this.mascot.maxSpeed) {
-
-      this.mascot.vx = (this.mascot.vx / speed) * this.mascot.maxSpeed;
-      this.mascot.vy = (this.mascot.vy / speed) * this.mascot.maxSpeed;
-    }
-
-    /* ===== FRICTION ===== */
-
-    this.mascot.vx *= 0.92;
-    this.mascot.vy *= 0.92;
-
-    this.mascot.x += this.mascot.vx;
-    this.mascot.y += this.mascot.vy;
+    /* ===== LAG-FREE SNAPPY MOVEMENT ===== */
+    const dx = this.fingerX - this.mascot.x;
+    const dy = this.fingerY - this.mascot.y;
+    
+    // Uses direct percentage-based closing (Lerp) for zero float/lag
+    // Closes 45% of distance per frame (roughly 16ms), giving buttery response
+    const followFactor = 0.45;
+    
+    this.mascot.vx = dx * followFactor;
+    this.mascot.vy = dy * followFactor;
+    
+    // Scale by delta time so logic remains frame-rate independent
+    const timeScale = delta / 16;
+    this.mascot.x += this.mascot.vx * timeScale;
+    this.mascot.y += this.mascot.vy * timeScale;
 
     /* ===== EDGE CLAMP (DYNAMIC) ===== */
 
