@@ -756,21 +756,24 @@ const Game11 = {
 
     if (this.fingerX === null || this.fingerY === null) return;
 
-    /* ===== LAG-FREE SNAPPY MOVEMENT ===== */
+    /* ===== LAG-FREE SNAPPY MOVEMENT (FRAME-SAFE) ===== */
     const dx = this.fingerX - this.mascot.x;
     const dy = this.fingerY - this.mascot.y;
     
-    // Uses direct percentage-based closing (Lerp) for zero float/lag
-    // Closes 45% of distance per frame (roughly 16ms), giving buttery response
-    const followFactor = 0.45;
+    // Clamp delta to prevent enormous physics steps when the browser/phone lags
+    const safeDelta = Math.min(delta, 50);
+    const timeScale = safeDelta / 16;
     
-    this.mascot.vx = dx * followFactor;
-    this.mascot.vy = dy * followFactor;
+    // Mathematically safe frame-independent Lerp (Lerp factor approaches 1 over time but never exceeds it)
+    // baseFollow of 0.45 means it targets closing 45% of distance in a normal 16ms frame
+    const baseFollow = 0.45;
+    const safeLerp = 1 - Math.pow(1 - baseFollow, timeScale);
     
-    // Scale by delta time so logic remains frame-rate independent
-    const timeScale = delta / 16;
-    this.mascot.x += this.mascot.vx * timeScale;
-    this.mascot.y += this.mascot.vy * timeScale;
+    this.mascot.vx = dx * safeLerp;
+    this.mascot.vy = dy * safeLerp;
+    
+    this.mascot.x += this.mascot.vx;
+    this.mascot.y += this.mascot.vy;
 
     /* ===== EDGE CLAMP (DYNAMIC) ===== */
 
