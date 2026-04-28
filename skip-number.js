@@ -12,7 +12,7 @@
 const RingSpriteSystem = (() => {
 
   /* ── Config ──────────────────────────────────────────────── */
-  const FRAME_COUNT   = 28;
+  const FRAME_COUNT   = 32;
   const DB_NAME       = "RingSpriteCache";
   const DB_VERSION    = 1;
   const STORE_NAME    = "sprites";
@@ -587,7 +587,7 @@ const Game1 = {
   spawnInterval: 1800,
 
   pulseTime: 0,
-  pulseSpeed: 2.2,
+  pulseSpeed: 1.8,
   pulseAmountOuter: 10,
   pulseAmountInner: 5,
   torusAngle: 0,
@@ -737,7 +737,7 @@ const Game1 = {
   },
 
   _lastFingerUpdateTime: 0,
-  FINGER_UPDATE_INTERVAL: 33,
+  FINGER_UPDATE_INTERVAL: 22,
 
 
   /* ============================================================
@@ -830,7 +830,7 @@ const Game1 = {
     this.baseInnerRadius    = this.baseOuterRadius * 0.8;
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
-    this.speedCap = this.baseOuterRadius * 0.3;
+    this.speedCap = this.baseOuterRadius * 0.25;
     this.speedMin = this.speedCap * 0.15;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
@@ -1742,11 +1742,24 @@ _startPlaying() {
 
     this.drawPopEffects(ctx);
 
-    fingers.forEach(finger => {
-      this.drawFinger(ctx, finger.x, finger.y);
-      if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
-      else            this.checkCollision(finger.x, finger.y);
-    });
+    // Always draw fingers (visual stays smooth)
+fingers.forEach(finger => {
+  this.drawFinger(ctx, finger.x, finger.y);
+});
+
+// Throttle collision detection to every 33ms
+const now = performance.now();
+
+if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
+  this._lastFingerUpdateTime = now;
+
+  for (let i = 0; i < fingers.length; i++) {
+    const finger = fingers[i];
+
+    if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
+    else            this.checkCollision(finger.x, finger.y);
+  }
+}
 
     this._drawHUD(ctx, isLauncher);
     this._drawLevelUpBurst(ctx);
@@ -1790,7 +1803,7 @@ _startPlaying() {
          _spriteFrame accumulates at 60fps-equivalent pace.
          One full 28-frame cycle = 28/60 ≈ 0.47s, matching
          the original torusAngle rotation speed.              */
-      this._spriteFrame += dt * 12;
+      this._spriteFrame += dt * 8;
 
       // The sprite was rendered at 512×512 with Ro_base = 180.
       // Scale it so the ring matches the actual game radius.
