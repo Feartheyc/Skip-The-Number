@@ -8,7 +8,6 @@ const sfxLevel_8 = new Audio('SFX-Bhavya/level.mp3');
 sfxLevel_8.volume = 0.5;
 
 const Game8 = {
-
   BASE_WIDTH: 1280,
   BASE_HEIGHT: 720,
   scale: 1,
@@ -41,7 +40,7 @@ const Game8 = {
   spawnRate: 2000,
   minSpawnRate: 2000,
   maxSpawnRate: 3000,
-  spawnMode: "top-bottom", // "top-bottom", "left-right", "all", "random-one"
+  spawnMode: "top-bottom", 
   modeTimer: 0,
   lastTime: performance.now(),
   shakeTimer: 0,
@@ -49,7 +48,8 @@ const Game8 = {
   pivotLockTimer: { left: 0, right: 0 },
 
   pose: null,
-  armData: { right: null },
+  // ADDITIVE: Track both hands for steering logic
+  armData: { right: null, left: null },
   armVelocity: {
     right: { vx: 0, vy: 0, last: null }
   },
@@ -71,12 +71,10 @@ const Game8 = {
     });
     this.currentMissingState = null;
     this.missingFrames = 0;
-    // initial center in CSS coordinates; resize() will recompute
     const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     this.CENTER_X = (canvasElement.width / dpr) / 2;
     this.CENTER_Y = (canvasElement.height / dpr) / 2;
 
-    // Caches and object pools must be initialized before resize() calls rebuildCaches()
     this.particlePool = [];
     this.floaterPool = [];
     if (!this.edgeZoneCanvas) this.edgeZoneCanvas = document.createElement("canvas");
@@ -109,14 +107,11 @@ const Game8 = {
 
   initPose() {
     if (this.pose) return;
-
     this.pose = new Pose({
-      locateFile: (file) =>
-        `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`
     });
 
     this.pose.setOptions({
-      // Changed from 1 to 0 to save massive amounts of CPU on low tier cellphones!
       modelComplexity: 0,
       smoothLandmarks: true,
       minDetectionConfidence: 0.5,
@@ -130,14 +125,10 @@ const Game8 = {
     window.sendFrameToPose = async (image) => {
       if (!this.running || this.poseBusy) return;
       const now = performance.now();
-      if (now - lastPoseTime < 80) return; // Max ~12 fps for pose, not 60
+      if (now - lastPoseTime < 80) return; 
       lastPoseTime = now;
       this.poseBusy = true;
-      try {
-        await this.pose.send({ image });
-      } catch (e) {
-        console.error(e);
-      }
+      try { await this.pose.send({ image }); } catch (e) { console.error(e); }
       this.poseBusy = false;
     };
   },
@@ -148,26 +139,18 @@ const Game8 = {
       state = "arm";
     } else {
       const lm = results.poseLandmarks;
-
-      const rightElbow = lm[14];
+      // Track both wrists for the steering wheel
+      const leftWrist = lm[15];
       const rightWrist = lm[16];
-      const rightIndex = lm[20];
       
       const isBad = (pt) => !pt || pt.visibility < 0.3 || pt.x < 0 || pt.x > 1 || pt.y < 0 || pt.y > 1;
       
-      const elbowBad = isBad(rightElbow);
-      const wristBad = isBad(rightWrist) || isBad(rightIndex);
-      
-      if (elbowBad && wristBad) state = "arm";
-      else if (elbowBad) state = "elbow";
-      else if (wristBad) state = "wrist";
+      if (isBad(leftWrist) || isBad(rightWrist)) state = "wrist";
     }
 
     if (state) {
       this.missingFrames = (this.missingFrames || 0) + 1;
-      if (this.missingFrames > 5) {
-        this.currentMissingState = state;
-      }
+      if (this.missingFrames > 5) this.currentMissingState = state;
     } else {
       this.missingFrames = 0;
       this.currentMissingState = null;
@@ -183,54 +166,38 @@ const Game8 = {
 
     const smooth = (oldP, newP) => {
       if (!oldP) return newP;
+      const S = 0.75; 
       return {
-        x: oldP.x * this.SMOOTH + newP.x * (1 - this.SMOOTH),
-        y: oldP.y * this.SMOOTH + newP.y * (1 - this.SMOOTH)
+        x: oldP.x * S + newP.x * (1 - S),
+        y: oldP.y * S + newP.y * (1 - S)
       };
     };
 
-    // ELBOW SPECIFIC SMOOTHING for higher accuracy/stability on the pivot point
-    const smoothElbow = (oldP, newP) => {
-      if (!oldP) return newP;
-      const E_SMOOTH = 0.85;
-      return {
-        x: oldP.x * E_SMOOTH + newP.x * (1 - E_SMOOTH),
-        y: oldP.y * E_SMOOTH + newP.y * (1 - E_SMOOTH)
-      };
-    };
+    // Calculate Steering Angle
+    const lw = mapPoint(lm[15]); // Left Wrist
+    const rw = mapPoint(lm[16]); // Right Wrist
 
-    // NEW: wrist -> index finger instead of shoulder -> wrist
-    const updateArm = (side, wristLm, indexLm) => {
-      if (!wristLm || !indexLm) return;
-      if (wristLm.visibility < 0.3 || indexLm.visibility < 0.3) return;
+    // Smoothen the raw points before calculating angle
+    if (!this._rawL) this._rawL = lw;
+    if (!this._rawR) this._rawR = rw;
+    this._rawL = smooth(this._rawL, lw);
+    this._rawR = smooth(this._rawR, rw);
 
-      let wrist = mapPoint(wristLm);   // base
-      let index = mapPoint(indexLm);   // tip
+    const angle = Math.atan2(this._rawR.y - this._rawL.y, this._rawR.x - this._rawL.x);
 
-      const prev = this.armData[side];
-      wrist = smoothElbow(prev?.shoulder, wrist); // reuse shoulder slot as base
-      index = smooth(prev?.wrist, index);    // reuse wrist slot as tip
-
-      const dx = index.x - wrist.x;
-      const dy = index.y - wrist.y;
-      if (dx * dx + dy * dy < this.MIN_ARM_LENGTH * this.MIN_ARM_LENGTH) return;
-
-      const vel = this.armVelocity[side];
-      if (vel.last) {
-        vel.vx = vel.vx * 0.5 + (index.x - vel.last.x) * 0.5;
-        vel.vy = vel.vy * 0.5 + (index.y - vel.last.y) * 0.5;
+    // ADDITIVE: Keep original property names (shoulder/wrist) so physics works
+    // Shoulder = Pivot point (Center)
+    // Wrist = Calculated tip of the arm based on steering angle
+    this.armData.right = {
+      shoulder: { x: this.CENTER_X, y: this.CENTER_Y },
+      wrist: {
+        x: this.CENTER_X + Math.cos(angle) * this.armLength,
+        y: this.CENTER_Y + Math.sin(angle) * this.armLength
       }
-      vel.last = { x: index.x, y: index.y };
-
-      // IMPORTANT:
-      // keep same property names so rest of code works
-      this.armData[side] = {
-        shoulder: wrist, // now base = wrist
-        wrist: index     // now tip = index finger
-      };
     };
 
-    updateArm("right", lm[14], lm[16]);
+    // Helper for checkPivotLock (Distance between hands to start)
+    this.armData.left = { shoulder: lw, wrist: rw };
   },
 
   rebuildCaches() {
@@ -239,7 +206,6 @@ const Game8 = {
     this.bgCanvas.height = this.cssHeight;
     const bgCtx = this.bgCanvas.getContext("2d");
 
-    // draw grid
     bgCtx.strokeStyle = "rgba(0, 255, 255, 0.05)";
     bgCtx.lineWidth = 1;
     const step = 40 * this.scale;
@@ -252,7 +218,6 @@ const Game8 = {
     }
     bgCtx.stroke();
 
-    // draw edge zones
     const w = this.cssWidth;
     const h = this.cssHeight;
     const e = this.edgeSize;
@@ -263,7 +228,7 @@ const Game8 = {
 
     bgCtx.globalAlpha = 0.85;
 
-    // =========== TOP LEFT & BOTTOM RIGHT (Red - Even) ===========
+    // Red - Even
     bgCtx.fillStyle = "rgba(255, 0, 0, 0.3)";
     bgCtx.fillRect(0, 0, overS, cy - gap + 5);
     bgCtx.fillRect(0, 0, cx - gap + 5, overS);
@@ -276,7 +241,7 @@ const Game8 = {
     bgCtx.fillRect(w - e, cy + gap, e, h - (cy + gap));
     bgCtx.fillRect(cx + gap, h - e, w - (cx + gap), e);
 
-    // =========== BOTTOM LEFT & TOP RIGHT (Blue - Odd) ===========
+    // Blue - Odd
     bgCtx.fillStyle = "rgba(0, 255, 255, 0.3)";
     bgCtx.fillRect(0, cy + gap - 5, overS, h);
     bgCtx.fillRect(0, h - overS, cx - gap + 5, overS);
@@ -290,30 +255,26 @@ const Game8 = {
     bgCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
 
     bgCtx.globalAlpha = 1;
-
     bgCtx.strokeStyle = "rgba(255,255,255,0.2)";
     bgCtx.lineWidth = 2 * this.scale;
     const insetV = 200 * this.scale;
     const insetH = 600 * this.scale;
     bgCtx.beginPath();
-    bgCtx.moveTo(cx - gap, 0);          bgCtx.lineTo(cx - gap, cy - insetV);
+    bgCtx.moveTo(cx - gap, 0); bgCtx.lineTo(cx - gap, cy - insetV);
     bgCtx.moveTo(cx - gap, cy + insetV); bgCtx.lineTo(cx - gap, h);
-    bgCtx.moveTo(cx + gap, 0);          bgCtx.lineTo(cx + gap, cy - insetV);
+    bgCtx.moveTo(cx + gap, 0); bgCtx.lineTo(cx + gap, cy - insetV);
     bgCtx.moveTo(cx + gap, cy + insetV); bgCtx.lineTo(cx + gap, h);
-    bgCtx.moveTo(0, cy - gap);          bgCtx.lineTo(cx - insetH, cy - gap);
+    bgCtx.moveTo(0, cy - gap); bgCtx.lineTo(cx - insetH, cy - gap);
     bgCtx.moveTo(cx + insetH, cy - gap); bgCtx.lineTo(w, cy - gap);
-    bgCtx.moveTo(0, cy + gap);          bgCtx.lineTo(cx - insetH, cy + gap);
+    bgCtx.moveTo(0, cy + gap); bgCtx.lineTo(cx - insetH, cy + gap);
     bgCtx.moveTo(cx + insetH, cy + gap); bgCtx.lineTo(w, cy + gap);
     bgCtx.stroke();
 
-    // 2. Ball Cache (Using white as base template)
-    // Ball needs some extra padding for shadowBlur
     const ballPad = 30; 
     const br = this.ballRadius;
     this.ballCanvas.width = (br + ballPad) * 2;
     this.ballCanvas.height = (br + ballPad) * 2;
     const bCtx = this.ballCanvas.getContext("2d");
-    
     bCtx.shadowBlur = 15;
     bCtx.shadowColor = "#ffffff";
     bCtx.fillStyle = "#ffffff";
@@ -321,13 +282,11 @@ const Game8 = {
     bCtx.arc(br + ballPad, br + ballPad, br, 0, Math.PI * 2);
     bCtx.fill();
 
-    // 3. Arm Canvas
     const armPad = 40;
     const al = this.armLength;
     this.armCanvas.width = al + armPad * 2;
     this.armCanvas.height = armPad * 2;
     const aCtx = this.armCanvas.getContext("2d");
-
     aCtx.shadowBlur = 20;
     aCtx.shadowColor = "#f36affff";
     aCtx.strokeStyle = "#ac2fffff";
@@ -336,20 +295,17 @@ const Game8 = {
     aCtx.moveTo(armPad, armPad);
     aCtx.lineTo(armPad + al, armPad);
     aCtx.stroke();
-    
     aCtx.shadowBlur = 0;
     aCtx.beginPath();
     aCtx.arc(armPad + al, armPad, 8 * this.scale, 0, Math.PI * 2);
     aCtx.fillStyle = "#b906b9ff";
     aCtx.fill();
 
-    // 4. Wrist Canvas
     const wPad = 30;
     const wr = 18 * this.scale;
     this.wristCanvas.width = (wr + wPad) * 2;
     this.wristCanvas.height = (wr + wPad) * 2;
     const wCtx = this.wristCanvas.getContext("2d");
-
     wCtx.shadowBlur = 15;
     wCtx.shadowColor = "#BB66FF";
     wCtx.strokeStyle = "#BB66FF";
@@ -364,35 +320,25 @@ const Game8 = {
     const cssH = window.innerHeight;
     let newScale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
     if (!newScale || newScale <= 0) newScale = 1;
+    if (this.scale && Math.abs(newScale - this.scale) < 0.001 && this.cssWidth === cssW && this.cssHeight === cssH) return;
 
-    if (this.scale && Math.abs(newScale - this.scale) < 0.001 && 
-        this.cssWidth === cssW && this.cssHeight === cssH) return; // Skip!
-
-    // adopt the full viewport CSS dimensions for consistent scaling
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5); // Cap DPR at 1.5
-
-    // update canvas buffer size (main.js already does this but repeating is safe)
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
     canvasElement.width = cssW * dpr;
     canvasElement.height = cssH * dpr;
-
     this.cssWidth = cssW;
     this.cssHeight = cssH;
-
-    // compute game scale using CSS coordinates (avoids DPI issues)
     this.scale = newScale;
 
-    this._armLength  = this.ARM_LENGTH  * this.scale;
+    this._armLength = this.ARM_LENGTH * this.scale;
     this._ballRadius = this.BALL_RADIUS * this.scale;
-    this._edgeSize   = this.EDGE_SIZE   * this.scale;
-    this._lineGap    = this.LINE_GAP    * this.scale;
+    this._edgeSize = this.EDGE_SIZE * this.scale;
+    this._lineGap = this.LINE_GAP * this.scale;
     this._pivotRadius = this.PIVOT_RADIUS * this.scale;
     this._pivotOffset = this.PIVOT_OFFSET * this.scale;
 
-    // keep center coordinates in CSS space; transform scales them to device pixels
     this.CENTER_X = cssW / 2;
     this.CENTER_Y = cssH / 2;
 
-    // normalize drawing matrix
     const ctx = canvasElement.getContext("2d");
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
@@ -402,20 +348,16 @@ const Game8 = {
     this.fontFloater = `bold ${24 * this.scale}px Orbitron`;
     this.fontScore = `bold ${20 * this.scale}px Orbitron`;
     this.fontScoreBig = `bold ${40 * this.scale}px Orbitron`;
-
     this.rebuildCaches();
   },
 
   update(ctx) {
     if (!this.running) return;
-
     const now = performance.now();
     const deltaTime = now - this.lastTime;
     this.lastTime = now;
 
-    if (this.scoreScale > 1) {
-      this.scoreScale = Math.max(1, this.scoreScale - 0.05);
-    }
+    if (this.scoreScale > 1) this.scoreScale = Math.max(1, this.scoreScale - 0.05);
 
     if (!this.gameStarted) this.checkPivotLock(deltaTime);
     else {
@@ -427,14 +369,11 @@ const Game8 = {
 
     this.updateParticles();
     this.updateFloaters();
-
     this.drawBackground(ctx);
-
     if (this.gameStarted) {
       this.drawBalls(ctx);
       this.drawArms(ctx);
     }
-
     this.drawPivots(ctx);
     this.drawParticles(ctx);
     this.drawFloaters(ctx);
@@ -444,8 +383,6 @@ const Game8 = {
   handleSpawning(dt) {
     this.spawnTimer += dt;
     this.modeTimer += dt;
-
-    // Rotate spawn mode every 12 seconds
     if (this.modeTimer > 12000) {
       sfxLevel_8.currentTime = 0;
       sfxLevel_8.play().catch(() => { });
@@ -455,7 +392,6 @@ const Game8 = {
       this.modeTimer = 0;
       this.spawnFloatingText(this.CENTER_X, this.CENTER_Y - 150 * this.scale, `Spawn Mode: ${this.spawnMode.toUpperCase()}`, "white", 0, -0.2, 5.0);
     }
-
     if (this.spawnTimer > this.spawnRate && this.balls.length < this.MAX_BALLS) {
       this.spawnBall();
       this.spawnTimer = 0;
@@ -466,7 +402,6 @@ const Game8 = {
     const number = Math.floor(Math.random() * 100) + 1;
     const isOdd = number % 2 !== 0;
     const speed = (1 + (2000 - this.spawnRate) / 2000) * this.scale;
-
     let sides = [];
     if (this.spawnMode === "top-bottom") sides = [0, 1];
     else if (this.spawnMode === "left-right") sides = [2, 3];
@@ -476,184 +411,86 @@ const Game8 = {
       sides = [this._lastRandomSide];
       if (Math.random() < 0.1) this._lastRandomSide = Math.floor(Math.random() * 4);
     }
-
     const side = sides[Math.floor(Math.random() * sides.length)];
     let x, y, tx, ty;
     const outsideOffset = this.ballRadius * 2;
     const farBoundary = 2000 * this.scale;
-
-    if (side === 0) { // TOP
-      x = this.CENTER_X;
-      y = -outsideOffset;
-      tx = x;
-      ty = this.cssHeight + farBoundary;
-    } else if (side === 1) { // BOTTOM
-      x = this.CENTER_X;
-      y = this.cssHeight + outsideOffset;
-      tx = x;
-      ty = -farBoundary;
-    } else if (side === 2) { // LEFT
-      x = -outsideOffset;
-      y = this.CENTER_Y;
-      tx = this.cssWidth + farBoundary;
-      ty = y;
-    } else if (side === 3) { // RIGHT
-      x = this.cssWidth + outsideOffset;
-      y = this.CENTER_Y;
-      tx = -farBoundary;
-      ty = y;
-    }
-
-    this.balls.push({
-      x, y,
-      targetX: tx,
-      targetY: ty,
-      vx: 0,
-      vy: 0,
-      speed,
-      number,
-      isOdd,
-      color: "#ffffff",
-      trail: [],
-      trailIdx: 0,
-      hitCooldown: 0,
-      scored: false,
-      hasCollided: false
-    });
+    if (side === 0) { x = this.CENTER_X; y = -outsideOffset; tx = x; ty = this.cssHeight + farBoundary; }
+    else if (side === 1) { x = this.CENTER_X; y = this.cssHeight + outsideOffset; tx = x; ty = -farBoundary; }
+    else if (side === 2) { x = -outsideOffset; y = this.CENTER_Y; tx = this.cssWidth + farBoundary; ty = y; }
+    else if (side === 3) { x = this.cssWidth + outsideOffset; y = this.CENTER_Y; tx = -farBoundary; ty = y; }
+    this.balls.push({ x, y, targetX: tx, targetY: ty, vx: 0, vy: 0, speed, number, isOdd, color: "#ffffff", trail: [], trailIdx: 0, hitCooldown: 0, scored: false, hasCollided: false });
   },
 
   updateBalls(dt) {
     for (let i = 0; i < this.balls.length; i++) {
       let b = this.balls[i];
       if (b.scored) continue;
-
-      // Store previous position (important for collision sweep)
-      b.prevX = b.x;
-      b.prevY = b.y;
-
+      b.prevX = b.x; b.prevY = b.y;
       const dx = b.targetX - b.x;
       const dy = b.targetY - b.y;
       const len = Math.sqrt(dx * dx + dy * dy) || 1;
-
-      // Feature: Cap step to remaining distance — prevents overshoot jitter
       const step = Math.min(b.speed * dt, len);
-
-      // We maintain vx/vy for trail and physics, but actual movement uses target
       b.vx = (dx / len) * b.speed;
       b.vy = (dy / len) * b.speed;
-
       b.x += (dx / len) * step;
       b.y += (dy / len) * step;
-
       if (b.trailIdx === undefined) b.trailIdx = 0;
-      if (b.trail.length < 9) {
-        b.trail.push({ x: b.x, y: b.y });
-      } else {
-        b.trail[b.trailIdx].x = b.x;
-        b.trail[b.trailIdx].y = b.y;
-        b.trailIdx = (b.trailIdx + 1) % 9;
-      }
-
+      if (b.trail.length < 9) b.trail.push({ x: b.x, y: b.y });
+      else { b.trail[b.trailIdx].x = b.x; b.trail[b.trailIdx].y = b.y; b.trailIdx = (b.trailIdx + 1) % 9; }
       if (b.hitCooldown > 0) b.hitCooldown -= dt;
-
-      // Removal logic: if we reached the target or go way out of bounds
       const limit = 150 * this.scale;
-      const cw = this.cssWidth;
-      const ch = this.cssHeight;
-      if (
-        len <= step + 1 ||
-        b.x < -limit || b.x > cw + limit ||
-        b.y < -limit || b.y > ch + limit
-      ) {
-        b.remove = true;
-      }
+      if (len <= step + 1 || b.x < -limit || b.x > this.cssWidth + limit || b.y < -limit || b.y > this.cssHeight + limit) b.remove = true;
     }
-
     this.balls = this.balls.filter(b => !b.remove);
   },
 
   checkPhysics() {
     if (this.balls.length === 0) return;
-
     const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
     const arm = this.armData.right;
     if (!arm?.wrist || !arm?.shoulder) return;
-
-    const angle = Math.atan2(
-      arm.wrist.y - arm.shoulder.y,
-      arm.wrist.x - arm.shoulder.x
-    );
-
-    // Two sticks: original + opposite
+    const angle = Math.atan2(arm.wrist.y - arm.shoulder.y, arm.wrist.x - arm.shoulder.x);
     const angles = [angle, angle + Math.PI];
-
     if (!this.lastArmAngle) this.lastArmAngle = angle;
     let angVel = angle - this.lastArmAngle;
     this.lastArmAngle = angle;
-    angVel = Math.max(-0.3, Math.min(0.1, angVel));
-
-    const tangentialSpeed = angVel * this.armLength * 0.8;
-
+    angVel = Math.max(-0.3, Math.min(0.3, angVel));
+    const tangentialSpeed = angVel * this.armLength * 1.2;
     for (let a = 0; a < angles.length; a++) {
       let stickAngle = angles[a];
       const tipX = pivot.x + Math.cos(stickAngle) * this.armLength;
       const tipY = pivot.y + Math.sin(stickAngle) * this.armLength;
-
       const armVelX = -Math.sin(stickAngle) * tangentialSpeed;
       const armVelY = Math.cos(stickAngle) * tangentialSpeed;
-
       const radius = this.ballRadius + 6;
-
       for (let i = 0; i < this.balls.length; i++) {
         let b = this.balls[i];
         if (b.hitCooldown > 0 || b.scored) continue;
-
         const dx = tipX - pivot.x;
         const dy = tipY - pivot.y;
         const lenSq = dx * dx + dy * dy;
-
         let t = ((b.x - pivot.x) * dx + (b.y - pivot.y) * dy) / lenSq;
         t = Math.max(0, Math.min(1, t));
-
         const closestX = pivot.x + dx * t;
         const closestY = pivot.y + dy * t;
-
-        const distX = b.x - closestX;
-        const distY = b.y - closestY;
-        const distSq2 = distX * distX + distY * distY;
-
+        const distSq2 = (b.x - closestX) ** 2 + (b.y - closestY) ** 2;
         if (distSq2 > radius * radius) continue;
         const dist = Math.sqrt(distSq2);
-
-        let nx = distX / (dist || 1);
-        let ny = distY / (dist || 1);
-
+        let nx = (b.x - closestX) / (dist || 1);
+        let ny = (b.y - closestY) / (dist || 1);
         const relVX = b.vx - armVelX;
         const relVY = b.vy - armVelY;
-
         const dot = relVX * nx + relVY * ny;
         if (dot >= 0) continue;
-
-        let rvx = relVX - 2 * dot * nx;
-        let rvy = relVY - 2 * dot * ny;
-
-        b.vx = rvx + armVelX;
-        b.vy = rvy + armVelY;
-
+        b.vx = (relVX - 2 * dot * nx) + armVelX;
+        b.vy = (relVY - 2 * dot * ny) + armVelY;
         const maxSpeed = 18 * this.scale;
         let sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
-        if (sp > maxSpeed) {
-          b.vx = (b.vx / sp) * maxSpeed;
-          b.vy = (b.vy / sp) * maxSpeed;
-          sp = maxSpeed;
-        }
-
-        // Recalculate target and speed for smoother movement physics
+        if (sp > maxSpeed) { b.vx = (b.vx / sp) * maxSpeed; b.vy = (b.vy / sp) * maxSpeed; sp = maxSpeed; }
         b.speed = sp;
-        const farBoundary = 2000 * this.scale;
-        b.targetX = b.x + (b.vx / (b.speed || 1)) * farBoundary;
-        b.targetY = b.y + (b.vy / (b.speed || 1)) * farBoundary;
-
+        b.targetX = b.x + (b.vx / (b.speed || 1)) * 2000 * this.scale;
+        b.targetY = b.y + (b.vy / (b.speed || 1)) * 2000 * this.scale;
         b.hitCooldown = 8 * this.scale;
         this.spawnExplosion(b.x, b.y, "white", 5);
       }
@@ -661,374 +498,164 @@ const Game8 = {
   },
 
   checkScoring() {
-    const w = this.cssWidth;
-    const h = this.cssHeight;
-    const e = this.edgeSize;
-    const gap = this.lineGap;
-    const cx = this.CENTER_X;
-    const cy = this.CENTER_Y;
-
-    // FIX: Thin the collision detection (Require ball to go 50% into the zone)
+    const w = this.cssWidth; const h = this.cssHeight;
+    const e = this.edgeSize; const gap = this.lineGap;
+    const cx = this.CENTER_X; const cy = this.CENTER_Y;
     const triggerEdge = e * 0.5;
-
     for (let i = this.balls.length - 1; i >= 0; i--) {
       let b = this.balls[i];
-      if (b.scored) continue;
-
       let scoreType = null;
-
-      // LEFT SIDE (Top: Red/Even, Bottom: Blue/Odd)
       if (b.x < cx - gap) {
         if ((b.y < triggerEdge && b.vy < 0) || (b.y > h - triggerEdge && b.vy > 0) || (b.x < triggerEdge && b.vx < 0)) {
-          const isBottom = b.y > cy;
-          if (!isBottom) { // Top part (Red)
-            scoreType = !b.isOdd ? "good" : "bad";
-          } else { // Bottom part (Blue)
-            scoreType = b.isOdd ? "good" : "bad";
-          }
+          scoreType = (b.y < cy) ? (!b.isOdd ? "good" : "bad") : (b.isOdd ? "good" : "bad");
         }
-      }
-      // RIGHT SIDE (Top: Blue/Odd, Bottom: Red/Even)
-      else if (b.x > cx + gap) {
+      } else if (b.x > cx + gap) {
         if ((b.y < triggerEdge && b.vy < 0) || (b.y > h - triggerEdge && b.vy > 0) || (b.x > w - triggerEdge && b.vx > 0)) {
-          const isBottom = b.y > cy;
-          if (!isBottom) { // Top part (Blue)
-            scoreType = b.isOdd ? "good" : "bad";
-          } else { // Bottom part (Red)
-            scoreType = !b.isOdd ? "good" : "bad";
-          }
+          scoreType = (b.y < cy) ? (b.isOdd ? "good" : "bad") : (!b.isOdd ? "good" : "bad");
         }
       }
-
       if (scoreType) {
-        const dx = this.CENTER_X - b.x;
-        const dy = this.CENTER_Y - b.y;
-        const distSq = dx * dx + dy * dy;
-        const dist = Math.sqrt(distSq) || 1;
-        const nx = dx / dist;
-        const ny = dy / dist;
-
-        if (scoreType === "good") {
-          this.updateScore(10, true);
-          this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", nx * 1.5, ny * 1.5, 2.5);
-          this.spawnExplosion(b.x, b.y, "#00FF00", 8, nx * 3, ny * 3);
-        } else {
-          this.updateScore(-5, false);
-          this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", nx * 1.5, ny * 1.5, 2.5);
-          this.spawnExplosion(b.x, b.y, "#FF0000", 5, nx * 3, ny * 3);
-          this.shakeTimer = 25;
-        }
+        const dx = cx - b.x; const dy = cy - b.y; const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+        if (scoreType === "good") { this.updateScore(10, true); this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", (dx/dist)*1.5, (dy/dist)*1.5, 2.5); this.spawnExplosion(b.x, b.y, "#00FF00", 8, (dx/dist)*3, (dy/dist)*3); }
+        else { this.updateScore(-5, false); this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", (dx/dist)*1.5, (dy/dist)*1.5, 2.5); this.spawnExplosion(b.x, b.y, "#FF0000", 5, (dx/dist)*3, (dy/dist)*3); this.shakeTimer = 25; }
         this.balls.splice(i, 1);
       }
     }
   },
 
-  // --- SCORE ANIMATION TRIGGER ---
   updateScore(amount, isGood) {
-    if (isGood) {
-      sfxCorrect_8.currentTime = 0;
-      sfxCorrect_8.play().catch(() => { });
-    } else {
-      sfxWrong_8.currentTime = 0;
-      sfxWrong_8.play().catch(() => { });
-    }
-    this.score += amount;
-    this.scoreScale = 2.0;
-    this.scoreColor = isGood ? "#00FF00" : "#FF0000";
-
-    // Difficulty scaling
-    if (isGood) {
-      this.spawnRate = Math.max(this.minSpawnRate, this.spawnRate - 100);
-    } else {
-      this.spawnRate = Math.min(this.maxSpawnRate, this.spawnRate + 200);
-    }
+    if (isGood) { sfxCorrect_8.currentTime = 0; sfxCorrect_8.play().catch(() => { }); }
+    else { sfxWrong_8.currentTime = 0; sfxWrong_8.play().catch(() => { }); }
+    this.score += amount; this.scoreScale = 2.0; this.scoreColor = isGood ? "#00FF00" : "#FF0000";
+    this.spawnRate = isGood ? Math.max(this.minSpawnRate, this.spawnRate - 100) : Math.min(this.maxSpawnRate, this.spawnRate + 200);
   },
 
   checkPivotLock(dt) {
-    const cx = this.CENTER_X;
-    const cy = this.CENTER_Y;
+    // Lock by checking if hands are leveled (steering wheel center)
+    const armL = this.armData.left;
+    const armR = this.armData.right;
+    if (!armL?.shoulder || !armR?.wrist) return;
+    
+    const midX = (armL.shoulder.x + armR.wrist.x) / 2;
+    const midY = (armL.shoulder.y + armR.wrist.y) / 2;
+    const distSq = (midX - this.CENTER_X) ** 2 + (midY - this.CENTER_Y) ** 2;
 
-    const arm = this.armData.right;
-    if (!arm?.shoulder) return; // shoulder now stores wrist position
-
-    const dx = arm.shoulder.x - cx;
-    const dy = arm.shoulder.y - cy;
-    const distSq = dx * dx + dy * dy;
-
-    if (distSq < (120 * this.scale) * (120 * this.scale)) {
+    if (distSq < (150 * this.scale) ** 2) {
       this.pivotLockTimer.right += dt;
-      this.lockProgress = Math.min(
-        this.pivotLockTimer.right / this.LOCK_TIME,
-        1
-      );
-
+      this.lockProgress = Math.min(this.pivotLockTimer.right / this.LOCK_TIME, 1);
       if (this.pivotLockTimer.right > this.LOCK_TIME) {
         this.gameStarted = true;
         const video = document.getElementById("input_video");
         if (video) video.style.opacity = "0.2";
-        this.spawnFloatingText(cx, cy, "START!", "white");
+        this.spawnFloatingText(this.CENTER_X, this.CENTER_Y, "START!", "white");
       }
-    } else {
-      this.pivotLockTimer.right = 0;
-      this.lockProgress = 0;
-    }
+    } else { this.pivotLockTimer.right = 0; this.lockProgress = 0; }
   },
-  /* ==============================
-     VISUAL EFFECTS
-  ============================= */
+
   spawnExplosion(x, y, color, count, biasX = 0, biasY = 0) {
     for (let i = 0; i < count; i++) {
-      const angle = Math.random() * Math.PI * 2;
-      const speed = Math.random() * 5 + 2;
-      
-      let p = this.particlePool.pop();
-      if (!p) p = {};
-      
-      p.x = x;
-      p.y = y;
-      p.vx = Math.cos(angle) * speed + biasX;
-      p.vy = Math.sin(angle) * speed + biasY;
-      p.life = 1.0;
-      p.color = color;
-      
+      const angle = Math.random() * Math.PI * 2; const speed = Math.random() * 5 + 2;
+      let p = this.particlePool.pop() || {};
+      p.x = x; p.y = y; p.vx = Math.cos(angle) * speed + biasX; p.vy = Math.sin(angle) * speed + biasY; p.life = 1.0; p.color = color;
       this.particles.push(p);
     }
   },
 
   spawnFloatingText(x, y, text, color, dx = 0, dy = -2, life = 1.0) {
-    let f = this.floaterPool.pop();
-    if (!f) f = {};
-    
-    f.x = x;
-    f.y = y;
-    f.text = text;
-    f.color = color;
-    f.life = life;
-    f.dx = dx;
-    f.dy = dy;
-    
+    let f = this.floaterPool.pop() || {};
+    f.x = x; f.y = y; f.text = text; f.color = color; f.life = life; f.dx = dx; f.dy = dy;
     this.floaters.push(f);
   },
 
   updateParticles() {
     for (let i = this.particles.length - 1; i >= 0; i--) {
-      let p = this.particles[i];
-      p.x += p.vx; p.y += p.vy;
-      p.life -= 0.05;
-      if (p.life <= 0) {
-        this.particlePool.push(p);
-        this.particles.splice(i, 1);
-      }
+      let p = this.particles[i]; p.x += p.vx; p.y += p.vy; p.life -= 0.05;
+      if (p.life <= 0) { this.particlePool.push(p); this.particles.splice(i, 1); }
     }
   },
 
   updateFloaters() {
     for (let i = this.floaters.length - 1; i >= 0; i--) {
-      let f = this.floaters[i];
-      f.x += f.dx || 0;
-      f.y += f.dy;
-      f.life -= 0.02;
-      if (f.life <= 0) {
-        this.floaterPool.push(f);
-        this.floaters.splice(i, 1);
-      }
+      let f = this.floaters[i]; f.x += f.dx || 0; f.y += f.dy; f.life -= 0.02;
+      if (f.life <= 0) { this.floaterPool.push(f); this.floaters.splice(i, 1); }
     }
   },
 
-  /* ==============================
-     DRAWING
-  ============================== */
-  drawBackground(ctx) {
-    if (this.bgCanvas) ctx.drawImage(this.bgCanvas, 0, 0);
-  },
-
-
+  drawBackground(ctx) { if (this.bgCanvas) ctx.drawImage(this.bgCanvas, 0, 0); },
 
   drawBalls(ctx) {
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.font = this.fontBall;
-
-    // Batch Trails
-    ctx.beginPath();
-    ctx.strokeStyle = "rgba(255,255,255,0.25)";
-    ctx.lineWidth = this.ballRadius * 1.5;
-    ctx.lineCap = "round";
-    ctx.globalAlpha = 0.25;
-    for (let i = 0; i < this.balls.length; i++) {
-      let b = this.balls[i];
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.font = this.fontBall;
+    ctx.beginPath(); ctx.strokeStyle = "rgba(255,255,255,0.25)"; ctx.lineWidth = this.ballRadius * 1.5; ctx.lineCap = "round"; ctx.globalAlpha = 0.25;
+    for (let b of this.balls) {
       if (b.trail.length < 2) continue;
-      let tIdx = b.trailIdx || 0;
-      ctx.moveTo(b.trail[tIdx].x, b.trail[tIdx].y);
-      for (let j = 1; j < b.trail.length; j++) {
-        let idx = (tIdx + j) % b.trail.length;
-        ctx.lineTo(b.trail[idx].x, b.trail[idx].y);
-      }
+      let tIdx = b.trailIdx || 0; ctx.moveTo(b.trail[tIdx].x, b.trail[tIdx].y);
+      for (let j = 1; j < b.trail.length; j++) { let idx = (tIdx + j) % b.trail.length; ctx.lineTo(b.trail[idx].x, b.trail[idx].y); }
     }
-    ctx.stroke();
-    ctx.globalAlpha = 1.0;
-
-    for (let i = 0; i < this.balls.length; i++) {
-      let b = this.balls[i];
-
-      if (this.ballCanvas) {
-        const bp = 30; // ball padding
-        const br = this.ballRadius;
-        ctx.drawImage(this.ballCanvas, b.x - br - bp, b.y - br - bp);
-      }
-
-      ctx.fillStyle = "black";
-      ctx.fillText(b.number, b.x, b.y);
+    ctx.stroke(); ctx.globalAlpha = 1.0;
+    for (let b of this.balls) {
+      if (this.ballCanvas) ctx.drawImage(this.ballCanvas, b.x - this.ballRadius - 30, b.y - this.ballRadius - 30);
+      ctx.fillStyle = "black"; ctx.fillText(b.number, b.x, b.y);
     }
   },
 
   drawArms(ctx) {
-    const arm = this.armData.right;
-    if (!arm?.shoulder) return;
-
-    const pivot = { x: this.CENTER_X, y: this.CENTER_Y };
-
-    const baseAngle = Math.atan2(
-      arm.wrist.y - arm.shoulder.y,
-      arm.wrist.x - arm.shoulder.x
-    );
-
-    const armPad = 40;
-
+    const arm = this.armData.right; if (!arm?.shoulder) return;
+    const baseAngle = Math.atan2(arm.wrist.y - arm.shoulder.y, arm.wrist.x - arm.shoulder.x);
     if (this.armCanvas) {
-      ctx.save();
-      ctx.translate(pivot.x, pivot.y);
-      
-      ctx.save();
-      ctx.rotate(baseAngle);
-      ctx.drawImage(this.armCanvas, -armPad, -armPad);
-      ctx.restore();
-
-      ctx.rotate(baseAngle + Math.PI);
-      ctx.drawImage(this.armCanvas, -armPad, -armPad);
-
-      ctx.restore();
+      ctx.save(); ctx.translate(this.CENTER_X, this.CENTER_Y);
+      ctx.save(); ctx.rotate(baseAngle); ctx.drawImage(this.armCanvas, -40, -40); ctx.restore();
+      ctx.rotate(baseAngle + Math.PI); ctx.drawImage(this.armCanvas, -40, -40); ctx.restore();
     }
-
-    // Wrist highlight
     if (this.wristCanvas) {
-      const wPad = 30;
       const wr = 18 * this.scale;
-      ctx.drawImage(this.wristCanvas, arm.shoulder.x - wr - wPad, arm.shoulder.y - wr - wPad);
+      // Draw markers for both hands
+      ctx.drawImage(this.wristCanvas, this.armData.left.shoulder.x - wr - 30, this.armData.left.shoulder.y - wr - 30);
+      ctx.drawImage(this.wristCanvas, this.armData.left.wrist.x - wr - 30, this.armData.left.wrist.y - wr - 30);
     }
   },
 
   drawPivots(ctx) {
-    const x = this.CENTER_X;
-    const y = this.CENTER_Y;
     const r = this.gameStarted ? this.PIVOT_RADIUS : 15;
-
-    // Base pivot
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fillStyle = this.gameStarted ? "#ff2491ff" : "#444";
-    ctx.fill();
-
-    // Loading progress ring (before start)
+    ctx.beginPath(); ctx.arc(this.CENTER_X, this.CENTER_Y, r, 0, Math.PI * 2);
+    ctx.fillStyle = this.gameStarted ? "#ff2491ff" : "#444"; ctx.fill();
     if (!this.gameStarted && this.lockProgress > 0) {
-      ctx.beginPath();
-      ctx.arc(
-        x, y, r + 8 * this.scale,
-        -Math.PI / 2,
-        -Math.PI / 2 + Math.PI * 2 * this.lockProgress
-      );
-      ctx.strokeStyle = "#BB66FF";
-      ctx.lineWidth = 6 * this.scale;
-      ctx.stroke();
+      ctx.beginPath(); ctx.arc(this.CENTER_X, this.CENTER_Y, r + 8 * this.scale, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this.lockProgress);
+      ctx.strokeStyle = "#BB66FF"; ctx.lineWidth = 6 * this.scale; ctx.stroke();
     }
   },
 
   drawParticles(ctx) {
-    const size = 4 * this.scale;
-    for (let i = 0; i < this.particles.length; i++) {
-      let p = this.particles[i];
-      ctx.fillStyle = p.color;
-      // Drop alpha overdraw, just shrink the rect entirely instead for cheap FX
-      const s = size * Math.max(0, p.life) * 2;
+    for (let p of this.particles) {
+      ctx.fillStyle = p.color; const s = (4 * this.scale) * Math.max(0, p.life) * 2;
       ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
     }
   },
 
   drawFloaters(ctx) {
-    ctx.font = this.fontFloater;
-    ctx.textAlign = "center";
-    for (let i = 0; i < this.floaters.length; i++) {
-      let f = this.floaters[i];
-      ctx.globalAlpha = Math.max(0, Math.min(1, f.life)); // Ensure alpha is between 0 and 1
-      ctx.fillStyle = f.color;
-      ctx.fillText(f.text, f.x, f.y);
-    }
+    ctx.font = this.fontFloater; ctx.textAlign = "center";
+    for (let f of this.floaters) { ctx.globalAlpha = Math.max(0, Math.min(1, f.life)); ctx.fillStyle = f.color; ctx.fillText(f.text, f.x, f.y); }
     ctx.globalAlpha = 1;
   },
 
   drawUI(ctx) {
     if (!this.gameStarted) {
-      ctx.fillStyle = "white";
-      ctx.font = this.fontUI;
-      ctx.textAlign = "center";
-      ctx.fillStyle = "black";
-      ctx.fillText(
-        "HOLD ELBOW ON DOTS TO START",
-        this.CENTER_X + 2 * this.scale,
-        this.CENTER_Y - 48 * this.scale
-      );
-      ctx.fillStyle = "white";
-      ctx.fillText(
-        "HOLD ELBOW ON DOTS TO START",
-        this.CENTER_X,
-        this.CENTER_Y - 50 * this.scale
-      );
+      ctx.textAlign = "center"; ctx.font = this.fontUI; ctx.fillStyle = "black";
+      ctx.fillText("STEER HANDS TO START", this.CENTER_X + 2 * this.scale, this.CENTER_Y - 48 * this.scale);
+      ctx.fillStyle = "white"; ctx.fillText("STEER HANDS TO START", this.CENTER_X, this.CENTER_Y - 50 * this.scale);
     }
-
-    // ===== SCORE =====
-    ctx.textAlign = "center";
-    ctx.font = this.scoreScale > 1.1 ? this.fontScoreBig : this.fontScore;
-    ctx.fillStyle = this.scoreColor;
-    ctx.fillText(this.score, this.CENTER_X, 100 * this.scale);
-
-    // ===== LEGEND (Responsive Positions) =====
-    const w = this.cssWidth;
-
-    ctx.font = this.fontLegend;
-    ctx.textAlign = "center";
-
-    // Left = 25% of screen width
-    ctx.fillStyle = "#FF0000";
-    ctx.fillText("Even", w * 0.07, 85 * this.scale); // Top Left
-
-    // Right = 75% of screen width
-    ctx.fillStyle = "#00FFFF";
-    ctx.fillText("Odd", w * 0.93, 85 * this.scale); // Top Right
-
-    // --- BOTTOM LEGEND ---
-    const bh = this.cssHeight - 65 * this.scale;
-
-    // Bottom Left (Blue/Odd)
-    ctx.fillStyle = "#00FFFF";
-    ctx.fillText("Odd", w * 0.065, bh);
-
-    // Bottom Right (Red/Even)
-    ctx.fillStyle = "#FF0000";
-    ctx.fillText("Even", w * 0.92, bh);
-
+    ctx.textAlign = "center"; ctx.font = this.scoreScale > 1.1 ? this.fontScoreBig : this.fontScore;
+    ctx.fillStyle = this.scoreColor; ctx.fillText(this.score, this.CENTER_X, 100 * this.scale);
+    const w = this.cssWidth; ctx.font = this.fontLegend; ctx.textAlign = "center";
+    ctx.fillStyle = "#FF0000"; ctx.fillText("Even", w * 0.07, 85 * this.scale);
+    ctx.fillStyle = "#00FFFF"; ctx.fillText("Odd", w * 0.93, 85 * this.scale);
+    const bh = h - 65 * this.scale;
+    ctx.fillStyle = "#00FFFF"; ctx.fillText("Odd", w * 0.065, bh);
+    ctx.fillStyle = "#FF0000"; ctx.fillText("Even", w * 0.92, bh);
     if (this.currentMissingState) {
-      ctx.fillStyle = "red";
-      ctx.font = this.fontUI;
-      let msg = "";
-      if (this.currentMissingState === "arm") msg = "BRING ARM BACK IN SCREEN";
-      else if (this.currentMissingState === "elbow") msg = "BRING ELBOW BACK IN SCREEN";
-      else if (this.currentMissingState === "wrist") msg = "BRING WRIST BACK IN SCREEN";
-
-      ctx.fillText(msg, this.CENTER_X, this.CENTER_Y + 150 * this.scale);
+      ctx.fillStyle = "red"; ctx.font = this.fontUI;
+      ctx.fillText("BRING BOTH HANDS IN VIEW", this.CENTER_X, this.CENTER_Y + 150 * this.scale);
     }
   },
-
-
 
   get pivotOffset() { return this._pivotOffset; },
   get armLength() { return this._armLength; },
@@ -1036,6 +663,4 @@ const Game8 = {
   get edgeSize() { return this._edgeSize; },
   get lineGap() { return this._lineGap; },
   get pivotRadius() { return this._pivotRadius; }
-
 };
-
