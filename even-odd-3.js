@@ -228,31 +228,31 @@ const Game8 = {
 
     bgCtx.globalAlpha = 0.85;
 
-    // Red - Even
+    // Red - Even (Top Half)
     bgCtx.fillStyle = "rgba(255, 0, 0, 0.3)";
     bgCtx.fillRect(0, 0, overS, cy - gap + 5);
     bgCtx.fillRect(0, 0, cx - gap + 5, overS);
-    bgCtx.fillRect(w - overS, cy + gap - 5, overS, h);
-    bgCtx.fillRect(cx + gap - 5, h - overS, w, overS);
+    bgCtx.fillRect(w - overS, 0, overS, cy - gap + 5);
+    bgCtx.fillRect(cx + gap - 5, 0, w, overS);
 
     bgCtx.fillStyle = "rgba(255, 0, 0, 0.8)";
     bgCtx.fillRect(0, 0, e, cy - gap);
     bgCtx.fillRect(0, 0, cx - gap, e);
-    bgCtx.fillRect(w - e, cy + gap, e, h - (cy + gap));
-    bgCtx.fillRect(cx + gap, h - e, w - (cx + gap), e);
+    bgCtx.fillRect(w - e, 0, e, cy - gap);
+    bgCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
 
-    // Blue - Odd
+    // Blue - Odd (Bottom Half)
     bgCtx.fillStyle = "rgba(0, 255, 255, 0.3)";
     bgCtx.fillRect(0, cy + gap - 5, overS, h);
     bgCtx.fillRect(0, h - overS, cx - gap + 5, overS);
-    bgCtx.fillRect(w - overS, 0, overS, cy - gap + 5);
-    bgCtx.fillRect(cx + gap - 5, 0, w, overS);
+    bgCtx.fillRect(w - overS, cy + gap - 5, overS, h);
+    bgCtx.fillRect(cx + gap - 5, h - overS, w, overS);
 
     bgCtx.fillStyle = "rgba(0, 255, 255, 0.8)";
     bgCtx.fillRect(0, cy + gap, e, h - (cy + gap));
     bgCtx.fillRect(0, h - e, cx - gap, e);
-    bgCtx.fillRect(w - e, 0, e, cy - gap);
-    bgCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
+    bgCtx.fillRect(w - e, cy + gap, e, h - (cy + gap));
+    bgCtx.fillRect(cx + gap, h - e, w - (cx + gap), e);
 
     bgCtx.globalAlpha = 1;
     bgCtx.strokeStyle = "rgba(255,255,255,0.2)";
@@ -511,7 +511,7 @@ const Game8 = {
         }
       } else if (b.x > cx + gap) {
         if ((b.y < triggerEdge && b.vy < 0) || (b.y > h - triggerEdge && b.vy > 0) || (b.x > w - triggerEdge && b.vx > 0)) {
-          scoreType = (b.y < cy) ? (b.isOdd ? "good" : "bad") : (!b.isOdd ? "good" : "bad");
+          scoreType = (b.y < cy) ? (!b.isOdd ? "good" : "bad") : (b.isOdd ? "good" : "bad");
         }
       }
       if (scoreType) {
@@ -645,12 +645,14 @@ const Game8 = {
     }
     ctx.textAlign = "center"; ctx.font = this.scoreScale > 1.1 ? this.fontScoreBig : this.fontScore;
     ctx.fillStyle = this.scoreColor; ctx.fillText(this.score, this.CENTER_X, 100 * this.scale);
-    const w = this.cssWidth; ctx.font = this.fontLegend; ctx.textAlign = "center";
-    ctx.fillStyle = "#FF0000"; ctx.fillText("Even", w * 0.07, 85 * this.scale);
-    ctx.fillStyle = "#00FFFF"; ctx.fillText("Odd", w * 0.93, 85 * this.scale);
+    const w = this.cssWidth; const h = this.cssHeight; ctx.font = this.fontLegend; ctx.textAlign = "center";
+    ctx.fillStyle = "#FF0000"; 
+    ctx.fillText("Even", w * 0.07, 85 * this.scale);
+    ctx.fillText("Even", w * 0.93, 85 * this.scale);
     const bh = h - 65 * this.scale;
-    ctx.fillStyle = "#00FFFF"; ctx.fillText("Odd", w * 0.065, bh);
-    ctx.fillStyle = "#FF0000"; ctx.fillText("Even", w * 0.92, bh);
+    ctx.fillStyle = "#00FFFF"; 
+    ctx.fillText("Odd", w * 0.07, bh);
+    ctx.fillText("Odd", w * 0.93, bh);
     if (this.currentMissingState) {
       ctx.fillStyle = "red"; ctx.font = this.fontUI;
       ctx.fillText("BRING BOTH HANDS IN VIEW", this.CENTER_X, this.CENTER_Y + 150 * this.scale);
