@@ -12,7 +12,7 @@
 const RingSpriteSystem = (() => {
 
   /* ── Config ──────────────────────────────────────────────── */
-  const FRAME_COUNT   = 32;
+  const FRAME_COUNT   = 36;
   const DB_NAME       = "RingSpriteCache";
   const DB_VERSION    = 1;
   const STORE_NAME    = "sprites";
@@ -1795,15 +1795,15 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
    */
   drawRings(ctx, dt) {
     // Advance animation counters regardless of which path we take
-    this.pulseTime  += this.pulseSpeed * dt 
-    this.torusAngle  = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
+       this.pulseTime  = (this.pulseTime + dt * 2.4) % (Math.PI * 2);
+    this.torusAngle = (this.torusAngle + dt * 1.08) % (Math.PI * 2);
 
     if (RingSpriteSystem.isReady()) {
       /* ── Fast sprite path ─────────────────────────────────
          _spriteFrame accumulates at 60fps-equivalent pace.
          One full 28-frame cycle = 28/60 ≈ 0.47s, matching
          the original torusAngle rotation speed.              */
-      this._spriteFrame += dt * 8;
+      this._spriteFrame += dt*10;
 
       // The sprite was rendered at 512×512 with Ro_base = 180.
       // Scale it so the ring matches the actual game radius.
