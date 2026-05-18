@@ -40,7 +40,7 @@ const Game8 = {
   spawnRate: 2000,
   minSpawnRate: 2000,
   maxSpawnRate: 3000,
-  spawnMode: "top-bottom", 
+  spawnMode: "top-bottom",
   modeTimer: 0,
   lastTime: performance.now(),
   shakeTimer: 0,
@@ -125,7 +125,7 @@ const Game8 = {
     window.sendFrameToPose = async (image) => {
       if (!this.running || this.poseBusy) return;
       const now = performance.now();
-      if (now - lastPoseTime < 80) return; 
+      if (now - lastPoseTime < 80) return;
       lastPoseTime = now;
       this.poseBusy = true;
       try { await this.pose.send({ image }); } catch (e) { console.error(e); }
@@ -142,9 +142,9 @@ const Game8 = {
       // Track both wrists for the steering wheel
       const leftWrist = lm[15];
       const rightWrist = lm[16];
-      
+
       const isBad = (pt) => !pt || pt.visibility < 0.3 || pt.x < 0 || pt.x > 1 || pt.y < 0 || pt.y > 1;
-      
+
       if (isBad(leftWrist) || isBad(rightWrist)) state = "wrist";
     }
 
@@ -166,7 +166,7 @@ const Game8 = {
 
     const smooth = (oldP, newP) => {
       if (!oldP) return newP;
-      const S = 0.75; 
+      const S = 0.75;
       return {
         x: oldP.x * S + newP.x * (1 - S),
         y: oldP.y * S + newP.y * (1 - S)
@@ -228,27 +228,27 @@ const Game8 = {
 
     bgCtx.globalAlpha = 0.85;
 
-    // Red - Even (Top Half)
-    bgCtx.fillStyle = "rgba(255, 0, 0, 0.3)";
+    // Blue - Even (Top Half)
+    bgCtx.fillStyle = "rgba(0, 255, 255, 0.3)";
     bgCtx.fillRect(0, 0, overS, cy - gap + 5);
     bgCtx.fillRect(0, 0, cx - gap + 5, overS);
     bgCtx.fillRect(w - overS, 0, overS, cy - gap + 5);
     bgCtx.fillRect(cx + gap - 5, 0, w, overS);
 
-    bgCtx.fillStyle = "rgba(255, 0, 0, 0.8)";
+    bgCtx.fillStyle = "rgba(0, 255, 255, 0.8)";
     bgCtx.fillRect(0, 0, e, cy - gap);
     bgCtx.fillRect(0, 0, cx - gap, e);
     bgCtx.fillRect(w - e, 0, e, cy - gap);
     bgCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
 
-    // Blue - Odd (Bottom Half)
-    bgCtx.fillStyle = "rgba(0, 255, 255, 0.3)";
+    // Red - Odd (Bottom Half)
+    bgCtx.fillStyle = "rgba(255, 0, 0, 0.3)";
     bgCtx.fillRect(0, cy + gap - 5, overS, h);
     bgCtx.fillRect(0, h - overS, cx - gap + 5, overS);
     bgCtx.fillRect(w - overS, cy + gap - 5, overS, h);
     bgCtx.fillRect(cx + gap - 5, h - overS, w, overS);
 
-    bgCtx.fillStyle = "rgba(0, 255, 255, 0.8)";
+    bgCtx.fillStyle = "rgba(255, 0, 0, 0.8)";
     bgCtx.fillRect(0, cy + gap, e, h - (cy + gap));
     bgCtx.fillRect(0, h - e, cx - gap, e);
     bgCtx.fillRect(w - e, cy + gap, e, h - (cy + gap));
@@ -270,7 +270,7 @@ const Game8 = {
     bgCtx.moveTo(cx + insetH, cy + gap); bgCtx.lineTo(w, cy + gap);
     bgCtx.stroke();
 
-    const ballPad = 30; 
+    const ballPad = 30;
     const br = this.ballRadius;
     this.ballCanvas.width = (br + ballPad) * 2;
     this.ballCanvas.height = (br + ballPad) * 2;
@@ -516,8 +516,8 @@ const Game8 = {
       }
       if (scoreType) {
         const dx = cx - b.x; const dy = cy - b.y; const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        if (scoreType === "good") { this.updateScore(10, true); this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", (dx/dist)*1.5, (dy/dist)*1.5, 2.5); this.spawnExplosion(b.x, b.y, "#00FF00", 8, (dx/dist)*3, (dy/dist)*3); }
-        else { this.updateScore(-5, false); this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", (dx/dist)*1.5, (dy/dist)*1.5, 2.5); this.spawnExplosion(b.x, b.y, "#FF0000", 5, (dx/dist)*3, (dy/dist)*3); this.shakeTimer = 25; }
+        if (scoreType === "good") { this.updateScore(10, true); this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", (dx / dist) * 1.5, (dy / dist) * 1.5, 2.5); this.spawnExplosion(b.x, b.y, "#00FF00", 8, (dx / dist) * 3, (dy / dist) * 3); }
+        else { this.updateScore(-5, false); this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", (dx / dist) * 1.5, (dy / dist) * 1.5, 2.5); this.spawnExplosion(b.x, b.y, "#FF0000", 5, (dx / dist) * 3, (dy / dist) * 3); this.shakeTimer = 25; }
         this.balls.splice(i, 1);
       }
     }
@@ -535,7 +535,7 @@ const Game8 = {
     const armL = this.armData.left;
     const armR = this.armData.right;
     if (!armL?.shoulder || !armR?.wrist) return;
-    
+
     const midX = (armL.shoulder.x + armR.wrist.x) / 2;
     const midY = (armL.shoulder.y + armR.wrist.y) / 2;
     const distSq = (midX - this.CENTER_X) ** 2 + (midY - this.CENTER_Y) ** 2;
@@ -627,7 +627,7 @@ const Game8 = {
   drawParticles(ctx) {
     for (let p of this.particles) {
       ctx.fillStyle = p.color; const s = (4 * this.scale) * Math.max(0, p.life) * 2;
-      ctx.fillRect(p.x - s/2, p.y - s/2, s, s);
+      ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s);
     }
   },
 
@@ -646,11 +646,11 @@ const Game8 = {
     ctx.textAlign = "center"; ctx.font = this.scoreScale > 1.1 ? this.fontScoreBig : this.fontScore;
     ctx.fillStyle = this.scoreColor; ctx.fillText(this.score, this.CENTER_X, 100 * this.scale);
     const w = this.cssWidth; const h = this.cssHeight; ctx.font = this.fontLegend; ctx.textAlign = "center";
-    ctx.fillStyle = "#FF0000"; 
+    ctx.fillStyle = "#00FFFF";
     ctx.fillText("Even", w * 0.07, 85 * this.scale);
     ctx.fillText("Even", w * 0.93, 85 * this.scale);
     const bh = h - 65 * this.scale;
-    ctx.fillStyle = "#00FFFF"; 
+    ctx.fillStyle = "#FF0000";
     ctx.fillText("Odd", w * 0.07, bh);
     ctx.fillText("Odd", w * 0.93, bh);
     if (this.currentMissingState) {
