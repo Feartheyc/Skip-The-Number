@@ -507,11 +507,11 @@ const Game11 = {
     /* Update target every frame */
     this._targetFingerX = fp.x;
     this._targetFingerY = fp.y;
-    
+
     /* Smooth at FINGER_SMOOTH (0.55 = fast but not jittery) */
     this._fingerSmoothX += (this._targetFingerX - this._fingerSmoothX) * this.FINGER_SMOOTH;
     this._fingerSmoothY += (this._targetFingerY - this._fingerSmoothY) * this.FINGER_SMOOTH;
-    
+
     this.fingerX = this._fingerSmoothX;
     this.fingerY = this._fingerSmoothY;
   },
@@ -538,7 +538,7 @@ const Game11 = {
     ctx.shadowColor = "rgba(0,0,0,0.5)";
     ctx.shadowBlur = 4;
 
-    const labels = ["st", "nd", "rd", "th"];
+    const labels = ["_st", "_nd", "_rd", "_th"];
 
     for (let i = 0; i < this.fingerImages.length; i++) {
       const img = this.fingerImages[i];
@@ -759,19 +759,19 @@ const Game11 = {
     /* ===== LAG-FREE SNAPPY MOVEMENT (FRAME-SAFE) ===== */
     const dx = this.fingerX - this.mascot.x;
     const dy = this.fingerY - this.mascot.y;
-    
+
     // Clamp delta to prevent enormous physics steps when the browser/phone lags
     const safeDelta = Math.min(delta, 50);
     const timeScale = safeDelta / 16;
-    
+
     // Mathematically safe frame-independent Lerp (Lerp factor approaches 1 over time but never exceeds it)
     // baseFollow of 0.45 means it targets closing 45% of distance in a normal 16ms frame
     const baseFollow = 0.45;
     const safeLerp = 1 - Math.pow(1 - baseFollow, timeScale);
-    
+
     this.mascot.vx = dx * safeLerp;
     this.mascot.vy = dy * safeLerp;
-    
+
     this.mascot.x += this.mascot.vx;
     this.mascot.y += this.mascot.vy;
 
@@ -1854,16 +1854,16 @@ const Game11 = {
       const dy = this.fingerY - this.CENTER_Y;
       dist = Math.sqrt(dx * dx + dy * dy);
     }
-    
+
     const targetRadius = 60 * this.scale;
     const inCenter = dist < targetRadius;
-    
+
     if (inCenter) {
       this.introCountdown -= delta;
     } else {
       this.introCountdown = 3000;
     }
-    
+
     if (this.introCountdown <= 0) {
       this.introPhase = false;
       this.activateGameMode1();
