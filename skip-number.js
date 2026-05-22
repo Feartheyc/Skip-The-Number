@@ -594,7 +594,7 @@ const Game1 = {
 
   mode: "default",
   skipAmount: 3,
-  gameTitle: "SKIP 3",
+  gameTitle: "COLLECT MULTIPLES OF ",
   pattern: { skip: 3, collect: 1 },
 
   cannonAngle: 0,
@@ -773,7 +773,7 @@ const Game1 = {
 
     this.mode = "default";
     this.skipAmount = this.getRandomSkip();
-    this.gameTitle = "SKIP " + this.skipAmount;
+    this.gameTitle = "COLLECT MULTIPLES OF "+ this.skipAmount;
     this.noteSpeed = this.speedCap;
 
     this.orbImage = new Image();
@@ -2109,13 +2109,13 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
     this.gameTitle="SKIP "+this.pattern.skip+" COLLECT "+this.pattern.collect;
     this._restartSpawnTimer();
   },
-  activateCannonMode()       { this.mode="cannon";  this._resetLauncherState(); this.gameTitle="CANNON SKIP "+this.skipAmount; },
-  activateOrbMode()          { this.mode="orb";     this._resetLauncherState(); this.orbAngle=0; this.orbTargetAngle=0; this.gameTitle="ORB SKIP "+this.skipAmount; },
+  activateCannonMode()       { this.mode="cannon";  this._resetLauncherState(); this.gameTitle="COLLECT MULTIPLES OF "+ this.skipAmount; },
+  activateOrbMode()          { this.mode="orb";     this._resetLauncherState(); this.orbAngle=0; this.orbTargetAngle=0; this.gameTitle="COLLECT MULTIPLES OF "+ this.skipAmount; },
   activateTripleCannonMode() {
     this.mode="triple"; this._resetLauncherState(); this.tripleBaseAngle=0; this.tripleTargetAngle=0; this.tripleCannons=[];
     const sp=(Math.PI*2)/this.tripleCount;
     for (let i=0;i<this.tripleCount;i++) this.tripleCannons.push({offset:i*sp});
-    this.gameTitle="TRIPLE CANNON SKIP "+this.skipAmount;
+    this.gameTitle="COLLECT MULTIPLES OF "+ this.skipAmount;
   },
 
   _resetLauncherState() {
