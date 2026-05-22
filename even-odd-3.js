@@ -228,32 +228,54 @@ const Game8 = {
 
     bgCtx.globalAlpha = 0.85;
 
-    // Blue - Even (Top Half)
-    bgCtx.fillStyle = "rgba(0, 255, 255, 0.3)";
-    bgCtx.fillRect(0, 0, overS, cy - gap + 5);
-    bgCtx.fillRect(0, 0, cx - gap + 5, overS);
-    bgCtx.fillRect(w - overS, 0, overS, cy - gap + 5);
-    bgCtx.fillRect(cx + gap - 5, 0, w, overS);
+   bgCtx.globalAlpha = 0.85;
 
-    bgCtx.fillStyle = "rgba(0, 255, 255, 0.8)";
-    bgCtx.fillRect(0, 0, e, cy - gap);
-    bgCtx.fillRect(0, 0, cx - gap, e);
-    bgCtx.fillRect(w - e, 0, e, cy - gap);
-    bgCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
+// ================= LEFT SIDE = RED (ODD) =================
 
-    // Red - Odd (Bottom Half)
-    bgCtx.fillStyle = "rgba(255, 0, 0, 0.3)";
-    bgCtx.fillRect(0, cy + gap - 5, overS, h);
-    bgCtx.fillRect(0, h - overS, cx - gap + 5, overS);
-    bgCtx.fillRect(w - overS, cy + gap - 5, overS, h);
-    bgCtx.fillRect(cx + gap - 5, h - overS, w, overS);
+// Glow
+bgCtx.fillStyle = "rgba(255, 0, 0, 0.3)";
+bgCtx.fillRect(0, 0, overS, h);
 
-    bgCtx.fillStyle = "rgba(255, 0, 0, 0.8)";
-    bgCtx.fillRect(0, cy + gap, e, h - (cy + gap));
-    bgCtx.fillRect(0, h - e, cx - gap, e);
-    bgCtx.fillRect(w - e, cy + gap, e, h - (cy + gap));
-    bgCtx.fillRect(cx + gap, h - e, w - (cx + gap), e);
+// Top left
+bgCtx.fillRect(0, 0, cx - gap + 5, overS);
 
+// Bottom left
+bgCtx.fillRect(0, h - overS, cx - gap + 5, overS);
+
+// Solid
+bgCtx.fillStyle = "rgba(255, 0, 0, 0.8)";
+bgCtx.fillRect(0, 0, e, h);
+
+// Top left
+bgCtx.fillRect(0, 0, cx - gap, e);
+
+// Bottom left
+bgCtx.fillRect(0, h - e, cx - gap, e);
+
+
+// ================= RIGHT SIDE = BLUE (EVEN) =================
+
+// Glow
+bgCtx.fillStyle = "rgba(0, 255, 255, 0.3)";
+bgCtx.fillRect(w - overS, 0, overS, h);
+
+// Top right
+bgCtx.fillRect(cx + gap - 5, 0, w, overS);
+
+// Bottom right
+bgCtx.fillRect(cx + gap - 5, h - overS, w, overS);
+
+// Solid
+bgCtx.fillStyle = "rgba(0, 255, 255, 0.8)";
+bgCtx.fillRect(w - e, 0, e, h);
+
+// Top right
+bgCtx.fillRect(cx + gap, 0, w - (cx + gap), e);
+
+// Bottom right
+bgCtx.fillRect(cx + gap, h - e, w - (cx + gap), e);
+
+bgCtx.globalAlpha = 1;
     bgCtx.globalAlpha = 1;
     bgCtx.strokeStyle = "rgba(255,255,255,0.2)";
     bgCtx.lineWidth = 2 * this.scale;
@@ -381,22 +403,16 @@ const Game8 = {
   },
 
   handleSpawning(dt) {
-    this.spawnTimer += dt;
-    this.modeTimer += dt;
-    if (this.modeTimer > 12000) {
-      sfxLevel_8.currentTime = 0;
-      sfxLevel_8.play().catch(() => { });
-      const allModes = ["top-bottom", "left-right", "all", "random-one"];
-      const otherModes = allModes.filter(m => m !== this.spawnMode);
-      this.spawnMode = otherModes[Math.floor(Math.random() * otherModes.length)];
-      this.modeTimer = 0;
-      this.spawnFloatingText(this.CENTER_X, this.CENTER_Y - 150 * this.scale, `Spawn Mode: ${this.spawnMode.toUpperCase()}`, "white", 0, -0.2, 5.0);
-    }
-    if (this.spawnTimer > this.spawnRate && this.balls.length < this.MAX_BALLS) {
-      this.spawnBall();
-      this.spawnTimer = 0;
-    }
-  },
+  this.spawnTimer += dt;
+
+  // Always keep only top-bottom spawning
+  this.spawnMode = "top-bottom";
+
+  if (this.spawnTimer > this.spawnRate && this.balls.length < this.MAX_BALLS) {
+    this.spawnBall();
+    this.spawnTimer = 0;
+  }
+},
 
   spawnBall() {
     const number = Math.floor(Math.random() * 100) + 1;
@@ -498,30 +514,103 @@ const Game8 = {
   },
 
   checkScoring() {
-    const w = this.cssWidth; const h = this.cssHeight;
-    const e = this.edgeSize; const gap = this.lineGap;
-    const cx = this.CENTER_X; const cy = this.CENTER_Y;
-    const triggerEdge = e * 0.5;
-    for (let i = this.balls.length - 1; i >= 0; i--) {
-      let b = this.balls[i];
-      let scoreType = null;
-      if (b.x < cx - gap) {
-        if ((b.y < triggerEdge && b.vy < 0) || (b.y > h - triggerEdge && b.vy > 0) || (b.x < triggerEdge && b.vx < 0)) {
-          scoreType = (b.y < cy) ? (!b.isOdd ? "good" : "bad") : (b.isOdd ? "good" : "bad");
-        }
-      } else if (b.x > cx + gap) {
-        if ((b.y < triggerEdge && b.vy < 0) || (b.y > h - triggerEdge && b.vy > 0) || (b.x > w - triggerEdge && b.vx > 0)) {
-          scoreType = (b.y < cy) ? (!b.isOdd ? "good" : "bad") : (b.isOdd ? "good" : "bad");
-        }
+  const w = this.cssWidth;
+  const h = this.cssHeight;
+  const e = this.edgeSize;
+  const gap = this.lineGap;
+  const cx = this.CENTER_X;
+
+  const triggerEdge = e * 0.5;
+
+  for (let i = this.balls.length - 1; i >= 0; i--) {
+    let b = this.balls[i];
+    let scoreType = null;
+
+    // ================= LEFT SIDE = ODD =================
+    if (b.x < cx - gap) {
+
+      if (
+        (b.y < triggerEdge && b.vy < 0) ||
+        (b.y > h - triggerEdge && b.vy > 0) ||
+        (b.x < triggerEdge && b.vx < 0)
+      ) {
+        scoreType = b.isOdd ? "good" : "bad";
       }
-      if (scoreType) {
-        const dx = cx - b.x; const dy = cy - b.y; const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-        if (scoreType === "good") { this.updateScore(10, true); this.spawnFloatingText(b.x, b.y, "+10", "#00FF00", (dx / dist) * 1.5, (dy / dist) * 1.5, 2.5); this.spawnExplosion(b.x, b.y, "#00FF00", 8, (dx / dist) * 3, (dy / dist) * 3); }
-        else { this.updateScore(-5, false); this.spawnFloatingText(b.x, b.y, "-5", "#FF0000", (dx / dist) * 1.5, (dy / dist) * 1.5, 2.5); this.spawnExplosion(b.x, b.y, "#FF0000", 5, (dx / dist) * 3, (dy / dist) * 3); this.shakeTimer = 25; }
-        this.balls.splice(i, 1);
-      }
+
     }
-  },
+
+    // ================= RIGHT SIDE = EVEN =================
+    else if (b.x > cx + gap) {
+
+      if (
+        (b.y < triggerEdge && b.vy < 0) ||
+        (b.y > h - triggerEdge && b.vy > 0) ||
+        (b.x > w - triggerEdge && b.vx > 0)
+      ) {
+        scoreType = !b.isOdd ? "good" : "bad";
+      }
+
+    }
+
+    if (scoreType) {
+
+      const dx = cx - b.x;
+      const dy = this.CENTER_Y - b.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+      if (scoreType === "good") {
+
+        this.updateScore(10, true);
+
+        this.spawnFloatingText(
+          b.x,
+          b.y,
+          "+10",
+          "#00FF00",
+          (dx / dist) * 1.5,
+          (dy / dist) * 1.5,
+          2.5
+        );
+
+        this.spawnExplosion(
+          b.x,
+          b.y,
+          "#00FF00",
+          8,
+          (dx / dist) * 3,
+          (dy / dist) * 3
+        );
+
+      } else {
+
+        this.updateScore(-5, false);
+
+        this.spawnFloatingText(
+          b.x,
+          b.y,
+          "-5",
+          "#FF0000",
+          (dx / dist) * 1.5,
+          (dy / dist) * 1.5,
+          2.5
+        );
+
+        this.spawnExplosion(
+          b.x,
+          b.y,
+          "#FF0000",
+          5,
+          (dx / dist) * 3,
+          (dy / dist) * 3
+        );
+
+        this.shakeTimer = 25;
+      }
+
+      this.balls.splice(i, 1);
+    }
+  }
+},
 
   updateScore(amount, isGood) {
     if (isGood) { sfxCorrect_8.currentTime = 0; sfxCorrect_8.play().catch(() => { }); }
@@ -638,26 +727,98 @@ const Game8 = {
   },
 
   drawUI(ctx) {
-    if (!this.gameStarted) {
-      ctx.textAlign = "center"; ctx.font = this.fontUI; ctx.fillStyle = "black";
-      ctx.fillText("STEER HANDS TO START", this.CENTER_X + 2 * this.scale, this.CENTER_Y - 48 * this.scale);
-      ctx.fillStyle = "white"; ctx.fillText("STEER HANDS TO START", this.CENTER_X, this.CENTER_Y - 50 * this.scale);
-    }
-    ctx.textAlign = "center"; ctx.font = this.scoreScale > 1.1 ? this.fontScoreBig : this.fontScore;
-    ctx.fillStyle = this.scoreColor; ctx.fillText(this.score, this.CENTER_X, 100 * this.scale);
-    const w = this.cssWidth; const h = this.cssHeight; ctx.font = this.fontLegend; ctx.textAlign = "center";
-    ctx.fillStyle = "#00FFFF";
-    ctx.fillText("Even", w * 0.07, 85 * this.scale);
-    ctx.fillText("Even", w * 0.93, 85 * this.scale);
-    const bh = h - 65 * this.scale;
-    ctx.fillStyle = "#FF0000";
-    ctx.fillText("Odd", w * 0.07, bh);
-    ctx.fillText("Odd", w * 0.93, bh);
-    if (this.currentMissingState) {
-      ctx.fillStyle = "red"; ctx.font = this.fontUI;
-      ctx.fillText("BRING BOTH HANDS IN VIEW", this.CENTER_X, this.CENTER_Y + 150 * this.scale);
-    }
-  },
+
+  if (!this.gameStarted) {
+
+    ctx.textAlign = "center";
+    ctx.font = this.fontUI;
+
+    ctx.fillStyle = "black";
+    ctx.fillText(
+      "STEER HANDS TO START",
+      this.CENTER_X + 2 * this.scale,
+      this.CENTER_Y - 48 * this.scale
+    );
+
+    ctx.fillStyle = "white";
+    ctx.fillText(
+      "STEER HANDS TO START",
+      this.CENTER_X,
+      this.CENTER_Y - 50 * this.scale
+    );
+  }
+
+  // ================= SCORE =================
+
+  ctx.textAlign = "center";
+
+  ctx.font =
+    this.scoreScale > 1.1
+      ? this.fontScoreBig
+      : this.fontScore;
+
+  ctx.fillStyle = this.scoreColor;
+
+  ctx.fillText(
+    this.score,
+    this.CENTER_X,
+    100 * this.scale
+  );
+
+  // ================= SIDE LABELS =================
+
+  const w = this.cssWidth;
+  const h = this.cssHeight;
+
+  ctx.font = this.fontLegend;
+  ctx.textAlign = "center";
+
+  const bottomHeight = h - 65 * this.scale;
+
+  // LEFT SIDE = ODD = RED
+  ctx.fillStyle = "#FF0000";
+
+  ctx.fillText(
+    "Odd",
+    w * 0.07,
+    85 * this.scale
+  );
+
+  ctx.fillText(
+    "Odd",
+    w * 0.07,
+    bottomHeight
+  );
+
+  // RIGHT SIDE = EVEN = BLUE
+  ctx.fillStyle = "#00FFFF";
+
+  ctx.fillText(
+    "Even",
+    w * 0.93,
+    85 * this.scale
+  );
+
+  ctx.fillText(
+    "Even",
+    w * 0.93,
+    bottomHeight
+  );
+
+  // ================= HAND WARNING =================
+
+  if (this.currentMissingState) {
+
+    ctx.fillStyle = "red";
+    ctx.font = this.fontUI;
+
+    ctx.fillText(
+      "BRING BOTH HANDS IN VIEW",
+      this.CENTER_X,
+      this.CENTER_Y + 150 * this.scale
+    );
+  }
+},
 
   get pivotOffset() { return this._pivotOffset; },
   get armLength() { return this._armLength; },
