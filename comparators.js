@@ -20,7 +20,7 @@ const Game3 = {
 
   currentGrade: 1,
   currentLevel: 1, 
-  targetPromptText: "Point at the BIGGER number!", 
+  targetPromptText: "Aim at the BIGGER number!", // 🎯 UPDATED: Changed from "Point" to "Aim"
 
   winHoldTime: 0,
   winHoldThreshold: 0.7,
@@ -211,22 +211,22 @@ const Game3 = {
     this.detectedSymbol = "None";
 
     if (this.currentGrade === 1) {
-      if (this.currentLevel === 1) this.targetPromptText = "Point at the BIGGER number!";
-      else if (this.currentLevel === 2) this.targetPromptText = "Point at the SMALLER number!";
-      else if (this.currentLevel === 3) this.targetPromptText = "Identify the correct relationship!";
+      if (this.currentLevel === 1) this.targetPromptText = "Aim at the BIGGER number!";
+      else if (this.currentLevel === 2) this.targetPromptText = "Aim at the SMALLER number!";
+      else if (this.currentLevel === 3) this.targetPromptText = "Aim at the correct match!";
       this.spawnIntegers(1, 20);
     }
     else if (this.currentGrade === 2) {
-      this.targetPromptText = "Point at the BIGGER number!";
+      this.targetPromptText = "Aim at the BIGGER number!";
       this.spawnIntegers(-50, 50);
     }
     else if (this.currentGrade === 3) {
-      this.targetPromptText = "Point at the BIGGER number!";
+      this.targetPromptText = "Aim at the BIGGER number!";
       if (Math.random() > 0.5) this.spawnIntegers(100, 999);
       else this.spawnLikeFractions();
     }
     else if (this.currentGrade === 4) {
-      this.targetPromptText = "Point at the BIGGER number!";
+      this.targetPromptText = "Aim at the BIGGER number!";
       this.spawnIrregularFractions();
     }
 
@@ -259,14 +259,14 @@ const Game3 = {
       else if (this.currentLevel === 3) {
         if (n1 === n2) {
           this.currentRelation = "Center"; 
-          this.targetPromptText = "Numbers are EQUAL! Point straight up!";
+          this.targetPromptText = "EQUAL! Aim straight up!"; // 🎯 UPDATED
         } else {
           const mixType = Math.random() > 0.5;
           if (mixType) {
-            this.targetPromptText = "Point at the BIGGER number!";
+            this.targetPromptText = "Aim at the BIGGER number!"; // 🎯 UPDATED
             this.currentRelation = n1 > n2 ? ">" : "<";
           } else {
-            this.targetPromptText = "Point at the SMALLER number!";
+            this.targetPromptText = "Aim at the SMALLER number!"; // 🎯 UPDATED
             this.currentRelation = n1 < n2 ? ">" : "<";
           }
         }
@@ -400,7 +400,7 @@ const Game3 = {
     ctx.fillText("2. Make a 'V' shape with your hand.", leftMargin, contentStartY + verticalSpacing);
     this.drawHandIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing + 10 * this.scale);
 
-    ctx.fillText(`3. ${this.targetPromptText}`, leftMargin, contentStartY + verticalSpacing * 2);
+    ctx.fillText(`3. ${this.targetPromptText}`, leftMargin, contentStartY + verticalSpacing * 2); // 🎯 UPDATED
     this.drawComparisonIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing * 2 + 10 * this.scale);
 
     ctx.fillStyle = "#00FFCC";
@@ -557,7 +557,6 @@ const Game3 = {
   },
 
   drawUI(ctx) {
-    // 1. Top Panel Dashboard Bar (Grade pills, scores & help headers)
     const topBarH = 80 * this.scale;
     ctx.fillStyle = "rgba(20, 20, 20, 0.6)";
     ctx.fillRect(0, 0, window.innerWidth, topBarH);
@@ -567,20 +566,17 @@ const Game3 = {
 
     ctx.textBaseline = "middle";
 
-    // Grade Text Pillar Layout Configuration
     ctx.textAlign = "left";
     ctx.font = `bold ${24 * this.scale}px Arial`; 
     ctx.fillStyle = "#00FFCC";
     const subLabel = this.currentGrade === 1 ? `Grade 1 (Level ${this.currentLevel})` : `Grade ${this.currentGrade}`;
     ctx.fillText(subLabel, 30 * this.scale, topBarH / 2);
 
-    // Score Dashboard Layout Configuration
     ctx.textAlign = "center";
     ctx.font = `bold ${26 * this.scale}px Arial`; 
     ctx.fillStyle = "#FFD700";
     ctx.fillText(`SCORE: ${this.score}`, this.centerX, topBarH / 2);
 
-    // Combo Tracker Position layout metrics configuration
     if (this.combo >= 2) { 
       ctx.textAlign = "left";
       ctx.fillStyle = "#FF6600"; 
@@ -588,7 +584,6 @@ const Game3 = {
       ctx.fillText(`Combo x${this.combo}`, this.centerX + 110 * this.scale, topBarH / 2); 
     }
 
-    // 2. Main Choice Numerical Value Cards
     ctx.textAlign = "center";
     const offsetX = 220 * this.scale;
     const cardW = 180 * this.scale * this.popScale; 
@@ -607,12 +602,11 @@ const Game3 = {
     drawCard(this.centerX - offsetX, this.leftColor, this.leftText);
     drawCard(this.centerX + offsetX, this.rightColor, this.rightText);
 
-    // Center Question Mark Card layout parameters configuration
     ctx.globalAlpha = 1;
     ctx.font = `bold ${54 * this.scale}px Arial`; ctx.fillStyle = "rgba(255,255,255,0.4)";
     ctx.fillText("?", this.centerX, this.centerY);
 
-    // 3. Central Target Task Action Instruction Panel (Safe margins below workspace layout cards)
+    // Prompt uses "Aim" consistently
     ctx.font = `bold ${24 * this.scale}px Arial`; ctx.fillStyle = "#FFFFFF";
     ctx.shadowBlur = 8; ctx.shadowColor = "#000";
     ctx.fillText(this.targetPromptText, this.centerX, this.centerY + 140 * this.scale);
@@ -620,7 +614,6 @@ const Game3 = {
 
     this.drawHelpButton(ctx);
     
-    // FPS anchor pinned out of view bounds cleanly 
     ctx.font = `12px Arial`; ctx.fillStyle = "rgba(0,255,0,0.3)"; ctx.textAlign = "left";
     ctx.fillText(`FPS: ${this.fps}`, 20, window.innerHeight - 20);
   },
