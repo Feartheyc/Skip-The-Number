@@ -186,6 +186,29 @@ const Game11 = {
   levelUpActive: false,
   levelUpTimer: 0,
 
+  // ✅ LEVEL CHANGE POPUP / PAUSE SYSTEM
+  // When true, gameplay pauses, collectable numbers stay hidden,
+  // galaxy life does not decrease, and the player must press OK.
+  levelChangeActive: false,
+  levelChangeOldLevel: 1,
+  levelChangeNewLevel: 1,
+  levelChangeOldSuffix: "st",
+  levelChangeNewSuffix: "st",
+  levelChangeStartTime: 0,
+  levelChangeOkRect: null,
+
+  // ✅ Keeps portal/UI ordinal stable when no hand or wrong gesture appears.
+  lastValidTargetSuffix: "st",
+
+  // Level-based ordinal combinations
+  levelOrdinals: {
+    1: ["st", "nd"],
+    2: ["rd", "th"],
+    3: ["nd", "rd"],
+    4: ["st", "th"],
+    5: ["st", "nd", "rd", "th"]
+  },
+
   // 🌈 Background Evolution
   backgroundHueShift: 0,
   lastFingerUpdateTime: 0,
@@ -204,6 +227,10 @@ const Game11 = {
     this._fingerSmoothY = null;
     this._targetFingerX = null;
     this._targetFingerY = null;
+
+    this.levelChangeActive = false;
+    this.levelChangeOkRect = null;
+    this.lastValidTargetSuffix = this.mode1TargetSuffix || "st";
 
     this.loadMascotSprites();
     this.loadPortalSprites();
@@ -233,6 +260,9 @@ const Game11 = {
         this.nextLevelScore = 50;
         this.stickers = [];
         this.nextStickerScore = 30;
+        this.levelChangeActive = false;
+        this.levelChangeOkRect = null;
+        this.lastValidTargetSuffix = "st";
 
         // 2️⃣ Clear Active Effects
         this.sparkBursts = [];
@@ -269,10 +299,14 @@ const Game11 = {
 
     window.addEventListener("click", (e) => {
       if (window.currentGame !== Game11) return;
+
       sfxButtonClick_11.currentTime = 0;
       sfxButtonClick_11.play().catch(() => { });
+
       if (!this.gameStarted) {
         this.handleStartClick(e);
+      } else if (this.levelChangeActive) {
+        this.handleLevelChangeOkClick(e);
       } else {
         handleRestart();
       }
@@ -280,15 +314,23 @@ const Game11 = {
 
     window.addEventListener("touchstart", (e) => {
       if (window.currentGame !== Game11) return;
+
       sfxButtonClick_11.currentTime = 0;
       sfxButtonClick_11.play().catch(() => { });
-      // Prevent double trigger if both touch and click fire
-      if (!this.gameStarted) {
-        if (e.touches && e.touches.length > 0) {
-          this.handleStartClick({ clientX: e.touches[0].clientX, clientY: e.touches[0].clientY });
+
+      if (e.touches && e.touches.length > 0) {
+        const touchPoint = {
+          clientX: e.touches[0].clientX,
+          clientY: e.touches[0].clientY
+        };
+
+        if (!this.gameStarted) {
+          this.handleStartClick(touchPoint);
+        } else if (this.levelChangeActive) {
+          this.handleLevelChangeOkClick(touchPoint);
+        } else {
+          handleRestart();
         }
-      } else {
-        handleRestart();
       }
     }, { passive: false });
   },
@@ -359,33 +401,242 @@ const Game11 = {
     this.blackHoleRadius = 0;
     this.blackHoleGrowthPhase = 0;
 
+    this.levelChangeActive = false;
+    this.levelChangeOkRect = null;
+
     // ── CLEAR MODE 1 NUMBERS ──────────────────────────────────────
     this.mode1Numbers = [];
 
-    // Determine suffix based on finger states
-    this.updateMode1TargetSuffix();
+    // Pick a safe suffix for current level once.
+    // After this, the suffix only changes when a VALID gesture is shown.
+    this.setSafeTargetSuffixForLevel(false);
 
     this.spawnMode1Numbers();
   },
 
-  updateMode1TargetSuffix() {
+  getAllowedOrdinalsForCurrentLevel() {
+    return this.levelOrdinals[this.level] || ["st", "nd", "rd", "th"];
+  },
 
-    if (!window.fingerStates) return;
+  detectSuffixFromFingerStates() {
+    if (!window.fingerStates) return null;
 
     const { index, middle, ring, thumb } = window.fingerStates;
 
-    if (index && middle && ring && thumb) {
-      this.mode1TargetSuffix = "th";
+    // No correct visible gesture.
+    if (!index && !middle && !ring && !thumb) return null;
+
+    // Correct patterns used by this game.
+    if (index && middle && ring && thumb) return "th";
+    if (index && middle && thumb && !ring) return "rd";
+    if (index && middle && !ring && !thumb) return "nd";
+    if (index && !middle && !ring && !thumb) return "st";
+
+    // Any other combination is a wrong/unclear gesture.
+    // Important: return null so the current ordinal does NOT glitch/change.
+    return null;
+  },
+
+  setSafeTargetSuffixForLevel(preferDifferent = false, oldSuffix = null) {
+    const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
+    const detectedSuffix = this.detectSuffixFromFingerStates();
+
+    if (detectedSuffix && allowedOrdinals.includes(detectedSuffix)) {
+      this.mode1TargetSuffix = detectedSuffix;
+      this.lastValidTargetSuffix = detectedSuffix;
+      return;
     }
-    else if (index && middle && thumb) {
-      this.mode1TargetSuffix = "rd";
+
+    if (this.mode1TargetSuffix && allowedOrdinals.includes(this.mode1TargetSuffix) && !preferDifferent) {
+      this.lastValidTargetSuffix = this.mode1TargetSuffix;
+      return;
     }
-    else if (index && middle) {
-      this.mode1TargetSuffix = "nd";
+
+    let choices = allowedOrdinals.slice();
+
+    if (preferDifferent && oldSuffix) {
+      const differentChoices = choices.filter(s => s !== oldSuffix);
+      if (differentChoices.length > 0) choices = differentChoices;
     }
-    else if (index) {
-      this.mode1TargetSuffix = "st";
+
+    this.mode1TargetSuffix = choices[Math.floor(Math.random() * choices.length)] || "st";
+    this.lastValidTargetSuffix = this.mode1TargetSuffix;
+  },
+
+  updateMode1TargetSuffix() {
+
+    if (this.levelChangeActive || this.mode1GameOver || this.galaxyCollapsed) return;
+
+    const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
+    const detectedSuffix = this.detectSuffixFromFingerStates();
+
+    // ✅ FIX: if no fingers are shown, or a wrong gesture is shown,
+    // keep the last correct ordinal instead of randomly changing/glitching.
+    if (!detectedSuffix) {
+      if (!this.mode1TargetSuffix && this.lastValidTargetSuffix) {
+        this.mode1TargetSuffix = this.lastValidTargetSuffix;
+      }
+      return;
     }
+
+    // ✅ Only change when the gesture is valid for the current level.
+    // If the shown gesture is not part of this level, keep the old suffix.
+    if (allowedOrdinals.includes(detectedSuffix)) {
+      this.mode1TargetSuffix = detectedSuffix;
+      this.lastValidTargetSuffix = detectedSuffix;
+    }
+  },
+
+  startLevelChangeTransition(oldLevel, newLevel, oldSuffix) {
+    this.levelChangeActive = true;
+    this.levelChangeOldLevel = oldLevel;
+    this.levelChangeNewLevel = newLevel;
+    this.levelChangeOldSuffix = oldSuffix || this.lastValidTargetSuffix || "st";
+
+    // Pick the new gesture now and keep it stable during the popup.
+    this.setSafeTargetSuffixForLevel(true, this.levelChangeOldSuffix);
+    this.levelChangeNewSuffix = this.mode1TargetSuffix;
+
+    // ✅ Clear all onscreen collectable numbers during the popup.
+    // They will come back only after OK is clicked.
+    this.mode1Numbers = [];
+    this.mode1SuctionActive = false;
+    this.mode1SuctionData = null;
+
+    this.levelChangeStartTime = performance.now();
+    this.levelChangeOkRect = null;
+
+    this.spawnFloatingText(this.CENTER_X, 110 * this.scale, `LEVEL ${newLevel}!`, "#FFD700");
+  },
+
+  finishLevelChangeTransition() {
+    if (!this.levelChangeActive) return;
+
+    this.levelChangeActive = false;
+    this.levelChangeOkRect = null;
+
+    // ✅ Fresh collectables after popup is gone.
+    this.mode1Numbers = [];
+    this.spawnMode1Numbers();
+
+    // Avoid huge delta after the pause so life does not suddenly drop.
+    this.lastTime = performance.now();
+  },
+
+  handleLevelChangeOkClick(e) {
+    if (!this.levelChangeActive || !this.levelChangeOkRect) return;
+
+    const r = this.levelChangeOkRect;
+
+    if (
+      e.clientX >= r.x &&
+      e.clientX <= r.x + r.w &&
+      e.clientY >= r.y &&
+      e.clientY <= r.y + r.h
+    ) {
+      this.finishLevelChangeTransition();
+    }
+  },
+
+  drawLevelChangePopup(ctx) {
+    if (!this.levelChangeActive) return;
+
+    const time = performance.now();
+    const elapsed = time - (this.levelChangeStartTime || time);
+    let popScale = Math.min(elapsed / 250, 1);
+    if (elapsed < 250) {
+      popScale += Math.sin((elapsed / 250) * Math.PI) * 0.12;
+    }
+
+    ctx.save();
+
+    ctx.fillStyle = "rgba(0, 0, 0, 0.68)";
+    ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+
+    const boxW = 760 * this.scale;
+    const boxH = 430 * this.scale;
+    const boxX = this.CENTER_X - boxW / 2;
+    const boxY = this.CENTER_Y - boxH / 2;
+
+    ctx.translate(this.CENTER_X, this.CENTER_Y);
+    ctx.scale(popScale, popScale);
+    ctx.translate(-this.CENTER_X, -this.CENTER_Y);
+
+    ctx.shadowColor = "rgba(124, 58, 237, 0.95)";
+    ctx.shadowBlur = 35 * this.scale;
+    ctx.fillStyle = "rgba(12, 10, 32, 0.96)";
+    ctx.strokeStyle = "rgba(167, 139, 250, 0.95)";
+    ctx.lineWidth = 5 * this.scale;
+
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, boxW, boxH, 34 * this.scale);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    ctx.fillStyle = "#FFD700";
+    ctx.shadowColor = "#FFD700";
+    ctx.shadowBlur = 18 * this.scale;
+    ctx.font = `bold ${70 * this.scale}px Arial`;
+    ctx.fillText("Level Change", this.CENTER_X, boxY + 80 * this.scale);
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `bold ${34 * this.scale}px Arial`;
+    ctx.fillText(
+      `Level ${this.levelChangeOldLevel}  ➜  Level ${this.levelChangeNewLevel}`,
+      this.CENTER_X,
+      boxY + 145 * this.scale
+    );
+
+    ctx.fillStyle = "#A7F3D0";
+    ctx.font = `bold ${32 * this.scale}px Arial`;
+    ctx.fillText(
+      "The gesture to be used has changed!",
+      this.CENTER_X,
+      boxY + 205 * this.scale
+    );
+
+    ctx.fillStyle = "#60A5FA";
+    ctx.font = `bold ${44 * this.scale}px Arial`;
+    ctx.fillText(
+      `New Gesture: ${this.levelChangeNewSuffix.toUpperCase()}`,
+      this.CENTER_X,
+      boxY + 270 * this.scale
+    );
+
+    ctx.fillStyle = "rgba(255,255,255,0.8)";
+    ctx.font = `bold ${22 * this.scale}px Arial`;
+    ctx.fillText(
+      "Collectable numbers will refresh after you press OK.",
+      this.CENTER_X,
+      boxY + 315 * this.scale
+    );
+
+    const btnW = 230 * this.scale;
+    const btnH = 72 * this.scale;
+    const btnX = this.CENTER_X - btnW / 2;
+    const btnY = boxY + boxH - 95 * this.scale;
+
+    this.levelChangeOkRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+
+    ctx.shadowColor = "rgba(52, 211, 153, 0.9)";
+    ctx.shadowBlur = 18 * this.scale;
+    ctx.fillStyle = "#10B981";
+    ctx.beginPath();
+    ctx.roundRect(btnX, btnY, btnW, btnH, 18 * this.scale);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.font = `bold ${34 * this.scale}px Arial`;
+    ctx.fillText("OK", this.CENTER_X, btnY + btnH / 2 + 2 * this.scale);
+
+    ctx.restore();
   },
 
   setupDoors() {
@@ -428,6 +679,63 @@ const Game11 = {
 
     return "th";
   },
+
+  isNumberValidForLevel(num, level) {
+    const allowedOrdinals = this.levelOrdinals[level] || ["st", "nd", "rd", "th"];
+    const suffix = this.getSuffix(num);
+    return allowedOrdinals.includes(suffix);
+  },
+
+  getValidNumberPoolForLevel(level) {
+    const allowedOrdinals = this.levelOrdinals[level] || ["st", "nd", "rd", "th"];
+    const pool = [];
+
+    // ✅ STRICT FIX:
+    // Build the pool by checking every number from 1 to 100.
+    // This means the game never falls back to a random invalid number.
+    for (let num = 1; num <= 100; num++) {
+      const suffix = this.getSuffix(num);
+      if (allowedOrdinals.includes(suffix)) {
+        pool.push(num);
+      }
+    }
+
+    return pool;
+  },
+
+  getValidNumbersForLevel(level, count = 1, excludeNumbers = []) {
+    const excludeSet = new Set(excludeNumbers);
+    let pool = this.getValidNumberPoolForLevel(level).filter(num => !excludeSet.has(num));
+
+    // If all valid numbers are excluded, allow valid duplicates rather than using invalid numbers.
+    if (pool.length === 0) {
+      pool = this.getValidNumberPoolForLevel(level);
+    }
+
+    const validNumbers = [];
+
+    while (validNumbers.length < count && pool.length > 0) {
+      const index = Math.floor(Math.random() * pool.length);
+      const num = pool.splice(index, 1)[0];
+      validNumbers.push(num);
+    }
+
+    return validNumbers;
+  },
+
+  getOneValidNumberForCurrentLevel() {
+    const currentNumbers = this.mode1Numbers.map(n => n.number);
+    const validNumbers = this.getValidNumbersForLevel(this.level, 1, currentNumbers);
+
+    if (validNumbers.length > 0) {
+      return validNumbers[0];
+    }
+
+    // Emergency fallback is still valid because it uses the level's allowed suffix.
+    const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
+    const safeSuffix = allowedOrdinals[0] || "th";
+    return this.generateNumberWithSuffix(safeSuffix);
+  },
   update(ctx) {
 
     if (!this.running) return;
@@ -451,6 +759,26 @@ const Game11 = {
     if (this.introPhase) {
       this.updateFingerPosition(performance.now());
       this.drawIntroPhase(ctx, delta);
+      return;
+    }
+
+    // ✅ LEVEL CHANGE PAUSE
+    // During this popup: no collectable numbers, no life decrease, no collision logic.
+    if (this.levelChangeActive) {
+      this.updateFingerPosition(performance.now());
+      this.updatePortalAnimation(delta);
+      this.updateSparkBursts(delta);
+      this.updateFloatingTexts(delta);
+
+      this.drawMode1PortalPlayer(ctx);
+      this.drawMode1Instruction(ctx);
+      this.drawSparkBursts(ctx);
+      this.drawFloatingTexts(ctx);
+      this.drawGalaxyLifeBar(ctx);
+      this.drawFingerImages(ctx);
+      this.drawScore(ctx);
+      this.drawLevel(ctx);
+      this.drawLevelChangePopup(ctx);
       return;
     }
 
@@ -492,6 +820,7 @@ const Game11 = {
     this.drawMode1GameOver(ctx);
 
     this.drawScore(ctx);
+    this.drawLevel(ctx);
     ctx.restore(); // End of screen shake
   },
 
@@ -539,11 +868,21 @@ const Game11 = {
     ctx.shadowBlur = 4;
 
     const labels = ["_st", "_nd", "_rd", "_th"];
+    const allowedOrdinals = this.levelOrdinals[this.level] || ["st", "nd", "rd", "th"];
+    const ordinalNames = ["st", "nd", "rd", "th"];
 
+    let displayIndex = 0;
     for (let i = 0; i < this.fingerImages.length; i++) {
+      const ordinal = ordinalNames[i];
+
+      // Only show images for allowed ordinals in this level
+      if (!allowedOrdinals.includes(ordinal)) {
+        continue; // Skip this ordinal
+      }
+
       const img = this.fingerImages[i];
       const x = startX;
-      const y = startY + i * verticalGap;
+      const y = startY + displayIndex * verticalGap;
 
       if (img.complete) {
         // Decrease width of the second image
@@ -553,8 +892,9 @@ const Game11 = {
         ctx.drawImage(img, currentX, y, currentWidth, imgSize);
         ctx.fillText(labels[i] || "", x + imgSize / 2, y + imgSize + 5 * this.scale);
       }
-    }
 
+      displayIndex++;
+    }
 
     ctx.restore();
   },
@@ -594,6 +934,48 @@ const Game11 = {
 
     ctx.fillText(
       `⭐ ${this.score}`,
+      x + width / 2,
+      y + height / 2 + 2 * this.scale
+    );
+
+    ctx.restore();
+  },
+
+  drawLevel(ctx) {
+
+    const padding = 20 * this.scale;
+    const width = 220 * this.scale;
+    const height = 70 * this.scale;
+    const x = this.cssWidth - width - 20 * this.scale;
+    const y = this.cssHeight - height - 20 * this.scale;
+
+    // Glassmorphism bubble
+    ctx.save();
+
+    ctx.shadowColor = "rgba(0,0,0,0.2)";
+    ctx.shadowBlur = 10;
+
+    ctx.fillStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.4)";
+    ctx.lineWidth = 2 * this.scale;
+
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, 25 * this.scale);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.shadowBlur = 0;
+
+    // Level text
+    ctx.fillStyle = "#00FFFF"; // cyan
+    ctx.shadowColor = "#00FFFF";
+    ctx.shadowBlur = 10;
+    ctx.font = this.fScore;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    ctx.fillText(
+      `Level ${this.level}/5`,
       x + width / 2,
       y + height / 2 + 2 * this.scale
     );
@@ -747,8 +1129,7 @@ const Game11 = {
         this.mascot.y += dy * 0.08;
       } else {
         this.mode1Confirming = false;
-        const suffixes = ["st", "nd", "rd", "th"];
-        this.mode1TargetSuffix = suffixes[Math.floor(Math.random() * 4)];
+        this.setSafeTargetSuffixForLevel(false);
         this.spawnMode1Numbers();
       }
       return;
@@ -1083,6 +1464,9 @@ const Game11 = {
 
   spawnMode1Numbers() {
 
+    // Do not spawn collectables during popup, game over, or black hole collapse.
+    if (this.levelChangeActive || this.mode1GameOver || this.galaxyCollapsed) return;
+
     const margin = 100 * this.scale;
     const minX = 180 * this.scale;  // Beside finger images
     const minY = 200 * this.scale;  // Below life bar
@@ -1130,8 +1514,10 @@ const Game11 = {
       }
 
       if (foundPos) {
-        // Random number 1–100
-        const num = Math.floor(Math.random() * 100) + 1;
+        // ✅ STRICT FIX:
+        // This number is always from the current level's allowed ordinal list.
+        // There is no random invalid fallback anymore.
+        const num = this.getOneValidNumberForCurrentLevel();
 
         this.mode1Numbers.push({
           number: num,
@@ -1155,14 +1541,19 @@ const Game11 = {
 
   generateNumberWithSuffix(suffix) {
 
-    while (true) {
+    const pool = [];
 
-      const num = Math.floor(Math.random() * 100) + 1;
-
+    for (let num = 1; num <= 100; num++) {
       if (this.getSuffix(num) === suffix) {
-        return num;
+        pool.push(num);
       }
     }
+
+    if (pool.length === 0) {
+      return 100;
+    }
+
+    return pool[Math.floor(Math.random() * pool.length)];
   },
 
 
@@ -1281,7 +1672,7 @@ const Game11 = {
 
   updateGalaxyLife(delta) {
 
-    if (this.galaxyCollapsed) return;
+    if (this.galaxyCollapsed || this.levelChangeActive) return;
 
     this.galaxyLife -= delta;
 
@@ -1440,10 +1831,9 @@ const Game11 = {
 
     this.mode1GameOver = false;
 
-    const suffixes = ["st", "nd", "rd", "th"];
-    this.mode1TargetSuffix =
-      suffixes[Math.floor(Math.random() * 4)];
+    this.setSafeTargetSuffixForLevel(false);
 
+    this.mode1Numbers = [];
     this.spawnMode1Numbers();
   },
 
@@ -1506,43 +1896,89 @@ const Game11 = {
 
     if (!n) {
       this.mode1SuctionActive = false;
+      this.mode1SuctionData = null;
       return;
     }
 
-    if (this.getSuffix(n.number) === this.mode1TargetSuffix) {
+    const collectedSuffix = this.getSuffix(n.number);
+
+    // Safety guard: if any older invalid collectable somehow remains onscreen after a level change,
+    // remove it and replace it with a valid number instead of punishing the player.
+    if (!this.isNumberValidForLevel(n.number, this.level)) {
+      this.mode1Numbers.splice(s.index, 1);
+      this.mode1SuctionActive = false;
+      this.mode1SuctionData = null;
+      this.spawnMode1Numbers();
+      return;
+    }
+
+    if (collectedSuffix === this.mode1TargetSuffix) {
       sfxCorrect_11.currentTime = 0;
       sfxCorrect_11.play().catch(() => { });
 
       this.score += 10;
       this.mode1CorrectCollected++;
 
-      // ⭐ Add 3 seconds life
+      // ⭐ Add 5 seconds life on correct answer
       this.galaxyLife += 5000;
 
-      if (this.galaxyLife > this.galaxyMaxLife)
+      if (this.galaxyLife > this.galaxyMaxLife) {
         this.galaxyLife = this.galaxyMaxLife;
+      }
 
       this.spawnSparkBurst(this.mascot.x, this.mascot.y);
-      const ordinalNum = n.number + this.getSuffix(n.number);
-      this.spawnFloatingText(this.mascot.x, this.mascot.y - 100 * this.scale, `${ordinalNum}! +5s`, "#00FFAA");
+
+      const ordinalNum = n.number + collectedSuffix;
+      this.spawnFloatingText(
+        this.mascot.x,
+        this.mascot.y - 100 * this.scale,
+        `${ordinalNum}! +5s`,
+        "#00FFAA"
+      );
 
       this.mode1Numbers.splice(s.index, 1);
 
-      // Always maintain minimum stars
-      this.spawnMode1Numbers();
+      let didLevelChange = false;
+
+      // Check if level should advance after 10 correct answers.
+      if (this.mode1CorrectCollected >= 10) {
+        this.mode1CorrectCollected = 0;
+
+        if (this.level < 5) {
+          const oldLevel = this.level;
+          const oldSuffix = this.mode1TargetSuffix;
+
+          this.level++;
+          didLevelChange = true;
+
+          // ✅ Show popup, pause gameplay, and clear numbers.
+          this.startLevelChangeTransition(oldLevel, this.level, oldSuffix);
+        }
+      }
+
+      // Spawn immediately only if level did NOT change.
+      // If level changed, numbers come back after OK is clicked.
+      if (!didLevelChange) {
+        this.spawnMode1Numbers();
+      }
 
     } else {
       sfxWrong_11.currentTime = 0;
       sfxWrong_11.play().catch(() => { });
 
       this.score -= 5;
-      const ordinalNum = n.number + this.getSuffix(n.number);
-      this.spawnFloatingText(this.mascot.x, this.mascot.y - 100 * this.scale, `${ordinalNum}? Oops!`, "#FF4444");
 
-      // Remove wrong number and spawn new one (game continues)
+      const ordinalNum = n.number + collectedSuffix;
+      this.spawnFloatingText(
+        this.mascot.x,
+        this.mascot.y - 100 * this.scale,
+        `${ordinalNum}? Oops!`,
+        "#FF4444"
+      );
+
+      // Remove wrong number and spawn a new one.
       this.mode1Numbers.splice(s.index, 1);
       this.spawnMode1Numbers();
-
     }
 
     this.mode1SuctionActive = false;
