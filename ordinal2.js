@@ -7,6 +7,8 @@
    • No-finger prompt drawn on canvas, zero extra DOM
    • Hold-to-start reads window.fingerPositions directly
    • fullResetOnResize() removed — replaced with _onResize()
+   • FIX: countValidNumbers() caps correctCount to achievable max
+   • FIX: updateMode1Merge remainingCorrect safety net added
 ============================================================ */
 
 const Game10 = {
@@ -465,42 +467,123 @@ const Game10 = {
     return "th";
   },
   generateNumberWithSuffix(suffix) {
-    let n;
-    do { n = Math.floor(Math.random() * this.numberRange) + 1; }
-    while (this.getSuffix(n) !== suffix);
+    let n, attempts = 0;
+    do {
+      n = Math.floor(Math.random() * this.numberRange) + 1;
+      attempts++;
+      // Safety: if no valid number exists in range, return first match by brute force
+      if (attempts > 200) {
+        for (let i = 1; i <= this.numberRange; i++) {
+          if (this.getSuffix(i) === suffix) return i;
+        }
+        // Absolute fallback — expand search beyond range
+        for (let i = 1; i <= 100; i++) {
+          if (this.getSuffix(i) === suffix) return i;
+        }
+        return 1;
+      }
+    } while (this.getSuffix(n) !== suffix);
     return n;
+  },
+
+  /* ── FIX: Count how many valid numbers exist for a suffix ── */
+  countValidNumbers(suffix) {
+    let count = 0;
+    for (let n = 1; n <= this.numberRange; n++) {
+      if (this.getSuffix(n) === suffix) count++;
+    }
+    return count;
   },
 
   /* ── Spawn numbers ───────────────────────────────────────── */
   spawnMode1Numbers() {
-    this.mode1Numbers = []; this.proximityGlow = [];
-    this.mode1SuctionActive = false; this.mode1SuctionData = null;
-    this.mode1MergeActive = false; this.mode1BreakActive = false;
+    this.mode1Numbers = [];
+    this.proximityGlow = [];
 
-    const correctCount = Math.floor(Math.random() * (this.mode1MaxMatches - this.mode1MinMatches + 1)) + this.mode1MinMatches;
+    this.mode1SuctionActive = false;
+    this.mode1SuctionData = null;
+
+    this.mode1MergeActive = false;
+    this.mode1BreakActive = false;
+
+    // ── FIX: Cap correctCount to how many valid numbers actually exist ──
+    const maxPossible = this.countValidNumbers(this.mode1TargetSuffix);
+    const safeMax = Math.max(1, Math.min(this.mode1MaxMatches, maxPossible));
+    const safeMin = Math.min(this.mode1MinMatches, safeMax);
+
+    const correctCount = safeMax > safeMin
+      ? Math.floor(Math.random() * (safeMax - safeMin + 1)) + safeMin
+      : safeMax;
+
     this.mode1CorrectTotal = correctCount;
     this.mode1CorrectCollected = 0;
-    this.mode1RoundActive = true; this.mode1Confirming = false;
 
-    const count = 4 + this.level;
-    const margin = 140 * this.scale, safeR = 170 * this.scale;
+    this.mode1RoundActive = true;
+    this.mode1Confirming = false;
+
+    const MAX_NUMBERS = 5;
+    const MIN_DISTANCE = 220 * this.scale;
+
+    const count = Math.min(MAX_NUMBERS, 4 + this.level);
+
+    const margin = 140 * this.scale;
+    const safeR = 170 * this.scale;
+
     const used = [];
     let correctSpawned = 0;
 
     for (let i = 0; i < count; i++) {
-      let x, y, att = 0;
-      do {
-        x = margin + Math.random() * (this.cssWidth  - margin * 2);
+
+      let x, y;
+      let attempts = 0;
+      let foundPosition = false;
+
+      while (attempts < 80 && !foundPosition) {
+        attempts++;
+        x = margin + Math.random() * (this.cssWidth - margin * 2);
         y = margin + Math.random() * (this.cssHeight - margin * 2);
-        att++;
-      } while ((Math.hypot(x - this.CENTER_X, y - this.CENTER_Y) < safeR || used.some(p => Math.hypot(x - p.x, y - p.y) < 130 * this.scale)) && att < 40);
+
+        if (Math.hypot(x - this.CENTER_X, y - this.CENTER_Y) < safeR) continue;
+
+        let tooClose = false;
+        for (const p of used) {
+          if (Math.hypot(x - p.x, y - p.y) < MIN_DISTANCE) { tooClose = true; break; }
+        }
+        if (!tooClose) foundPosition = true;
+      }
+
+      if (!foundPosition) {
+        x = margin + Math.random() * (this.cssWidth - margin * 2);
+        y = margin + Math.random() * (this.cssHeight - margin * 2);
+      }
+
       used.push({ x, y });
 
       let num;
-      if (correctSpawned < correctCount) { num = this.generateNumberWithSuffix(this.mode1TargetSuffix); correctSpawned++; }
-      else { do { num = Math.floor(Math.random() * this.numberRange) + 1; } while (this.getSuffix(num) === this.mode1TargetSuffix); }
+      if (correctSpawned < correctCount) {
+        num = this.generateNumberWithSuffix(this.mode1TargetSuffix);
+        correctSpawned++;
+      } else {
+        let distAttempts = 0;
+        do {
+          num = Math.floor(Math.random() * this.numberRange) + 1;
+          distAttempts++;
+        } while (this.getSuffix(num) === this.mode1TargetSuffix && distAttempts < 200);
+      }
 
-      this.mode1Numbers.push({ number:num, x, y, baseX:x, baseY:y, floatAmp:6*this.scale, floatPeriod:2500+Math.random()*1500, floatOffset:Math.random()*Math.PI*2, renderScale:1, renderRotation:0, spawnAlpha:0, spawnDelay:i*80 });
+      this.mode1Numbers.push({
+        number: num,
+        x, y,
+        baseX: x, baseY: y,
+        floatAmp: 6 * this.scale,
+        floatPeriod: 2500 + Math.random() * 1500,
+        floatOffset: Math.random() * Math.PI * 2,
+        renderScale: 1,
+        renderRotation: 0,
+        spawnAlpha: 0,
+        spawnDelay: i * 80
+      });
+
       this.proximityGlow.push(0);
     }
   },
@@ -781,9 +864,27 @@ const Game10 = {
   /* ── Merge animation ─────────────────────────────────────── */
   startPortalMerge(number){this.mode1MergeActive=true;this.mode1MergeData={number,suffix:this.mode1TargetSuffix,angle:0,radius:80*this.scale,time:0,duration:800,scale:1};},
   updateMode1Merge(delta){
-    if(!this.mode1MergeActive)return;const m=this.mode1MergeData;m.time+=delta;const p=m.time/m.duration;
-    if(p<0.45)m.angle+=0.009*delta;else if(p<0.78){m.angle+=0.017*delta;m.radius*=Math.pow(0.994,delta);}else{m.radius*=Math.pow(0.978,delta);m.scale*=Math.pow(0.992,delta);}
-    if(p>=1){this.spawnSparkBurst(this.mascot.x,this.mascot.y);this.mode1MergeActive=false;this.mode1CorrectCollected++;if(this.mode1CorrectCollected>=this.mode1CorrectTotal)this.startMode1Confirmation();}
+    if(!this.mode1MergeActive)return;
+    const m=this.mode1MergeData;
+    m.time+=delta;
+    const p=m.time/m.duration;
+    if(p<0.45)m.angle+=0.009*delta;
+    else if(p<0.78){m.angle+=0.017*delta;m.radius*=Math.pow(0.994,delta);}
+    else{m.radius*=Math.pow(0.978,delta);m.scale*=Math.pow(0.992,delta);}
+    if(p>=1){
+      this.spawnSparkBurst(this.mascot.x,this.mascot.y);
+      this.mode1MergeActive=false;
+      this.mode1CorrectCollected++;
+
+      // ── FIX: safety net — if no correct numbers remain on screen, end round ──
+      const remainingCorrect = this.mode1Numbers.filter(
+        n => this.getSuffix(n.number) === this.mode1TargetSuffix
+      ).length;
+
+      if(this.mode1CorrectCollected >= this.mode1CorrectTotal || remainingCorrect === 0){
+        this.startMode1Confirmation();
+      }
+    }
   },
   drawMode1Merge(ctx){
     if(!this.mode1MergeActive)return;const m=this.mode1MergeData;
