@@ -604,7 +604,7 @@ const Game11 = {
     ctx.fillStyle = "#60A5FA";
     ctx.font = `bold ${44 * this.scale}px Arial`;
     ctx.fillText(
-      `New Gesture: ${this.levelChangeNewSuffix.toUpperCase()}`,
+      `New Gesture: ${this.getAllowedOrdinalsForCurrentLevel().map(s => s.toUpperCase()).join(", ")}`,
       this.CENTER_X,
       boxY + 270 * this.scale
     );
