@@ -20,7 +20,7 @@ const Game3 = {
 
   currentGrade: 1,
   currentLevel: 1, 
-  targetPromptText: "Aim at the BIGGER number!", // 🎯 UPDATED: Changed from "Point" to "Aim"
+  targetPromptText: "Aim at the BIGGER number!", 
 
   winHoldTime: 0,
   winHoldThreshold: 0.7,
@@ -39,7 +39,7 @@ const Game3 = {
 
   popups: [],
   particles: [],
-  confetti: [],
+  confetti: [], 
   shakeTime: 0,
   shakeMag: 0,
 
@@ -77,6 +77,10 @@ const Game3 = {
   FINGER_UPDATE_INTERVAL: 33, 
   _cachedLandmarks: null,
 
+  // ⚡ ADDITIVE: Intensive Combo Expiry Tracking Properties
+  comboTimer: 0,
+  COMBO_MAX_TIME: 5.0, // 5 seconds window limit
+
   playSFX(name, vol = 0.5) {
     const s = this.sfx[name];
     if (s) {
@@ -97,6 +101,9 @@ const Game3 = {
     this.showTutorial = true;
     this.tutorialHoldTime = 0;
     this.difficultyMenuOpen = false;
+    this.confetti = [];
+    this.popups = [];
+    this.comboTimer = 0; // Reset countdown
 
     if (!this.eventsBound) {
       this.eventsBound = true;
@@ -212,8 +219,8 @@ const Game3 = {
 
     if (this.currentGrade === 1) {
       if (this.currentLevel === 1) this.targetPromptText = "Aim at the BIGGER number!";
-      else if (this.currentLevel === 2) this.targetPromptText = "Aim at the SMALLER number!";
-      else if (this.currentLevel === 3) this.targetPromptText = "Aim at the correct match!";
+      else if (this.currentLevel === 2) this.targetPromptText = "Point finger at the SMALLER number!";
+      else if (this.currentLevel === 3) this.targetPromptText = "Follow the challenge instruction!";
       this.spawnIntegers(1, 20);
     }
     else if (this.currentGrade === 2) {
@@ -259,14 +266,14 @@ const Game3 = {
       else if (this.currentLevel === 3) {
         if (n1 === n2) {
           this.currentRelation = "Center"; 
-          this.targetPromptText = "EQUAL! Aim straight up!"; // 🎯 UPDATED
+          this.targetPromptText = "EQUAL! Aim straight up!";
         } else {
           const mixType = Math.random() > 0.5;
           if (mixType) {
-            this.targetPromptText = "Aim at the BIGGER number!"; // 🎯 UPDATED
+            this.targetPromptText = "Aim at the BIGGER number!";
             this.currentRelation = n1 > n2 ? ">" : "<";
           } else {
-            this.targetPromptText = "Aim at the SMALLER number!"; // 🎯 UPDATED
+            this.targetPromptText = "Point finger at the SMALLER number!";
             this.currentRelation = n1 < n2 ? ">" : "<";
           }
         }
@@ -320,12 +327,24 @@ const Game3 = {
       ctx.translate((Math.random() - 0.5) * this.shakeMag, (Math.random() - 0.5) * this.shakeMag);
     }
 
+    // ⚡ ADDITIVE: Intensive Combo Timer Countdown Loop 
+    if (this.combo > 0 && this.gameState === "PLAYING" && !this.showTutorial && !this.difficultyMenuOpen) {
+      this.comboTimer -= dt;
+      if (this.comboTimer <= 0) {
+        this.combo = 0;
+        this.comboTimer = 0;
+        this.playSFX('wrong', 0.25); // Soft indicator sound for combo drop
+        this.popups.push({ text: "COMBO RESET!", x: this.centerX, y: this.centerY + 175 * this.scale, vy: 10, life: 1.0, color: "#FF9800", timestamp: performance.now() });
+      }
+    }
+
     this.fadeAlpha = Math.min(1, this.fadeAlpha + dt * this.fadeSpeed);
     this.popScale = Math.min(1, this.popScale + dt * this.popSpeed);
 
     this.drawUI(ctx);
     this.drawPopups(ctx, dt);
     this.drawParticles(ctx, dt);
+    this.drawConfetti(ctx, dt); 
 
     const isPlaying = !this.showTutorial && !this.difficultyMenuOpen && this.gameState === "PLAYING";
 
@@ -397,10 +416,10 @@ const Game3 = {
     ctx.textAlign = "left"; ctx.font = `bold ${24 * this.scale}px Arial`;
     ctx.fillStyle = "#FFFFFF";
     ctx.fillText("1. Look at the numbers on the screen.", leftMargin, contentStartY);
-    ctx.fillText("2. Make a 'V' shape with your hand.", leftMargin, contentStartY + verticalSpacing);
+    ctx.fillText("2. For BIGGER numbers, make a wide 'V' shape.", leftMargin, contentStartY + verticalSpacing);
     this.drawHandIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing + 10 * this.scale);
 
-    ctx.fillText(`3. ${this.targetPromptText}`, leftMargin, contentStartY + verticalSpacing * 2); // 🎯 UPDATED
+    ctx.fillText("3. For SMALLER numbers, point with just one finger.", leftMargin, contentStartY + verticalSpacing * 2); 
     this.drawComparisonIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing * 2 + 10 * this.scale);
 
     ctx.fillStyle = "#00FFCC";
@@ -442,17 +461,21 @@ const Game3 = {
   },
 
   checkPose(ctx, indexTip, thumbTip, wrist, dt) {
-    const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
-    if (angle < 20) { this.resetHolds(dt); return; }
+    const isSmallerNumberChallenge = (this.currentGrade === 1 && this.currentLevel === 2) || (this.currentGrade === 1 && this.currentLevel === 3 && this.targetPromptText.includes("SMALLER"));
+    
+    if (!isSmallerNumberChallenge) {
+      const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
+      if (angle < 20) { this.resetHolds(dt); return; }
+      
+      const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
+      if (overlap < 0.5) { this.resetHolds(dt); return; }
+    }
 
-    const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
-    if (overlap < 0.5) { this.resetHolds(dt); return; }
-
-    const tipsX = (indexTip.x + thumbTip.x) / 2;
+    const tipsX = isSmallerNumberChallenge ? indexTip.x : (indexTip.x + thumbTip.x) / 2;
     const threshold = 30 * this.scale;
 
-    if (tipsX < wrist.x - threshold) this.detectedSymbol = ">";
-    else if (tipsX > wrist.x + threshold) this.detectedSymbol = "<";
+    if (tipsX < this.centerX - threshold) this.detectedSymbol = ">";
+    else if (tipsX > this.centerX + threshold) this.detectedSymbol = "<";
     else this.detectedSymbol = "Center";
 
     const isCorrect = this.detectedSymbol === this.currentRelation;
@@ -483,13 +506,32 @@ const Game3 = {
     this.score += 10;
     this.combo++;
 
+    // ⚡ ADDITIVE: Refresh combo countdown window instantly on correct execution
+    this.comboTimer = this.COMBO_MAX_TIME;
+
+    this.popups = this.popups.filter(p => p.color !== "#FF4444");
+
+    for (let i = 0; i < 35; i++) {
+      this.confetti.push({
+        x: Math.random() * window.innerWidth,
+        y: Math.random() * -60,
+        w: (Math.random() * 8 + 4) * this.scale,
+        h: (Math.random() * 12 + 6) * this.scale,
+        vy: Math.random() * 150 + 100,
+        vx: (Math.random() - 0.5) * 60,
+        rotation: Math.random() * Math.PI * 2,
+        rotSpeed: (Math.random() - 0.5) * 10,
+        color: `hsl(${Math.floor(Math.random() * 360)}, 100%, 50%)`
+      });
+    }
+
     if (this.currentGrade === 1) {
       if (this.score >= 80 && this.currentLevel === 2) {
         this.currentLevel = 3;
-        this.popups.push({ text: "LEVEL 3: MIX & EQUALS!", x: this.centerX, y: this.centerY - 140 * this.scale, vy: -15, life: 1.5, color: "#FF00FF" });
+        this.popups.push({ text: "LEVEL 3: MIX & EQUALS!", x: this.centerX, y: this.centerY - 140 * this.scale, vy: -15, life: 1.5, color: "#FF00FF", timestamp: performance.now() });
       } else if (this.score >= 40 && this.currentLevel === 1) {
         this.currentLevel = 2;
-        this.popups.push({ text: "LEVEL 2: SMALLER NUMBERS!", x: this.centerX, y: this.centerY - 140 * this.scale, vy: -15, life: 1.5, color: "#FFFF00" });
+        this.popups.push({ text: "LEVEL 2: SMALLER NUMBERS!", x: this.centerX, y: this.centerY - 140 * this.scale, vy: -15, life: 1.5, color: "#FFFF00", timestamp: performance.now() });
       }
     }
 
@@ -499,14 +541,26 @@ const Game3 = {
       this.playSFX('correct', 0.5);
     }
 
-    const popupText = (this.combo % 5 === 0) ? `AMAZING! x${this.combo}` : "Correct!";
-    this.popups.push({ text: popupText, x: this.centerX, y: this.centerY, vy: -40, life: 1, color: (this.combo % 5 === 0) ? "#FFD700" : "#00FF66" });
+    this.popups.push({ text: "SUCCESS!", x: this.centerX, y: this.centerY, vy: -20, life: 1.2, color: "#00FF22", timestamp: performance.now() });
+
+    if (this.combo > 0 && this.combo % 5 === 0) {
+      this.popups.push({ 
+        text: `AMAZING COMBO x${this.combo}`, 
+        x: this.centerX, 
+        y: this.centerY + 175 * this.scale, 
+        vy: -5, 
+        life: 1.5, 
+        color: "#FFD700",
+        isMilestone: true,
+        timestamp: performance.now()
+      });
+    }
 
     for (let i = 0; i < 15; i++) {
       this.particles.push({
         x: this.centerX, y: this.centerY,
         vx: (Math.random() - 0.5) * 400, vy: (Math.random() - 0.5) * 400,
-        life: 1, color: this.getBrightColor()
+        life: 1, color: "#00FF22"
       });
     }
     setTimeout(() => this.spawnNumbers(), 800);
@@ -517,86 +571,119 @@ const Game3 = {
     this.gameState = "GAME_OVER";
     this.score = Math.max(0, this.score - 5);
     this.combo = 0;
-    this.shakeTime = 0.3; this.shakeMag = 12 * this.scale;
-    this.popups.push({ text: "Wrong!", x: this.centerX, y: this.centerY, vy: 40, life: 1, color: "#FF4444" });
+    this.comboTimer = 0; // Hard drop countdown timer bounds
+    this.shakeTime = 0.35; 
+    this.shakeMag = 14 * this.scale;
+
+    this.popups = this.popups.filter(p => p.color !== "#00FF22" && !p.isMilestone);
+    this.popups.push({ text: "Wrong!", x: this.centerX, y: this.centerY, vy: 40, life: 1, color: "#FF4444", timestamp: performance.now() });
     setTimeout(() => this.spawnNumbers(), 1000);
   },
 
   drawParticles(ctx, dt) {
     ctx.save();
     this.particles.forEach(p => {
-      p.x += p.vx * dt; p.y += p.vy * dt; p.life -= dt; ctx.globalAlpha = p.life; ctx.fillStyle = p.color;
+      ctx.globalAlpha = Math.max(0, p.life); ctx.fillStyle = p.color;
       ctx.beginPath(); ctx.arc(p.x, p.y, 5 * this.scale, 0, 7); ctx.fill();
     });
     ctx.restore(); this.particles = this.particles.filter(p => p.life > 0);
   },
 
+  drawConfetti(ctx, dt) {
+    ctx.save();
+    this.confetti.forEach(c => {
+      c.y += c.vy * dt; c.x += c.vx * dt; c.rotation += c.rotSpeed * dt;
+      ctx.fillStyle = c.color;
+      ctx.save(); ctx.translate(c.x, c.y); ctx.rotate(c.rotation);
+      ctx.fillRect(-c.w / 2, -c.h / 2, c.w, c.h); ctx.restore();
+    });
+    ctx.restore(); this.confetti = this.confetti.filter(c => c.y < window.innerHeight + 20);
+  },
+
   drawPopups(ctx, dt) {
+    const now = performance.now();
     this.popups.forEach(p => {
-      p.y += p.vy * dt; p.life -= dt; ctx.globalAlpha = p.life;
-      ctx.font = `bold ${44 * this.scale}px Arial`; ctx.fillStyle = p.color; ctx.textAlign = "center";
+      const elapsed = now - p.timestamp;
+      let targetAlpha = 1.0;
+      if (elapsed > 500) { targetAlpha = Math.max(0, 1.0 - (elapsed - 500) / 400); }
+      ctx.globalAlpha = targetAlpha;
+      p.life = targetAlpha; 
+
+      if (p.isMilestone) ctx.font = `bold ${28 * this.scale}px Arial`; 
+      else ctx.font = `bold ${44 * this.scale}px Arial`;
+      
+      ctx.fillStyle = p.color; ctx.textAlign = "center";
       ctx.fillText(p.text, p.x, p.y);
     });
     ctx.globalAlpha = 1; this.popups = this.popups.filter(p => p.life > 0);
   },
 
   drawArmSymbol(ctx, indexTip, thumbTip, wrist) {
-    const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
-    if (angle < 20) return;
-
+    const isSmallerNumberChallenge = (this.currentGrade === 1 && this.currentLevel === 2) || (this.currentGrade === 1 && this.currentLevel === 3 && this.targetPromptText.includes("SMALLER"));
+    
     let color = "#00FFCC";
     if (this.detectedSymbol === ">") color = "#FFFF00";
     else if (this.detectedSymbol === "<") color = "#00AAFF";
     else if (this.detectedSymbol === "Center") color = "#FF00FF";
 
     ctx.strokeStyle = color; ctx.lineWidth = 10 * this.scale; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.lineTo(thumbTip.x, thumbTip.y); ctx.stroke();
-
-    ctx.fillStyle = "white";
-    [indexTip, thumbTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
+    ctx.beginPath();
+    
+    if (isSmallerNumberChallenge) {
+      ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.stroke();
+      ctx.fillStyle = "white"; [indexTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
+    } else {
+      const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
+      if (angle < 20) return;
+      ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.lineTo(thumbTip.x, thumbTip.y); ctx.stroke();
+      ctx.fillStyle = "white"; [indexTip, thumbTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
+    }
   },
 
   drawUI(ctx) {
     const topBarH = 80 * this.scale;
-    ctx.fillStyle = "rgba(20, 20, 20, 0.6)";
-    ctx.fillRect(0, 0, window.innerWidth, topBarH);
-    ctx.strokeStyle = "rgba(255,255,255,0.1)";
-    ctx.lineWidth = 2;
+    ctx.fillStyle = "rgba(20, 20, 20, 0.6)"; ctx.fillRect(0, 0, window.innerWidth, topBarH);
+    ctx.strokeStyle = "rgba(255,255,255,0.1)"; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(0, topBarH); ctx.lineTo(window.innerWidth, topBarH); ctx.stroke();
 
     ctx.textBaseline = "middle";
-
-    ctx.textAlign = "left";
-    ctx.font = `bold ${24 * this.scale}px Arial`; 
-    ctx.fillStyle = "#00FFCC";
+    ctx.textAlign = "left"; ctx.font = `bold ${24 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
     const subLabel = this.currentGrade === 1 ? `Grade 1 (Level ${this.currentLevel})` : `Grade ${this.currentGrade}`;
     ctx.fillText(subLabel, 30 * this.scale, topBarH / 2);
 
-    ctx.textAlign = "center";
-    ctx.font = `bold ${26 * this.scale}px Arial`; 
-    ctx.fillStyle = "#FFD700";
+    ctx.textAlign = "center"; ctx.font = `bold ${26 * this.scale}px Arial`; ctx.fillStyle = "#FFD700";
     ctx.fillText(`SCORE: ${this.score}`, this.centerX, topBarH / 2);
 
     if (this.combo >= 2) { 
-      ctx.textAlign = "left";
-      ctx.fillStyle = "#FF6600"; 
-      ctx.font = `bold ${18 * this.scale}px Arial`; 
+      ctx.textAlign = "left"; ctx.fillStyle = "#FF6600"; ctx.font = `bold ${18 * this.scale}px Arial`; 
       ctx.fillText(`Combo x${this.combo}`, this.centerX + 110 * this.scale, topBarH / 2); 
+    }
+
+    // ⚡ ADDITIVE: Intensive Combo Multiplier Countdown Meter Bar (Draws right below header)
+    if (this.combo > 0 && this.comboTimer > 0) {
+      const barW = 280 * this.scale;
+      const barH = 6 * this.scale;
+      const barX = this.centerX - barW / 2;
+      const barY = topBarH + 8 * this.scale;
+      const ratio = this.comboTimer / this.COMBO_MAX_TIME;
+
+      ctx.fillStyle = "rgba(0,0,0,0.4)";
+      ctx.roundRect ? ctx.beginPath() || ctx.roundRect(barX, barY, barW, barH, 3 * this.scale) || ctx.fill() : ctx.fillRect(barX, barY, barW, barH);
+      
+      // Interpolate from Hot Orange to Warn Red based on expiring ratio bounds
+      ctx.fillStyle = `hsl(${ratio * 40}, 100%, 50%)`;
+      ctx.roundRect ? ctx.beginPath() || ctx.roundRect(barX, barY, barW * ratio, barH, 3 * this.scale) || ctx.fill() : ctx.fillRect(barX, barY, barW * ratio, barH);
     }
 
     ctx.textAlign = "center";
     const offsetX = 220 * this.scale;
-    const cardW = 180 * this.scale * this.popScale; 
-    const cardH = 160 * this.scale * this.popScale;
+    const cardW = 180 * this.scale * this.popScale; const cardH = 160 * this.scale * this.popScale;
 
     ctx.globalAlpha = this.fadeAlpha;
     const drawCard = (x, color, text) => {
-      ctx.fillStyle = "rgba(0,0,0,0.25)"; 
-      ctx.beginPath(); ctx.roundRect(x - cardW / 2 + 5, this.centerY - cardH / 2 + 8, cardW, cardH, 15 * this.scale); ctx.fill();
-      ctx.fillStyle = color; 
-      ctx.beginPath(); ctx.roundRect(x - cardW / 2, this.centerY - cardH / 2, cardW, cardH, 15 * this.scale); ctx.fill();
-      ctx.font = `bold ${64 * this.scale * this.popScale}px Arial`; 
-      ctx.fillStyle = "white"; ctx.fillText(text, x, this.centerY);
+      ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.roundRect(x - cardW / 2 + 5, this.centerY - cardH / 2 + 8, cardW, cardH, 15 * this.scale); ctx.fill();
+      ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x - cardW / 2, this.centerY - cardH / 2, cardW, cardH, 15 * this.scale); ctx.fill();
+      ctx.font = `bold ${64 * this.scale * this.popScale}px Arial`; ctx.fillStyle = "white"; ctx.fillText(text, x, this.centerY);
     };
 
     drawCard(this.centerX - offsetX, this.leftColor, this.leftText);
@@ -606,14 +693,12 @@ const Game3 = {
     ctx.font = `bold ${54 * this.scale}px Arial`; ctx.fillStyle = "rgba(255,255,255,0.4)";
     ctx.fillText("?", this.centerX, this.centerY);
 
-    // Prompt uses "Aim" consistently
     ctx.font = `bold ${24 * this.scale}px Arial`; ctx.fillStyle = "#FFFFFF";
     ctx.shadowBlur = 8; ctx.shadowColor = "#000";
     ctx.fillText(this.targetPromptText, this.centerX, this.centerY + 140 * this.scale);
     ctx.shadowBlur = 0;
 
     this.drawHelpButton(ctx);
-    
     ctx.font = `12px Arial`; ctx.fillStyle = "rgba(0,255,0,0.3)"; ctx.textAlign = "left";
     ctx.fillText(`FPS: ${this.fps}`, 20, window.innerHeight - 20);
   },
@@ -621,12 +706,9 @@ const Game3 = {
   drawHelpButton(ctx) {
     if (!this.helpBtn) return;
     const topBarH = 80 * this.scale;
-    this.helpBtn.x = window.innerWidth - 40 * this.scale;
-    this.helpBtn.y = topBarH / 2;
-    
+    this.helpBtn.x = window.innerWidth - 40 * this.scale; this.helpBtn.y = topBarH / 2;
     ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(this.helpBtn.x, this.helpBtn.y, this.helpBtn.r, 0, 7); ctx.fill();
-    ctx.fillStyle = "white"; ctx.font = `bold ${18 * this.scale}px Arial`; ctx.textAlign = "center";
-    ctx.fillText("?", this.helpBtn.x, this.helpBtn.y);
+    ctx.fillStyle = "white"; ctx.font = `bold ${18 * this.scale}px Arial`; ctx.textAlign = "center"; ctx.fillText("?", this.helpBtn.x, this.helpBtn.y);
   },
 
   drawFeedback(ctx, text, color) {
@@ -635,8 +717,7 @@ const Game3 = {
   },
 
   drawProgressBar(ctx, percentage, color) {
-    const width = 240 * this.scale;
-    const barY = this.centerY + 100 * this.scale;
+    const width = 240 * this.scale; const barY = this.centerY + 100 * this.scale;
     ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(this.centerX - width / 2, barY, width, 12 * this.scale);
     ctx.fillStyle = color; ctx.fillRect(this.centerX - width / 2, barY, width * Math.min(1, percentage), 12 * this.scale);
   },
@@ -646,10 +727,8 @@ const Game3 = {
     this.cameraStarted = true;
     const video = document.getElementById("input_video");
     const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
-
     hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
     hands.onResults((res) => this.processHandResults(res));
-
     const camera = new Camera(video, { onFrame: async () => await hands.send({ image: video }), width: 1280, height: 720 });
     camera.start();
   },
@@ -659,14 +738,11 @@ const Game3 = {
     if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
     const hand = results.multiHandLandmarks[0];
     const { width, height } = canvas.getBoundingClientRect();
-
     const smooth = (p, x, y) => {
       if (!this.prevPoints) this.prevPoints = {};
       if (!this.prevPoints[p]) return this.prevPoints[p] = { x, y };
-      const f = 0.7;
-      return this.prevPoints[p] = { x: this.prevPoints[p].x * f + x * (1 - f), y: this.prevPoints[p].y * f + y * (1 - f) };
+      const f = 0.7; return this.prevPoints[p] = { x: this.prevPoints[p].x * f + x * (1 - f), y: this.prevPoints[p].y * f + y * (1 - f) };
     };
-
     window.fingerPositions = [
       smooth("idx", (1 - hand[8].x) * width, hand[8].y * height),
       smooth("thm", (1 - hand[4].x) * width, hand[4].y * height),
@@ -675,10 +751,8 @@ const Game3 = {
   },
 
   calculateWristAngle(p1, p2, wrist) {
-    const v1 = { x: p1.x - wrist.x, y: p1.y - wrist.y };
-    const v2 = { x: p2.x - wrist.x, y: p2.y - wrist.y };
-    const dot = v1.x * v2.x + v1.y * v2.y;
-    const mag = Math.sqrt(v1.x ** 2 + v1.y ** 2) * Math.sqrt(v2.x ** 2 + v2.y ** 2);
+    const v1 = { x: p1.x - wrist.x, y: p1.y - wrist.y }; const v2 = { x: p2.x - wrist.x, y: p2.y - wrist.y };
+    const dot = v1.x * v2.x + v1.y * v2.y; const mag = Math.sqrt(v1.x ** 2 + v1.y ** 2) * Math.sqrt(v2.x ** 2 + v2.y ** 2);
     return mag === 0 ? 0 : Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180 / Math.PI;
   },
 
