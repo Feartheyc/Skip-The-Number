@@ -77,9 +77,8 @@ const Game3 = {
   FINGER_UPDATE_INTERVAL: 33, 
   _cachedLandmarks: null,
 
-  // ⚡ ADDITIVE: Intensive Combo Expiry Tracking Properties
   comboTimer: 0,
-  COMBO_MAX_TIME: 5.0, // 5 seconds window limit
+  COMBO_MAX_TIME: 5.0, 
 
   playSFX(name, vol = 0.5) {
     const s = this.sfx[name];
@@ -103,7 +102,7 @@ const Game3 = {
     this.difficultyMenuOpen = false;
     this.confetti = [];
     this.popups = [];
-    this.comboTimer = 0; // Reset countdown
+    this.comboTimer = 0; 
 
     if (!this.eventsBound) {
       this.eventsBound = true;
@@ -327,13 +326,12 @@ const Game3 = {
       ctx.translate((Math.random() - 0.5) * this.shakeMag, (Math.random() - 0.5) * this.shakeMag);
     }
 
-    // ⚡ ADDITIVE: Intensive Combo Timer Countdown Loop 
     if (this.combo > 0 && this.gameState === "PLAYING" && !this.showTutorial && !this.difficultyMenuOpen) {
       this.comboTimer -= dt;
       if (this.comboTimer <= 0) {
         this.combo = 0;
         this.comboTimer = 0;
-        this.playSFX('wrong', 0.25); // Soft indicator sound for combo drop
+        this.playSFX('wrong', 0.25); 
         this.popups.push({ text: "COMBO RESET!", x: this.centerX, y: this.centerY + 175 * this.scale, vy: 10, life: 1.0, color: "#FF9800", timestamp: performance.now() });
       }
     }
@@ -506,9 +504,7 @@ const Game3 = {
     this.score += 10;
     this.combo++;
 
-    // ⚡ ADDITIVE: Refresh combo countdown window instantly on correct execution
     this.comboTimer = this.COMBO_MAX_TIME;
-
     this.popups = this.popups.filter(p => p.color !== "#FF4444");
 
     for (let i = 0; i < 35; i++) {
@@ -571,7 +567,7 @@ const Game3 = {
     this.gameState = "GAME_OVER";
     this.score = Math.max(0, this.score - 5);
     this.combo = 0;
-    this.comboTimer = 0; // Hard drop countdown timer bounds
+    this.comboTimer = 0; 
     this.shakeTime = 0.35; 
     this.shakeMag = 14 * this.scale;
 
@@ -602,6 +598,12 @@ const Game3 = {
 
   drawPopups(ctx, dt) {
     const now = performance.now();
+    
+    const successActive = this.popups.some(p => p.text === "SUCCESS!" || p.isMilestone);
+    if (!successActive && this.gameState !== "PLAYING") {
+      // Intentional empty hook block to fulfill cascade structures properly
+    }
+
     this.popups.forEach(p => {
       const elapsed = now - p.timestamp;
       let targetAlpha = 1.0;
@@ -659,7 +661,6 @@ const Game3 = {
       ctx.fillText(`Combo x${this.combo}`, this.centerX + 110 * this.scale, topBarH / 2); 
     }
 
-    // ⚡ ADDITIVE: Intensive Combo Multiplier Countdown Meter Bar (Draws right below header)
     if (this.combo > 0 && this.comboTimer > 0) {
       const barW = 280 * this.scale;
       const barH = 6 * this.scale;
@@ -670,7 +671,6 @@ const Game3 = {
       ctx.fillStyle = "rgba(0,0,0,0.4)";
       ctx.roundRect ? ctx.beginPath() || ctx.roundRect(barX, barY, barW, barH, 3 * this.scale) || ctx.fill() : ctx.fillRect(barX, barY, barW, barH);
       
-      // Interpolate from Hot Orange to Warn Red based on expiring ratio bounds
       ctx.fillStyle = `hsl(${ratio * 40}, 100%, 50%)`;
       ctx.roundRect ? ctx.beginPath() || ctx.roundRect(barX, barY, barW * ratio, barH, 3 * this.scale) || ctx.fill() : ctx.fillRect(barX, barY, barW * ratio, barH);
     }
