@@ -150,8 +150,8 @@ const Game11 = {
   mode1SuctionDuration: 600,
 
   /* ===== GALAXY LIFE SYSTEM ===== */
-  galaxyMaxLife: 20000,
-  galaxyLife: 20000,
+  galaxyMaxLife: 30000,
+  galaxyLife: 30000,
   galaxyShrinkTimer: 0,
 
   galaxyCollapsed: false,
