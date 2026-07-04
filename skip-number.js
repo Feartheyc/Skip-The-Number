@@ -1211,6 +1211,23 @@ _startPlaying() {
   },
 
   /* ── Tutorial visual mini-diagrams ─────────────────────── */
+  _tutNoteColors(isCorrect, noteId) {
+    const vis = this._noteVisual(isCorrect, noteId);
+    const h   = this.hintState;
+    const isVisC = vis.showCorrect, isVisW = vis.showWrong;
+    let bodyFill, rimColor, shadowCol;
+    if (isVisC && h !== "subtle") {
+      bodyFill = "#0e3028"; rimColor = this.C.correct; shadowCol = "rgba(109,232,180,0.45)";
+    } else if (isVisW) {
+      bodyFill = "#2a1010"; rimColor = this.C.wrong;   shadowCol = "rgba(232,124,109,0.4)";
+    } else {
+      bodyFill  = "#102140";
+      rimColor  = `rgba(${Math.round(100+vis.shimmerAmt*80)},${Math.round(160+vis.shimmerAmt*40)},${Math.round(200+vis.shimmerAmt*30)},${0.55+vis.shimmerAmt*0.35})`;
+      shadowCol = `rgba(90,150,200,${0.25+vis.shimmerAmt*0.2})`;
+    }
+    return { bodyFill, rimColor, shadowCol, isVisC, isVisW, shimmerAmt: vis.shimmerAmt };
+  },
+
   _drawTutVisual(ctx, mode, px, py, pw, ph, t, tColor) {
     const hr = s => { const h=(s||"").replace("#",""); const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16); return isNaN(r)?"140,180,220":`${r},${g},${b}`; };
     ctx.save(); ctx.translate(px, py);
@@ -1234,13 +1251,14 @@ _startPlaying() {
       for (const n of notes) {
         const pr = ((t*0.38+n.d)%1.0), dist = r*1.65*(1-pr*0.6);
         const nx=pw/2+Math.cos(n.a)*dist, ny=ph/2+Math.sin(n.a)*dist;
+        const cols = this._tutNoteColors(n.c, n.v);
         ctx.beginPath();
         ctx.arc(nx,ny,15,0,Math.PI*2);
-        ctx.fillStyle=n.c?"#0e3028":"#2a1010";
-        ctx.shadowColor=n.c?this.C.correct:this.C.wrong;
+        ctx.fillStyle=cols.bodyFill;
+        ctx.shadowColor=cols.shadowCol;
         ctx.shadowBlur=12;
         ctx.fill();
-        ctx.strokeStyle=n.c?this.C.correct:this.C.wrong;
+        ctx.strokeStyle=cols.rimColor;
         ctx.lineWidth=2;
         ctx.stroke();
         ctx.shadowBlur=0;
@@ -1269,11 +1287,12 @@ _startPlaying() {
       const sX=(pw-totalW)/2,bY=ph/2-8;
       for (let i=0;i<nums.length;i++) {
         const isC=(i%cycle)>=skip,bx=sX+i*(bW+gap);
+        const cols = this._tutNoteColors(isC, nums[i]);
         ctx.beginPath();
         ctx.roundRect(bx,bY,bW,bH,5);
-        ctx.fillStyle=isC?"#0e3028":"#0a1525";
+        ctx.fillStyle=cols.bodyFill;
         ctx.fill();
-        ctx.strokeStyle=isC?this.C.correct:"rgba(140,180,220,0.3)";
+        ctx.strokeStyle=cols.rimColor;
         ctx.lineWidth=2;
         ctx.stroke();
         ctx.fillStyle="#f0f4ff";
@@ -1311,13 +1330,14 @@ _startPlaying() {
       ctx.stroke();
       ctx.restore();
       const flyT=(t*0.5)%1, fnx=cnx+Math.cos(ang)*(28+flyT*70), fny=cny+Math.sin(ang)*(28+flyT*70);
+      const cols = this._tutNoteColors(true, 6);
       ctx.beginPath();
       ctx.arc(fnx,fny,14,0,Math.PI*2);
-      ctx.fillStyle="#0e3028";
-      ctx.shadowColor=this.C.correct;
+      ctx.fillStyle=cols.bodyFill;
+      ctx.shadowColor=cols.shadowCol;
       ctx.shadowBlur=10;
       ctx.fill();
-      ctx.strokeStyle=this.C.correct;
+      ctx.strokeStyle=cols.rimColor;
       ctx.lineWidth=2;
       ctx.stroke();
       ctx.shadowBlur=0;
@@ -1348,13 +1368,14 @@ _startPlaying() {
       ctx.stroke();
       ctx.shadowBlur=0;
       const sR=50+Math.sin(t*1.2)*14, snx=orx+Math.cos(oA)*sR, sny=ory+Math.sin(oA)*sR;
+      const cols = this._tutNoteColors(true, 9);
       ctx.beginPath();
       ctx.arc(snx,sny,14,0,Math.PI*2);
-      ctx.fillStyle="#0e3028";
-      ctx.shadowColor=this.C.correct;
+      ctx.fillStyle=cols.bodyFill;
+      ctx.shadowColor=cols.shadowCol;
       ctx.shadowBlur=10;
       ctx.fill();
-      ctx.strokeStyle=this.C.correct;
+      ctx.strokeStyle=cols.rimColor;
       ctx.lineWidth=2;
       ctx.stroke();
       ctx.shadowBlur=0;
@@ -2352,7 +2373,9 @@ _startPlaying() {
     ctx.lineWidth = 1;
     ctx.stroke();
     this._tutOrbT += dt;
-    this._drawTutVisual(ctx, (this.currentRoundPlan && this.currentRoundPlan.mode) || this.mode || this._pendingMode || "default", visX, visY, visW, visH, this._tutOrbT, this.C.accent);
+    const _rawMode = (this.currentRoundPlan && this.currentRoundPlan.mode) || this.mode || this._pendingMode || "default";
+    const _visMode = _rawMode === "default" ? "skip" : _rawMode;
+    this._drawTutVisual(ctx, _visMode, visX, visY, visW, visH, this._tutOrbT, this.C.accent);
 
     const rulesX = box.isMob ? box.cardX + 16 : box.cardX + visW + 24;
     const rulesY = box.isMob ? visY + visH + 12 : box.cardY + 84;
@@ -3367,7 +3390,6 @@ activateTripleCannonMode() {
     this._beginRound();
   }
 };
-
 
 
 
