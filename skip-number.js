@@ -585,6 +585,39 @@ const Game1 = {
   maxNumber: 100,
   spawnTimer: null,
   spawnInterval: 1800,
+  roundNumber: 1,
+  nextRoundNumber: 1,
+  roundCycleGoal: 100,
+  timeLimit: 180,
+  timeRemaining: 180,
+  skillPoints: 0,
+  levelThreshold: 90,
+  bestCombo: 0,
+  totalCorrectTouches: 0,
+  totalWrongTouches: 0,
+  totalMissedCorrect: 0,
+  roundCorrectTouches: 0,
+  roundWrongTouches: 0,
+  roundMissedCorrect: 0,
+  roundMaxCombo: 0,
+  roundWrongStreakPeak: 0,
+  roundMissStreakPeak: 0,
+  wrongTouchStreak: 0,
+  missedCorrectStreak: 0,
+  roundScoreStart: 0,
+  currentRoundPlan: null,
+  nextRoundPlan: null,
+  roundWrapPending: false,
+  roundWrapDelay: 0,
+  roundEndBonus: 20,
+  levelUpBonus: 120,
+  roundHoldSec: 3.0,
+  overlayHoldProgress: 0,
+  levelCongratsTapHold: 0,
+  gameOverFade: 0,
+  overlayData: null,
+  assistTimeBonus: 0,
+  assistAppliedThisRound: false,
 
   pulseTime: 0,
   pulseSpeed: 1.8,
@@ -684,10 +717,15 @@ const Game1 = {
       tagline:"Like Mario coins — only collect every Nth one!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
+        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏳",text:"The time bar keeps going down"},
+        {icon:"🔁",text:"Numbers reset to 1 after 100"},
+        {icon:"➕",text:"Finish a round = +20 seconds"},
         {icon:"🎯",text:"Numbers fly in from the ring toward center"},
         {icon:"✅",text:"Touch ONLY multiples (e.g. 3, 6, 9 for Skip 3)"},
         {icon:"💍",text:"Only tap when a number is touching the ring"},
-        {icon:"❌",text:"Wrong touch = lose points + combo reset + speed penalty"},
+        {icon:"⚠️",text:"Miss a good number = score goes down"},
+        {icon:"❌",text:"Wrong touch = lose points + your streak breaks + speed drops"},
         {icon:"🔥",text:"5-combo streaks multiply your score!"},
       ], visual:"skip",
     },
@@ -696,11 +734,16 @@ const Game1 = {
       tagline:"Like Guitar Hero — hit the right notes in rhythm!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
+        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏳",text:"The time bar keeps going down"},
+        {icon:"🔁",text:"Numbers reset to 1 after 100"},
+        {icon:"➕",text:"Finish a round = +20 seconds"},
         {icon:"🎶",text:"Numbers appear in a repeating skip-collect cycle"},
         {icon:"⏭️",text:"SKIP a set, then COLLECT a set — repeat"},
         {icon:"🧠",text:"E.g. Skip 2, Collect 3 → ✗✗✓✓✓ then repeat"},
         {icon:"💍",text:"Only tap when a number is on the ring"},
-        {icon:"❌",text:"Wrong touch = lose points + combo reset + speed penalty"},
+        {icon:"⚠️",text:"Miss a good number = score goes down"},
+        {icon:"❌",text:"Wrong touch = lose points + your streak breaks + speed drops"},
         {icon:"🔥",text:"5-combo streaks multiply your score!"},
       ], visual:"pattern",
     },
@@ -709,10 +752,14 @@ const Game1 = {
       tagline:"Like Space Invaders — zap right ones before escape!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
+        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏳",text:"The time bar keeps going down"},
+        {icon:"🔁",text:"Numbers reset to 1 after 100"},
+        {icon:"➕",text:"Finish a round = +20 seconds"},
         {icon:"💥",text:"The cannon fires numbers across the screen"},
         {icon:"✅",text:"Touch correct multiples before they fly off"},
-        {icon:"🚀",text:"Wrong touch = lost points + combo reset + speed penalty"},
-        {icon:"⚠️",text:"Correct number escaping = score deduction"},
+        {icon:"🚀",text:"Wrong touch = lost points + your streak breaks + speed drops"},
+        {icon:"⚠️",text:"A good number gets away = score goes down"},
         {icon:"🔥",text:"5-combo streaks multiply your score!"},
       ], visual:"cannon",
     },
@@ -721,11 +768,15 @@ const Game1 = {
       tagline:"Like Metroid — intercept numbers mid-flight!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
+        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏳",text:"The time bar keeps going down"},
+        {icon:"🔁",text:"Numbers reset to 1 after 100"},
+        {icon:"➕",text:"Finish a round = +20 seconds"},
         {icon:"🌀",text:"A spinning orb launches numbers outward"},
         {icon:"🎯",text:"Catch the right numbers as they fly past"},
         {icon:"💜",text:"The orb turns to aim, so watch closely"},
-        {icon:"❌",text:"Wrong touch = lost points + combo reset + speed penalty"},
-        {icon:"⚠️",text:"Correct number escaping = score deduction"},
+        {icon:"❌",text:"Wrong touch = lost points + your streak breaks + speed drops"},
+        {icon:"⚠️",text:"A good number gets away = score goes down"},
         {icon:"🔥",text:"5-combo streaks multiply your score!"},
       ], visual:"orb",
     },
@@ -734,11 +785,15 @@ const Game1 = {
       tagline:"Like Galaga with 3 ships — pure chaos, total skill!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
+        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏳",text:"The time bar keeps going down"},
+        {icon:"🔁",text:"Numbers reset to 1 after 100"},
+        {icon:"➕",text:"Finish a round = +20 seconds"},
         {icon:"🔴",text:"THREE cannons fire in random order"},
         {icon:"👀",text:"Gold glow = that cannon fires next"},
         {icon:"🎯",text:"Intercept correct numbers from all directions"},
-        {icon:"❌",text:"Wrong touch = lost points + combo reset + speed penalty"},
-        {icon:"⚠️",text:"Correct number escaping = score deduction"},
+        {icon:"❌",text:"Wrong touch = lost points + your streak breaks + speed drops"},
+        {icon:"⚠️",text:"A good number gets away = score goes down"},
         {icon:"🔥",text:"5-combo streaks multiply your score!"},
       ], visual:"triple",
     },
@@ -765,17 +820,42 @@ const Game1 = {
     this.score = 0;
     this.combo = 0;
     this.multiplier = 1;
-    this.hitTextTimer = 1;
+    this.hitTextTimer = 0;
     this.currentNumber = 1;
     this.xp = 0;
-    this.xpToNext = 8;
     this.level = 1;
+    this.levelThreshold = this._getLevelThreshold(this.level);
     this.tier = 0;
     this.levelUpActive = false;
     this.xpPopFlash = 0;
     this.hintState = "full";
     this.noiseTime = 0;
     this.spawnInterval = 1800;
+    this.timeRemaining = this.timeLimit;
+    this.skillPoints = 0;
+    this.bestCombo = 0;
+    this.totalCorrectTouches = 0;
+    this.totalWrongTouches = 0;
+    this.totalMissedCorrect = 0;
+    this.roundCorrectTouches = 0;
+    this.roundWrongTouches = 0;
+    this.roundMissedCorrect = 0;
+    this.roundMaxCombo = 0;
+    this.roundWrongStreakPeak = 0;
+    this.roundMissStreakPeak = 0;
+    this.wrongTouchStreak = 0;
+    this.missedCorrectStreak = 0;
+    this.roundScoreStart = 0;
+    this.roundNumber = 1;
+    this.nextRoundNumber = 1;
+    this.currentRoundPlan = null;
+    this.nextRoundPlan = null;
+    this.roundWrapPending = false;
+    this.roundWrapDelay = 0;
+    this.overlayHoldProgress = 0;
+    this.levelCongratsTapHold = 0;
+    this.gameOverFade = 0;
+    this.overlayData = null;
     this.torusAngle = 0;
     this._spriteFrame = 0;
 
@@ -783,6 +863,8 @@ const Game1 = {
     this.skipAmount = this.getRandomSkip();
     this.gameTitle = "COLLECT MULTIPLES OF "+ this.skipAmount;
     this.noteSpeed = this.speedCap;
+    this.levelThreshold = this._getLevelThreshold(this.level);
+    this.xpToNext = this.levelThreshold;
 
     this.orbImage = new Image();
     this.orbImage.src = "orb1.png";
@@ -797,6 +879,8 @@ const Game1 = {
     this._tutOrbT = 0;
     this._tutPulseT = 0;
     this._tutNoFingerFrames = 0;
+    this._syncDifficultyScalars();
+    this.nextRoundPlan = this._buildRoundPlan();
 
     this._initTutStars();
 
@@ -838,7 +922,8 @@ const Game1 = {
     this.baseInnerRadius    = this.baseOuterRadius * 0.8;
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
-    this.speedCap = this.baseOuterRadius * 0.25;
+    const levelBoost = 1 + Math.min(0.55, Math.max(0, (this.level || 1) - 1) * 0.08);
+    this.speedCap = this.baseOuterRadius * 0.25 * levelBoost;
     this.speedMin = this.speedCap * 0.15;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
@@ -879,18 +964,21 @@ _startPlaying() {
   // Only use sprite loading for these modes
   const useSprites = (m === "default" || m === "pattern");
 
+  const beginSession = () => {
+    this._resetSessionFlow(m);
+    this._beginRound();
+  };
+
   if (useSprites) {
     this.gameState = "loading";
 
     RingSpriteSystem.init(this, () => {
-      this.gameState = "playing";
-      this._activateMode(m);
+      beginSession();
     });
 
   } else {
     // 🚀 Skip loading completely
-    this.gameState = "playing";
-    this._activateMode(m);
+    beginSession();
   }
 },
   /* ============================================================
@@ -1358,6 +1446,332 @@ _startPlaying() {
     ctx.globalAlpha = 1;
   },
 
+  _getLevelThreshold(level = this.level) {
+    return 90 + Math.max(0, level - 1) * 18;
+  },
+
+  _difficultyLabelForLevel(level = this.level) {
+    if (level <= 1) return "Bright clues";
+    if (level === 2) return "Softer clues";
+    if (level === 3) return "No clues";
+    if (level === 4) return "Mixed clues";
+    return "Chaos clues";
+  },
+
+  _syncTierForLevel() {
+    for (let t = this.tierThresholds.length - 1; t >= 0; t--) {
+      if (this.level >= this.tierThresholds[t]) {
+        this.tier = Math.max(this.tier, t);
+        break;
+      }
+    }
+  },
+
+  _getSpawnIntervalForLevel() {
+    const baseMap = { default: 1800, pattern: 2800, cannon: 1800, orb: 1800, triple: 1800 };
+    const minMap  = { default: 900,  pattern: 1400, cannon: 900,  orb: 900,  triple: 900 };
+    const base = baseMap[this.mode] || 1800;
+    const min  = minMap[this.mode] || 900;
+    const drop = (this.level - 1) * (this.mode === "pattern" ? 90 : 80);
+    return Math.max(min, base - drop);
+  },
+
+  _syncDifficultyScalars() {
+    const boost = 1 + Math.min(0.55, Math.max(0, this.level - 1) * 0.08);
+    this.speedCap = this.baseOuterRadius * 0.25 * boost;
+    this.speedMin = this.speedCap * 0.15;
+    this.launcherSafeRadius = this.baseOuterRadius * 0.45;
+    this.levelThreshold = this._getLevelThreshold(this.level);
+    this.xpToNext = this.levelThreshold;
+    this.xp = this.skillPoints;
+    if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
+  },
+
+  _buildRoundPlan() {
+    if (this.mode === "pattern") {
+      const skip = Math.floor(Math.random() * 4) + 1;
+      const collect = Math.floor(Math.random() * 4) + 1;
+      return {
+        mode: "pattern",
+        skip,
+        collect,
+        title: `SKIP ${skip} COLLECT ${collect}`,
+        label: `Skip ${skip}, collect ${collect}`,
+      };
+    }
+
+    const skip = this.getRandomSkip();
+    return {
+      mode: this.mode,
+      skip,
+      collect: 0,
+      title: `COLLECT MULTIPLES OF ${skip}`,
+      label: `Collect multiples of ${skip}`,
+    };
+  },
+
+  _applyRoundPlan(plan) {
+    this.currentRoundPlan = plan;
+    if (!plan) return;
+
+    if (plan.mode === "pattern") {
+      this.pattern.skip = plan.skip;
+      this.pattern.collect = plan.collect;
+    } else {
+      this.skipAmount = plan.skip;
+    }
+
+    this.gameTitle = plan.title;
+    this.spawnInterval = this._getSpawnIntervalForLevel();
+    this._syncDifficultyScalars();
+    this._updateHintState();
+    this.noteSpeed = this.speedCap;
+  },
+
+  _resetRoundTransientState() {
+    this.notes = [];
+    this.popEffects = [];
+    this.explosions = [];
+    this.missQueue = [];
+    this.pendingShot = null;
+    this.previewCannons = [];
+    this.previewTimer = 0;
+    this.isCharging = false;
+    this.charge = 0;
+    this.chargeParticles = [];
+    this.combo = 0;
+    this.multiplier = 1;
+    this.lastHitType = "";
+    this.hitTextTimer = 0;
+    this.currentNumber = 1;
+    this.roundCorrectTouches = 0;
+    this.roundWrongTouches = 0;
+    this.roundMissedCorrect = 0;
+    this.roundMaxCombo = 0;
+    this.roundWrongStreakPeak = 0;
+    this.roundMissStreakPeak = 0;
+    this.wrongTouchStreak = 0;
+    this.missedCorrectStreak = 0;
+    this.roundScoreStart = this.score;
+    this.roundWrapPending = false;
+    this.roundWrapDelay = 0;
+    this.overlayHoldProgress = 0;
+    this.levelCongratsTapHold = 0;
+    this.gameOverFade = 0;
+    this.assistTimeBonus = 0;
+    this.assistAppliedThisRound = false;
+    // Don't reset tripleCannons here — keep the array from activate
+    // PRESERVE triple cannon config across round resets
+    if (this.mode === "triple" && (!this.tripleCannons || this.tripleCannons.length === 0)) {
+        this.tripleCannons = [
+            { offset: 0 },
+            { offset: (Math.PI * 2) / 3 },
+            { offset: (Math.PI * 4) / 3 }
+        ];
+        this.tripleCount = 3;
+    }
+},
+
+
+
+
+  _resetSessionFlow(modeKey) {
+    this.mode = modeKey || "default";
+    this.roundNumber = 1;
+    this.nextRoundNumber = 1;
+    this.timeRemaining = this.timeLimit;
+    this.score = 0;
+    this.skillPoints = 0;
+    this.bestCombo = 0;
+    this.totalCorrectTouches = 0;
+    this.totalWrongTouches = 0;
+    this.totalMissedCorrect = 0;
+    this.level = 1;
+    this.levelThreshold = this._getLevelThreshold(this.level);
+    this.xp = 0;
+    this.xpToNext = this.levelThreshold;
+    this.tier = 0;
+    this.levelUpActive = false;
+    this.levelUpTimer = 0;
+    this.levelUpParticles = [];
+    this.xpPopFlash = 0;
+    this.hintState = "full";
+    this.noiseTime = 0;
+    this.overlayData = null;
+    this.nextRoundPlan = this._buildRoundPlan();
+    this.currentRoundPlan = null;
+    this._syncDifficultyScalars();
+    this.noteSpeed = this.speedCap;
+    this.assistTimeBonus = 0;
+    this.assistAppliedThisRound = false;
+  },
+
+  _adjustSkill(amount) {
+    this.skillPoints = Math.max(0, Math.min(this.levelThreshold, this.skillPoints + amount));
+    this.xp = this.skillPoints;
+    this.xpToNext = this.levelThreshold;
+    if (amount > 0) this.xpPopFlash = Math.min(1, this.xpPopFlash + 0.3);
+  },
+
+  _computeRoundSkillDelta() {
+    const attempts = this.roundCorrectTouches + this.roundWrongTouches + this.roundMissedCorrect;
+    if (attempts <= 0) return 0;
+
+    const accuracy = this.roundCorrectTouches / attempts;
+    const comboNorm = Math.min(1, this.roundMaxCombo / (8 + this.level * 2));
+    const scoreEarned = Math.max(0, this.score - this.roundScoreStart);
+    const scoreNorm = Math.min(1, scoreEarned / (attempts * 10 + 1));
+    const penalty = Math.min(14, this.roundWrongStreakPeak * 1.2 + this.roundMissStreakPeak * 1.45);
+
+    return Math.round((accuracy * 34) + (comboNorm * 18) + (scoreNorm * 12) - penalty);
+  },
+
+  _computeProgressPercent(useLiveRound = false) {
+    const liveBonus = useLiveRound ? this._computeRoundSkillDelta() : 0;
+    const points = Math.max(0, Math.min(this.levelThreshold, this.skillPoints + liveBonus));
+    return Math.round((points / this.levelThreshold) * 100);
+  },
+
+  _maybeGrantAssistTime() {
+    if (this.assistAppliedThisRound || this.gameState !== "playing" || this.roundWrapPending) return 0;
+    const progress = this._computeProgressPercent(false);
+    if (progress < 72 || this.timeRemaining > 42) return 0;
+    const bonus = 2 + Math.floor(Math.random() * 4);
+    this.timeRemaining += bonus;
+    this.assistTimeBonus += bonus;
+    this.assistAppliedThisRound = true;
+    return bonus;
+  },
+
+  _prepareNextRoundPlan() {
+    this.nextRoundPlan = this._buildRoundPlan();
+  },
+
+  _beginRound() {
+    this.gameState = "playing";
+    this.roundNumber = this.nextRoundNumber || 1;
+    this.nextRoundNumber = this.roundNumber + 1;
+    if (!this.nextRoundPlan) this.nextRoundPlan = this._buildRoundPlan();
+    this._applyRoundPlan(this.nextRoundPlan);
+    this._prepareNextRoundPlan();
+    this._resetRoundTransientState();
+    this.spawnInterval = this._getSpawnIntervalForLevel();
+    this._restartSpawnTimer();
+  },
+
+  _queueRoundEnd() {
+    if (this.roundWrapPending || this.gameState !== "playing") return;
+    this.roundWrapPending = true;
+    this.roundWrapDelay = 0.85;
+    if (this.spawnTimer) clearInterval(this.spawnTimer);
+  },
+
+  _resolveRoundEnd() {
+    if (this.gameState !== "playing") return;
+    const roundSkillDelta = this._computeRoundSkillDelta();
+    const progressBefore = this.skillPoints;
+    this._adjustSkill(roundSkillDelta);
+
+    const qualified = this.skillPoints >= this.levelThreshold;
+    const canLevelUp = qualified && this.level < this.maxLevel;
+    const currentRound = this.roundNumber;
+    const nextRound = currentRound + 1;
+    const nextLevel = canLevelUp ? this.level + 1 : this.level;
+    const bonusTime = canLevelUp ? this.levelUpBonus : this.roundEndBonus;
+    const summary = {
+      roundNumber: currentRound,
+      nextRoundNumber: nextRound,
+      levelBefore: this.level,
+      levelAfter: nextLevel,
+      roundSkillDelta,
+      progressBefore,
+      progressAfter: this.skillPoints,
+      progressPercent: this._computeProgressPercent(false),
+      timeBeforeBonus: Math.max(0, Math.ceil(this.timeRemaining)),
+      bonusTime,
+      totalScore: this.score,
+      maxCombo: this.bestCombo,
+      roundMaxCombo: this.roundMaxCombo,
+      totalWrong: this.totalWrongTouches,
+      totalMissed: this.totalMissedCorrect,
+      assistTimeBonus: this.assistTimeBonus,
+      nextRoundLabel: this.nextRoundPlan ? this.nextRoundPlan.label : "",
+      nextRoundTitle: this.nextRoundPlan ? this.nextRoundPlan.title : "",
+      difficultyLabel: this._difficultyLabelForLevel(nextLevel),
+      qualified: canLevelUp,
+    };
+
+    this.overlayData = summary;
+    this.roundWrapPending = false;
+    this.roundWrapDelay = 0;
+    this.overlayHoldProgress = 0;
+    this.levelCongratsTapHold = 0;
+    this.notes = [];
+    this.popEffects = [];
+    this.explosions = [];
+    this.missQueue = [];
+    this.pendingShot = null;
+    this.previewCannons = [];
+    this.previewTimer = 0;
+    this.isCharging = false;
+    this.charge = 0;
+    this.chargeParticles = [];
+    this.combo = 0;
+    this.multiplier = 1;
+    this.lastHitType = "";
+    this.timeRemaining = Math.max(0, this.timeRemaining + bonusTime);
+    this.assistTimeBonus = 0;
+    this.assistAppliedThisRound = false;
+
+    if (canLevelUp) {
+      this.level = nextLevel;
+      this.skillPoints = 0;
+      this.xp = 0;
+      this.levelThreshold = this._getLevelThreshold(this.level);
+      this.xpToNext = this.levelThreshold;
+      this._syncDifficultyScalars();
+      this._syncTierForLevel();
+      this._updateHintState();
+      this._triggerLevelUpBurst();
+      this.gameState = "levelCongrats";
+    } else {
+      this.gameState = "roundBreak";
+    }
+
+    this._prepareNextRoundPlan();
+  },
+
+  _enterGameOver() {
+    if (this.gameState === "gameOver") return;
+    this.gameState = "gameOver";
+    this.gameOverFade = 0;
+    this.overlayData = {
+      totalScore: this.score,
+      maxCombo: this.bestCombo,
+      totalWrong: this.totalWrongTouches,
+      totalMissed: this.totalMissedCorrect,
+      progressPercent: this._computeProgressPercent(true),
+      level: this.level,
+      roundNumber: this.roundNumber,
+    };
+    this.roundWrapPending = false;
+    this.roundWrapDelay = 0;
+    this.overlayHoldProgress = 0;
+    this.levelCongratsTapHold = 0;
+    this.gameOverFade = 0;
+    this.notes = [];
+    this.popEffects = [];
+    this.explosions = [];
+    this.missQueue = [];
+    this.pendingShot = null;
+    this.previewCannons = [];
+    this.previewTimer = 0;
+    this.isCharging = false;
+    this.charge = 0;
+    this.chargeParticles = [];
+    if (this.spawnTimer) clearInterval(this.spawnTimer);
+  },
+
   /* ============================================================
      SPAWN TIMER
   ============================================================ */
@@ -1441,33 +1855,19 @@ _startPlaying() {
   },
 
   /* ============================================================
-     LEVEL / XP
+     SKILL PROGRESS
   ============================================================ */
   _gainXP(amount) {
-    if (this.level >= this.maxLevel) return;
-    this.xp += amount;
-    if (this.xp >= this.xpToNext) {
-      this.xp = 0; this.level++;
-      this.xpToNext = Math.min(8 + this.level * 2, 25);
-      this.xpPopFlash = 1;
-      for (let t = this.tierThresholds.length - 1; t >= 0; t--) {
-        if (this.level >= this.tierThresholds[t]) { this.tier = Math.max(this.tier, t); break; }
-      }
-      this._updateHintState();
-      if (this.level % 3 === 0) {
-        this.spawnInterval = Math.max(1000, this.spawnInterval - 40);
-        this._restartSpawnTimer();
-      }
-      this._triggerLevelUpBurst();
-    }
+    if (amount <= 0) return;
+    this._adjustSkill(amount);
   },
 
   _updateHintState() {
     const lv = this.level, prev = this.hintState;
-    if      (lv <= 3)  this.hintState = "full";
-    else if (lv <= 5)  this.hintState = "subtle";
-    else if (lv <= 8)  this.hintState = "none";
-    else if (lv <= 11) this.hintState = "decoy";
+    if      (lv <= 1)  this.hintState = "full";
+    else if (lv === 2) this.hintState = "subtle";
+    else if (lv === 3) this.hintState = "none";
+    else if (lv === 4) this.hintState = "decoy";
     else               this.hintState = "chaos";
     if (this.hintState !== prev) {
       this._hintChangeTimer   = 2800;
@@ -1691,6 +2091,7 @@ _startPlaying() {
       ctx.fillText(this.gameTitle, W/2, 34);
       ctx.shadowBlur = 0;
     }
+    this._drawTimeBar(ctx, isLauncher);
     const ringCX = W/2, ringCY = isLauncher ? H-60 : H-48, ringR = 26;
     this._drawXPRing(ctx, ringCX, ringCY, ringR);
     ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
@@ -1713,6 +2114,320 @@ _startPlaying() {
     ctx.globalAlpha = 1;
   },
 
+  _drawTimeBar(ctx, isLauncher) {
+    const W = this.centerX * 2;
+    const pct = this.timeLimit > 0 ? Math.max(0, Math.min(1, this.timeRemaining / this.timeLimit)) : 0;
+    const barW = Math.min(W * 0.52, 380);
+    const barH = 12;
+    const x = W / 2 - barW / 2;
+    const y = isLauncher ? 58 : 58;
+    ctx.save();
+    ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "rgba(240,244,255,0.8)";
+    ctx.fillText(`Time ${Math.ceil(this.timeRemaining)}s`, W / 2, y - 12);
+    ctx.fillStyle = "rgba(8,18,36,0.76)";
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW, barH, 6);
+    ctx.fill();
+    const g = ctx.createLinearGradient(x, y, x + barW, y);
+    g.addColorStop(0, "#e87c6d");
+    g.addColorStop(0.45, "#f5c842");
+    g.addColorStop(1, "#6de8b4");
+    ctx.fillStyle = g;
+    ctx.shadowColor = this.timeRemaining < 30 ? "#e87c6d" : this.C.gold;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.roundRect(x, y, barW * pct, barH, 6);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(140,180,220,0.18)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+  },
+
+  _drawOverlayCard(ctx, title, subtitle, accent, cardH) {
+    const W = this.centerX * 2, H = this.centerY * 2;
+    const isMob = W < 540;
+    const cardW = Math.min(W - 32, isMob ? 360 : 760);
+    const ch = Math.min(H - 48, cardH || (isMob ? 520 : 440));
+    const cardX = this.centerX - cardW / 2;
+    const cardY = this.centerY - ch / 2;
+    const hr = s => {
+      const h = (s || "").replace("#", "");
+      const r = parseInt(h.slice(0, 2), 16);
+      const g = parseInt(h.slice(2, 4), 16);
+      const b = parseInt(h.slice(4, 6), 16);
+      return isNaN(r) ? "140,180,220" : `${r},${g},${b}`;
+    };
+    ctx.save();
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = "rgba(8,18,36,0.96)";
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, ch, 20);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = `rgba(${hr(accent)},0.34)`;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+    ctx.fillStyle = `rgba(${hr(accent)},0.16)`;
+    ctx.beginPath();
+    ctx.roundRect(cardX, cardY, cardW, 54, [20, 20, 0, 0]);
+    ctx.fill();
+    ctx.font = `bold ${isMob ? 22 : 28}px 'Trebuchet MS', sans-serif`;
+    ctx.fillStyle = accent;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 14;
+    ctx.fillText(title, this.centerX, cardY + 27);
+    ctx.shadowBlur = 0;
+    ctx.font = `${isMob ? 12 : 14}px 'Trebuchet MS', sans-serif`;
+    ctx.fillStyle = "rgba(240,244,255,0.7)";
+    ctx.fillText(subtitle || "", this.centerX, cardY + 52);
+    ctx.restore();
+    return { W, H, isMob, cardW, cardH: ch, cardX, cardY, accent, hr };
+  },
+
+  _drawOverlayLines(ctx, rows, x, y, width, accent, isMob) {
+    const rowH = isMob ? 34 : 40;
+    const valueX = x + Math.min(width * 0.42, 170);
+    rows.forEach((row, i) => {
+      const top = y + i * rowH;
+      ctx.fillStyle = i % 2 === 0 ? "rgba(20,40,70,0.42)" : "rgba(10,24,44,0.26)";
+      ctx.beginPath();
+      ctx.roundRect(x, top, width, rowH - 4, 8);
+      ctx.fill();
+      ctx.font = `bold ${isMob ? 14 : 16}px 'Trebuchet MS', sans-serif`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = accent;
+      ctx.fillText(row.label, x + 10, top + (rowH - 4) / 2);
+      ctx.font = `${isMob ? 11 : 13}px 'Trebuchet MS', sans-serif`;
+      ctx.fillStyle = "rgba(240,244,255,0.88)";
+      ctx.fillText(row.value, valueX, top + (rowH - 4) / 2);
+    });
+  },
+
+  _drawHoldPrompt(ctx, text, accent, y, progress) {
+    const W = this.centerX * 2;
+    const p = Math.max(0, Math.min(1, progress || 0));
+    ctx.save();
+    ctx.font = "bold 15px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = accent;
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 10;
+    ctx.fillText(text, W / 2, y);
+    ctx.shadowBlur = 0;
+    const barW = Math.min(W * 0.48, 320);
+    const barX = W / 2 - barW / 2;
+    const barY = y + 18;
+    ctx.fillStyle = "rgba(20,40,70,0.82)";
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, 8, 4);
+    ctx.fill();
+    ctx.fillStyle = accent;
+    ctx.shadowColor = accent;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW * p, 8, 4);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  },
+
+  _startNextRoundFromOverlay() {
+    this.roundNumber = this.nextRoundNumber || (this.roundNumber + 1);
+    this._beginRound();
+  },
+
+  _restartSessionFromGameOver() {
+    this._resetSessionFlow(this._pendingMode || this.mode || "default");
+    this._beginRound();
+  },
+
+  _drawRoundBreakScreen(ctx, fingers, dt) {
+    this._drawBg(ctx);
+    this._drawBgStars(ctx);
+    this._updateLevelUp(dt);
+    if (this.levelUpActive) this._drawLevelUpBurst(ctx);
+
+    const summary = this.overlayData || {};
+    const hasFing = fingers.length > 0;
+    if (hasFing) {
+      this.overlayHoldProgress = Math.min(1, this.overlayHoldProgress + dt / this.roundHoldSec);
+      if (this.overlayHoldProgress >= 1) {
+        this._startNextRoundFromOverlay();
+        return;
+      }
+    } else {
+      this.overlayHoldProgress = Math.max(0, this.overlayHoldProgress - dt * 0.45);
+    }
+
+    const title = `Round ${summary.roundNumber || this.roundNumber} complete!`;
+    const subtitle = `Round ${summary.nextRoundNumber || (this.roundNumber + 1)} starts at 1`;
+    const box = this._drawOverlayCard(ctx, title, subtitle, this.C.gold, 500);
+    const rows = [
+      { label: "Next round", value: summary.nextRoundTitle || (this.currentRoundPlan ? this.currentRoundPlan.title : "Round ready") },
+      { label: "Time left", value: `${Math.ceil(this.timeRemaining)}s` },
+      { label: "Bonus time", value: `+${summary.bonusTime || this.roundEndBonus}s` },
+      { label: "Score", value: `${this.score}` },
+      { label: "Best combo", value: `${this.bestCombo}` },
+      { label: "Next level", value: `${summary.progressPercent || this._computeProgressPercent(false)}% ready` },
+    ];
+    this._drawOverlayLines(ctx, rows, box.cardX + 16, box.cardY + 82, box.cardW - 32, this.C.gold, box.isMob);
+    this._drawHoldPrompt(ctx, `Hold your finger still for ${this.roundHoldSec} seconds to start round ${summary.nextRoundNumber || (this.roundNumber + 1)}`, this.C.correct, box.cardY + box.cardH - 54, this.overlayHoldProgress);
+  },
+
+  _drawLevelCongratsScreen(ctx, fingers, dt) {
+    this._drawBg(ctx);
+    this._drawBgStars(ctx);
+    this._updateLevelUp(dt);
+    if (this.levelUpActive) this._drawLevelUpBurst(ctx);
+
+    const summary = this.overlayData || {};
+    const hasFing = fingers.length > 0;
+    if (hasFing) {
+      this.levelCongratsTapHold = Math.min(1, this.levelCongratsTapHold + dt / 0.45);
+      if (this.levelCongratsTapHold >= 1) {
+        this.gameState = "levelExplain";
+        this.overlayHoldProgress = 0;
+        this.levelCongratsTapHold = 0;
+        return;
+      }
+    } else {
+      this.levelCongratsTapHold = Math.max(0, this.levelCongratsTapHold - dt * 0.5);
+    }
+
+    const box = this._drawOverlayCard(ctx, "You leveled up!", `Level ${summary.levelAfter || this.level} unlocked`, this.C.correct, 300);
+    const rows = [
+      { label: "Time bonus", value: `+${summary.bonusTime || this.levelUpBonus}s` },
+      { label: "New level", value: `${summary.difficultyLabel || this._difficultyLabelForLevel(summary.levelAfter || this.level)}` },
+      { label: "Next round", value: "Tap or hold to see the changes" },
+    ];
+    this._drawOverlayLines(ctx, rows, box.cardX + 16, box.cardY + 82, box.cardW - 32, this.C.correct, box.isMob);
+    if ((summary.assistTimeBonus || 0) > 0) {
+      ctx.fillStyle = "rgba(240,244,255,0.82)";
+      ctx.font = `${box.isMob ? 11 : 13}px 'Trebuchet MS', sans-serif`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`Nice work - we added +${summary.assistTimeBonus} extra seconds so you could finish strong.`, box.cardX + box.cardW / 2, box.cardY + box.cardH - 88);
+      ctx.fillText("That kind of focus and dedication looks awesome.", box.cardX + box.cardW / 2, box.cardY + box.cardH - 70);
+    }
+    this._drawHoldPrompt(ctx, "Tap or hold to open the next card", this.C.gold, box.cardY + box.cardH - 54, this.levelCongratsTapHold);
+  },
+
+  _drawLevelExplainScreen(ctx, fingers, dt) {
+    this._drawBg(ctx);
+    this._drawBgStars(ctx);
+    this._updateLevelUp(dt);
+    if (this.levelUpActive) this._drawLevelUpBurst(ctx);
+
+    const summary = this.overlayData || {};
+    const hasFing = fingers.length > 0;
+    if (hasFing) {
+      this.overlayHoldProgress = Math.min(1, this.overlayHoldProgress + dt / this.roundHoldSec);
+      if (this.overlayHoldProgress >= 1) {
+        this._startNextRoundFromOverlay();
+        return;
+      }
+    } else {
+      this.overlayHoldProgress = Math.max(0, this.overlayHoldProgress - dt * 0.45);
+    }
+
+    const box = this._drawOverlayCard(ctx, `Level ${summary.levelAfter || this.level}`, `Round ${summary.nextRoundNumber || (this.roundNumber + 1)} starts at 1`, this.C.accent, 540);
+    const visX = box.cardX + 16, visY = box.cardY + 84;
+    const visW = box.isMob ? box.cardW - 32 : Math.floor(box.cardW * 0.42);
+    const visH = box.isMob ? 130 : 260;
+    ctx.fillStyle = "rgba(8,16,36,0.68)";
+    ctx.beginPath();
+    ctx.roundRect(visX, visY, visW, visH, 12);
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${box.hr(this.C.accent)},0.14)`;
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    this._tutOrbT += dt;
+    this._drawTutVisual(ctx, (this.currentRoundPlan && this.currentRoundPlan.mode) || this.mode || this._pendingMode || "default", visX, visY, visW, visH, this._tutOrbT, this.C.accent);
+
+    const rulesX = box.isMob ? box.cardX + 16 : box.cardX + visW + 24;
+    const rulesY = box.isMob ? visY + visH + 12 : box.cardY + 84;
+    const rulesW = box.isMob ? box.cardW - 32 : box.cardW - visW - 40;
+    const rows = [
+      { label: "What changed", value: this._difficultyLabelForLevel(summary.levelAfter || this.level) },
+      { label: "Speed", value: "The game gets a little faster" },
+      { label: "Numbers", value: "Every round starts again at 1" },
+      { label: "Goal", value: `Hold for ${this.roundHoldSec} seconds to begin` },
+    ];
+    this._drawOverlayLines(ctx, rows, rulesX, rulesY, rulesW - 16, this.C.accent, box.isMob);
+    this._drawHoldPrompt(ctx, `Hold your finger still for ${this.roundHoldSec} seconds to start round ${summary.nextRoundNumber || (this.roundNumber + 1)}`, this.C.correct, box.cardY + box.cardH - 54, this.overlayHoldProgress);
+  },
+
+  _drawGameOverScreen(ctx, fingers, dt) {
+    this._drawBg(ctx);
+    this._drawBgStars(ctx);
+    this.gameOverFade = Math.min(1, this.gameOverFade + dt * 0.75);
+    const fade = this.gameOverFade;
+    ctx.save();
+    ctx.globalAlpha = fade * 0.72;
+    ctx.fillStyle = "#050914";
+    ctx.fillRect(0, 0, this.centerX * 2, this.centerY * 2);
+    ctx.restore();
+
+    const summary = this.overlayData || {};
+    const hasFing = fingers.length > 0;
+    if (hasFing) {
+      this.overlayHoldProgress = Math.min(1, this.overlayHoldProgress + dt / this.roundHoldSec);
+      if (this.overlayHoldProgress >= 1) {
+        this._restartSessionFromGameOver();
+        return;
+      }
+    } else {
+      this.overlayHoldProgress = Math.max(0, this.overlayHoldProgress - dt * 0.45);
+    }
+
+    const box = this._drawOverlayCard(ctx, "Time's up!", `Scoreboard for round ${summary.roundNumber || this.roundNumber}`, this.C.wrong, 470);
+    const rows = [
+      { label: "Score", value: `${summary.totalScore != null ? summary.totalScore : this.score}` },
+      { label: "Max combo", value: `${summary.maxCombo != null ? summary.maxCombo : this.bestCombo}` },
+      { label: "Wrong touches", value: `${summary.totalWrong != null ? summary.totalWrong : this.totalWrongTouches}` },
+      { label: "Missed correct", value: `${summary.totalMissed != null ? summary.totalMissed : this.totalMissedCorrect}` },
+      { label: "Next level", value: `${summary.progressPercent != null ? summary.progressPercent : this._computeProgressPercent(true)}%` },
+    ];
+    this._drawOverlayLines(ctx, rows, box.cardX + 16, box.cardY + 82, box.cardW - 32, this.C.wrong, box.isMob);
+
+    const barW = box.isMob ? box.cardW - 80 : box.cardW - 120;
+    const barX = box.cardX + (box.cardW - barW) / 2;
+    const barY = box.cardY + box.cardH - 116;
+    const pct = Math.max(0, Math.min(1, (summary.progressPercent != null ? summary.progressPercent : this._computeProgressPercent(true)) / 100));
+    ctx.fillStyle = "rgba(20,40,70,0.8)";
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, 14, 7);
+    ctx.fill();
+    const g = ctx.createLinearGradient(barX, barY, barX + barW, barY);
+    g.addColorStop(0, this.C.wrong);
+    g.addColorStop(0.5, this.C.gold);
+    g.addColorStop(1, this.C.correct);
+    ctx.fillStyle = g;
+    ctx.shadowColor = this.C.gold;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW * pct, 14, 7);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(240,244,255,0.9)";
+    ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${Math.round(pct * 100)}%`, barX + barW + 38, barY + 7);
+    ctx.textAlign = "center";
+    this._drawHoldPrompt(ctx, "Hold your finger still for 3 seconds to play again", this.C.correct, box.cardY + box.cardH - 54, this.overlayHoldProgress);
+  },
+
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
@@ -1728,12 +2443,51 @@ _startPlaying() {
       return;
     }
 
+    if (this.gameState === "roundBreak") {
+      this._drawRoundBreakScreen(ctx, fingers, dt);
+      return;
+    }
+
+    if (this.gameState === "levelCongrats") {
+      this._drawLevelCongratsScreen(ctx, fingers, dt);
+      return;
+    }
+
+    if (this.gameState === "levelExplain") {
+      this._drawLevelExplainScreen(ctx, fingers, dt);
+      return;
+    }
+
+    if (this.gameState === "gameOver") {
+      this._drawGameOverScreen(ctx, fingers, dt);
+      return;
+    }
+
     // Playing state
     this._drawBg(ctx);
     this._drawBgStars(ctx);
     this._updateLevelUp(dt);
     this.noiseTime += dt * 1.8;
     this._driftSpeed(dt);
+    const assistDrain = this._computeProgressPercent(false) >= 72 ? 0.55 : 1;
+    this.timeRemaining = Math.max(0, this.timeRemaining - (dt * assistDrain));
+    this._maybeGrantAssistTime();
+    if (this.timeRemaining <= 0) {
+      this._enterGameOver();
+      this._drawGameOverScreen(ctx, fingers, dt);
+      return;
+    }
+
+    if (this.roundWrapPending) {
+      this._drawBg(ctx);
+      this._drawBgStars(ctx);
+      this.roundWrapDelay -= dt;
+      if (this.roundWrapDelay <= 0) {
+        this._resolveRoundEnd();
+        return;
+      }
+      return;
+    }
 
     const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
     if (!isLauncher) this.drawRings(ctx, dt);
@@ -1931,11 +2685,15 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
   /* ── Notes ───────────────────────────────────────────────── */
   spawnNote() {
     if (this.notes.length >= this.maxNotesOnScreen) return;
+    if (this.roundWrapPending || this.gameState !== "playing") return;
     const angle = Math.random() * Math.PI * 2;
     const minR  = this.currentOuterRadius + 150, maxR = this.currentOuterRadius + 210;
     const spawnR = Math.random() * (maxR - minR) + minR;
     const num = this.currentNumber++;
-    if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
+    if (this.currentNumber > this.maxNumber) {
+      this.currentNumber = 1;
+      this._queueRoundEnd();
+    }
     this.notes.push({ x: this.centerX + Math.cos(angle)*spawnR, y: this.centerY + Math.sin(angle)*spawnR, radius: this.baseOuterRadius*0.12, value: num, id: num });
   },
 
@@ -1947,7 +2705,23 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       const step = Math.min(this.noteSpeed * dt, len);
       note.x += (dx/len)*step; note.y += (dy/len)*step;
       this._drawNoteCircle(ctx, note);
-      if (len <= step + 1) this.notes.splice(i, 1);
+      if (len <= step + 1) {
+        if (this.shouldCollect(note.value)) {
+          this.roundMissedCorrect++;
+          this.totalMissedCorrect++;
+          this.missedCorrectStreak++;
+          this.wrongTouchStreak = 0;
+          if (this.missedCorrectStreak > this.roundMissStreakPeak) this.roundMissStreakPeak = this.missedCorrectStreak;
+          this.score -= 10;
+          this.combo = 0;
+          this.multiplier = 1;
+          this._adjustSkill(-(1.2 + Math.min(2, this.missedCorrectStreak * 0.22)));
+          this.missQueue.push(note.value);
+        } else {
+          this.missedCorrectStreak = 0;
+        }
+        this.notes.splice(i, 1);
+      }
     }
   },
 
@@ -2027,12 +2801,28 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       const onRing = dfc+note.radius>this.currentInnerRadius && dfc-note.radius<this.currentOuterRadius;
       if (dist < note.radius+20 && onRing) {
         if (this.shouldCollect(note.value)) {
-          this.combo++; if (this.combo%5===0) this.multiplier++;
+          this.roundCorrectTouches++;
+          this.totalCorrectTouches++;
+          this.wrongTouchStreak = 0;
+          this.missedCorrectStreak = 0;
+          this.combo++;
+          if (this.combo > this.bestCombo) this.bestCombo = this.combo;
+          if (this.combo > this.roundMaxCombo) this.roundMaxCombo = this.combo;
+          if (this.combo%5===0) {
+            this.multiplier++;
+            this._gainXP(1);
+          }
           this.score += 10*this.multiplier; this.lastHitType="CORRECT";
           this._gainXP(1); this._recoverSpeed();
           if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x,y:note.y,life:0,color:this.C.correct});
         } else {
+          this.roundWrongTouches++;
+          this.totalWrongTouches++;
+          this.wrongTouchStreak++;
+          this.missedCorrectStreak = 0;
+          if (this.wrongTouchStreak > this.roundWrongStreakPeak) this.roundWrongStreakPeak = this.wrongTouchStreak;
           this.combo=0; this.multiplier=1; this.score-=5; this.lastHitType="WRONG";
+          this._adjustSkill(-(1 + Math.min(2, this.wrongTouchStreak * 0.18)));
           this._penalizeSpeed();
           if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x,y:note.y,life:0,color:this.C.wrong});
         }
@@ -2048,11 +2838,27 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       const dx=fingerX-note.x, dy=fingerY-note.y;
       if (Math.sqrt(dx*dx+dy*dy) < note.radius+20) {
         if (this.shouldCollectCannon(note.value)) {
-          this.combo++; if (this.combo%5===0) this.multiplier++;
+          this.roundCorrectTouches++;
+          this.totalCorrectTouches++;
+          this.wrongTouchStreak = 0;
+          this.missedCorrectStreak = 0;
+          this.combo++;
+          if (this.combo > this.bestCombo) this.bestCombo = this.combo;
+          if (this.combo > this.roundMaxCombo) this.roundMaxCombo = this.combo;
+          if (this.combo%5===0) {
+            this.multiplier++;
+            this._gainXP(1);
+          }
           this.score+=10*this.multiplier; this.lastHitType="CORRECT";
           this._gainXP(1); this._recoverSpeed(); this.createExplosion(note.x,note.y,this.C.correct);
         } else {
+          this.roundWrongTouches++;
+          this.totalWrongTouches++;
+          this.wrongTouchStreak++;
+          this.missedCorrectStreak = 0;
+          if (this.wrongTouchStreak > this.roundWrongStreakPeak) this.roundWrongStreakPeak = this.wrongTouchStreak;
           this.combo=0; this.multiplier=1; this.score-=5; this.lastHitType="WRONG";
+          this._adjustSkill(-(1 + Math.min(2, this.wrongTouchStreak * 0.18)));
           this._penalizeSpeed(); this.createExplosion(note.x,note.y,this.C.wrong);
         }
         this.hitTextTimer=30; this.notes.splice(i,1);
@@ -2112,45 +2918,41 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
   /* ── Mode activators ─────────────────────────────────────── */
   activatePatternMode() {
     this.mode="pattern";
-    this.pattern.skip=Math.floor(Math.random()*5)+1;
-    this.pattern.collect=Math.floor(Math.random()*5)+1;
-    this.gameTitle="SKIP "+this.pattern.skip+" COLLECT "+this.pattern.collect;
-    this.spawnInterval = 2800;
-    this._restartSpawnTimer();
-
+    this.nextRoundPlan = this._buildRoundPlan();
+    this._beginRound();
   },
-  activateCannonMode()       { this.mode="cannon";  this._resetLauncherState(); this.gameTitle="COLLECT MULTIPLES OF "+ this.skipAmount; this.spawnInterval = 1800; },
-  activateOrbMode()          { this.mode="orb";     this._resetLauncherState(); this.orbAngle=0; this.orbTargetAngle=0; this.gameTitle="COLLECT MULTIPLES OF "+ this.skipAmount; this.spawnInterval = 1800; },
-  activateTripleCannonMode() {
-    this.mode="triple"; this._resetLauncherState(); this.tripleBaseAngle=0; this.tripleTargetAngle=0; this.tripleCannons=[];
-    const sp=(Math.PI*2)/this.tripleCount;
-    for (let i=0;i<this.tripleCount;i++) this.tripleCannons.push({offset:i*sp});
-    this.gameTitle="COLLECT MULTIPLES OF "+ this.skipAmount;
-    this.spawnInterval = 1800;
-  },
+  activateCannonMode()       { this.mode="cannon";  this.nextRoundPlan = this._buildRoundPlan(); this._beginRound(); },
+  activateOrbMode()          { this.mode="orb";     this.nextRoundPlan = this._buildRoundPlan(); this._beginRound(); },
+activateTripleCannonMode() {
+    this.mode = "triple";
+    this.tripleCount = 3;
+    this.tripleCannons = [
+        { offset: 0 },
+        { offset: (Math.PI * 2) / 3 },
+        { offset: (Math.PI * 4) / 3 }
+    ];
+    this.tripleBaseAngle = 0;
+    this.tripleTargetAngle = 0;
+    this.nextRoundPlan = this._buildRoundPlan();
+    this._beginRound();
+},
 
   _resetLauncherState() {
-    this.notes=[];
-    this.explosions=[];
-    this.combo=0;
-    this.multiplier=1;
-    this.cannonAngle=0;
-    this.cannonTargetAngle=0;
-    this.pendingShot=null;
-    this.previewCannons=[];
-    this.previewTimer=0;
-    this.skipAmount=this.getRandomSkip();
-    this.noteSpeed=this.speedCap;
-    this._restartSpawnTimer();
+    this._resetRoundTransientState();
+    this.skipAmount = this.getRandomSkip();
+    this.noteSpeed = this.speedCap;
   },
 
   /* ── Cannon ──────────────────────────────────────────────── */
   spawnCannonNote() {
     if (this.notes.length >= this.maxNotesOnScreen) return;
-    if (this.pendingShot) return;
+    if (this.pendingShot || this.roundWrapPending || this.gameState !== "playing") return;
     const angle=Math.random()*Math.PI*2;
     const num=this.currentNumber++;
-    if (this.currentNumber>this.maxNumber) this.currentNumber=1;
+    if (this.currentNumber>this.maxNumber) {
+      this.currentNumber=1;
+      this._queueRoundEnd();
+    }
     this.pendingShot={angle,speed:this.noteSpeed,value:num,id:num};
     this.cannonTargetAngle=angle+Math.PI/2;
     this.startCharging();
@@ -2165,9 +2967,17 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       const off=note.x<-m||note.x>this.centerX*2+m||note.y<-m||note.y>this.centerY*2+m;
       if (off) {
         if (this.shouldCollectCannon(note.value)) {
+          this.roundMissedCorrect++;
+          this.totalMissedCorrect++;
+          this.missedCorrectStreak++;
+          this.wrongTouchStreak = 0;
+          if (this.missedCorrectStreak > this.roundMissStreakPeak) this.roundMissStreakPeak = this.missedCorrectStreak;
           this.score-=10; this.combo=0; this.multiplier=1;
           this.missQueue.push(note.value); this._penalizeSpeed();
+          this._adjustSkill(-(1.2 + Math.min(2, this.missedCorrectStreak * 0.22)));
           this.createExplosion(note.x,note.y,"#e8a06d");
+        } else {
+          this.missedCorrectStreak = 0;
         }
         this.notes.splice(i,1);
       }
@@ -2225,12 +3035,17 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
   /* ── Orb ─────────────────────────────────────────────────── */
   spawnOrbNote() {
     if (this.notes.length >= this.maxNotesOnScreen) return;
+    if (this.roundWrapPending || this.gameState !== "playing") return;
     const angle=Math.random()*Math.PI*2;
     this.orbTargetAngle=angle+Math.PI/2;
     const num=this.currentNumber++;
-    if (this.currentNumber>this.maxNumber) this.currentNumber=1;
+    if (this.currentNumber>this.maxNumber) {
+      this.currentNumber=1;
+      this._queueRoundEnd();
+    }
     const speed=this.noteSpeed;
     setTimeout(()=>{
+      if (this.gameState !== "playing" || this.roundWrapPending) return;
       this.notes.push({x:this.centerX,y:this.centerY,radius:this.baseOuterRadius*0.12,value:num,id:num,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,spawnProtected:true});
     },120);
   },
@@ -2264,81 +3079,167 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
 
   /* ── Triple cannon ───────────────────────────────────────── */
   spawnTripleNote() {
-    if (this.notes.length >= this.maxNotesOnScreen) return;
-    if (this.pendingShot) return;
-    const angle=Math.random()*Math.PI*2;
-    this.pendingShot={angle,speed:this.noteSpeed};
-    this.tripleTargetAngle=angle+Math.PI/2; this.startCharging();
-  },
-
-  drawTripleCannons(ctx) {
-    const sz=this.baseOuterRadius*0.6;
-    let diff=this.tripleTargetAngle-this.tripleBaseAngle;
-    diff=Math.atan2(Math.sin(diff),Math.cos(diff));
-    this.tripleBaseAngle+=diff*0.18;
-    if (this.pendingShot && this.previewTimer<=0 && this.previewCannons.length===0 && Math.abs(diff)<0.05) this.fireTriple();
-    for (let i=0;i<this.tripleCannons.length;i++) {
-      const cannon=this.tripleCannons[i], angle=this.tripleBaseAngle+cannon.offset;
-      ctx.save();
-      ctx.translate(this.centerX,this.centerY);
-      ctx.rotate(angle);
-      if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth>0) {
-        const img=this.orbImage,sc=sz/Math.max(img.width,img.height);
-        ctx.scale(1,-1);
-        ctx.drawImage(img,-img.width*sc/2,-img.height*sc/2,img.width*sc,img.height*sc);
-      } else {
-        const g=ctx.createRadialGradient(0,0,0,0,0,sz/2);
-        g.addColorStop(0,"#8ecae6");
-        g.addColorStop(1,"rgba(14,30,50,0)");
-        ctx.fillStyle=g;
-        ctx.beginPath();
-        ctx.arc(0,0,sz*0.8,0,Math.PI*2*0.8);
-        ctx.fill();
-      }
-      if (this.previewCannons.includes(i) && this.previewTimer>0) {
-        const pulse=0.8+Math.sin(Date.now()*0.01)*0.2, miniR=sz*0.18, offY=-sz*0.6;
-        ctx.save();
-        ctx.globalCompositeOperation="lighter";
-        ctx.scale(1,-1);
-        const g2=ctx.createRadialGradient(0,offY,0,0,offY,miniR);
-        g2.addColorStop(0,"rgba(245,200,66,1)");
-        g2.addColorStop(0.4,"rgba(245,200,66,0.55)");
-        g2.addColorStop(1,"rgba(245,200,66,0)");
-        ctx.fillStyle=g2;
-        ctx.beginPath();
-        ctx.arc(0,offY,miniR*pulse,0,Math.PI*2);
-        ctx.fill();
-        ctx.restore();
-      }
-      ctx.restore();
+    // GUARD: Initialize if missing
+    if (!this.tripleCannons || this.tripleCannons.length === 0) {
+        this.tripleCannons = [
+            { offset: 0 },
+            { offset: (Math.PI * 2) / 3 },
+            { offset: (Math.PI * 4) / 3 }
+        ];
+        this.tripleCount = 3;
     }
-  },
-
+    
+    if (this.notes.length >= this.maxNotesOnScreen) return;
+    if (this.roundWrapPending || this.gameState !== "playing") return;
+    if (this.previewTimer > 0 || (this.previewCannons && this.previewCannons.length > 0)) return;
+    
+    const angle = Math.random() * Math.PI * 2;
+    this.tripleTargetAngle = angle + Math.PI / 2;
+    this.pendingShot = { angle, speed: this.noteSpeed };
+    this.startCharging();
+},
+  drawTripleCannons(ctx, dt) {
+    if (!this.tripleCannons || this.tripleCannons.length === 0) {
+        this.tripleCannons = [
+            { offset: 0 },
+            { offset: (Math.PI * 2) / 3 },
+            { offset: (Math.PI * 4) / 3 }
+        ];
+        this.tripleCount = 3;
+    }
+    
+    const sz = this.baseOuterRadius * 0.6;
+    
+    let diff = this.tripleTargetAngle - this.tripleBaseAngle;
+    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
+    this.tripleBaseAngle += diff * 0.18;
+    
+    if (this.pendingShot && this.previewTimer <= 0 && this.previewCannons.length === 0 && Math.abs(diff) < 0.05) {
+        this.fireTriple();
+    }
+    
+    for (let i = 0; i < this.tripleCannons.length; i++) {
+        const cannon = this.tripleCannons[i];
+        const angle = this.tripleBaseAngle + cannon.offset;
+        
+        ctx.save();
+        ctx.translate(this.centerX, this.centerY);
+        ctx.rotate(angle);
+        ctx.rotate(Math.PI); // 180° flip
+        
+        if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth > 0) {
+            const img = this.orbImage;
+            const sc = sz / Math.max(img.width, img.height);
+            ctx.drawImage(img, -img.width * sc / 2, -img.height * sc / 2, img.width * sc, img.height * sc);
+        } else {
+            const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz / 2);
+            g.addColorStop(0, "#8ecae6");
+            g.addColorStop(0.55, "#1a3a5c");
+            g.addColorStop(1, "rgba(14,30,50,0)");
+            ctx.fillStyle = g;
+            ctx.shadowColor = this.C.accent;
+            ctx.shadowBlur = 28;
+            ctx.beginPath();
+            ctx.arc(0, 0, sz / 2, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0;
+        }
+        
+        // Preview glow — at the FRONT of the cannon (+Y after 180° flip)
+        if (this.previewCannons.includes(i) && this.previewTimer > 0) {
+            const pulse = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
+            ctx.save();
+            ctx.globalCompositeOperation = "lighter";
+            
+            const glowY = sz * 0.55; // FRONT is at +Y after flip
+            
+            const g2 = ctx.createRadialGradient(0, glowY, 0, 0, glowY, sz * 0.35);
+            g2.addColorStop(0, "rgba(245,200,66,1)");
+            g2.addColorStop(0.4, "rgba(245,200,66,0.55)");
+            g2.addColorStop(1, "rgba(245,200,66,0)");
+            ctx.fillStyle = g2;
+            ctx.beginPath();
+            ctx.arc(0, glowY, sz * 0.35 * pulse, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+        
+        ctx.restore();
+    }
+},
   fireTriple() {
     if (!this.pendingShot) return;
-    const pool=[1,1,1,1,1,1,2,2,2,2,2,2,2,3,3];
-    const fc=pool[Math.floor(Math.random()*pool.length)];
-    this.previewCannons=[];
-    while (this.previewCannons.length<fc) {
-      const ri=Math.floor(Math.random()*this.tripleCount);
-      if (!this.previewCannons.includes(ri)) this.previewCannons.push(ri);
+    
+    // GUARD: Initialize if missing
+    if (!this.tripleCannons || this.tripleCannons.length === 0) {
+        this.tripleCannons = [
+            { offset: 0 },
+            { offset: (Math.PI * 2) / 3 },
+            { offset: (Math.PI * 4) / 3 }
+        ];
+        this.tripleCount = 3;
     }
-    this.previewTimer=this.previewDuration;
-  },
+    
+    const pool = [1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 3, 3];
+    const fireCount = pool[Math.floor(Math.random() * pool.length)];
+    
+    this.previewCannons = [];
+    while (this.previewCannons.length < fireCount) {
+        const ri = Math.floor(Math.random() * this.tripleCount);
+        if (!this.previewCannons.includes(ri)) this.previewCannons.push(ri);
+    }
+    this.previewTimer = this.previewDuration;
+},
 
   executeTripleShot() {
-    if (!this.pendingShot) return;
-    const speed=this.pendingShot.speed, delay=180;
-    this.previewCannons.forEach((i,index)=>{
-      setTimeout(()=>{
-        const angle=this.tripleBaseAngle+this.tripleCannons[i].offset-Math.PI/2;
-        const value=this.currentNumber++;
-        if (this.currentNumber>this.maxNumber) this.currentNumber=1;
-        this.notes.push({x:this.centerX,y:this.centerY,radius:this.baseOuterRadius*0.12,value,id:value,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,spawnProtected:true});
-      },index*delay);
+    if (!this.pendingShot || this.previewCannons.length === 0) return;
+
+    const speed = this.pendingShot.speed;
+    const delay = 180;
+    const shotCount = this.previewCannons.length;
+
+    this.previewCannons.forEach((cannonIndex, index) => {
+        setTimeout(() => {
+            if (this.gameState !== "playing" || this.roundWrapPending) return;
+
+            // This MUST match the cannon's visual rotation
+            const cannonAngle =
+                this.tripleBaseAngle +
+                this.tripleCannons[cannonIndex].offset +
+                Math.PI;
+
+            // Front of the cannon (where the glow is)
+            const fireAngle = cannonAngle + Math.PI / 2;
+
+            const value = this.currentNumber++;
+
+            if (this.currentNumber > this.maxNumber) {
+                this.currentNumber = 1;
+                this._queueRoundEnd();
+            }
+
+            this.notes.push({
+                x: this.centerX,
+                y: this.centerY,
+                radius: this.baseOuterRadius * 0.12,
+                value: value,
+                id: value,
+                vx: Math.cos(fireAngle) * speed,
+                vy: Math.sin(fireAngle) * speed,
+                spawnProtected: true
+            });
+
+        }, index * delay);
     });
-    setTimeout(()=>{ this.previewCannons=[]; this.pendingShot=null; this.isCharging=false; this.charge=0; this.chargeParticles=[]; },this.previewCannons.length*delay);
-  },
+
+    setTimeout(() => {
+        this.previewCannons = [];
+        this.pendingShot = null;
+        this.isCharging = false;
+        this.charge = 0;
+        this.chargeParticles = [];
+    }, shotCount * delay);
+},
 
   /* ── Launcher shared ─────────────────────────────────────── */
   updateLauncherProtection(note) {
@@ -2461,15 +3362,12 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
 
 
   _activateMode(m) {
-  switch (m) {
-    case "pattern": this.activatePatternMode(); break;
-    case "cannon":  this.activateCannonMode(); break;
-    case "orb":     this.activateOrbMode(); break;
-    case "triple":  this.activateTripleCannonMode(); break;
-    default: this._restartSpawnTimer(); break;
+    this.mode = m || "default";
+    this.nextRoundPlan = this._buildRoundPlan();
+    this._beginRound();
   }
-}
 };
+
 
 
 
