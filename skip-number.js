@@ -667,7 +667,7 @@ const Game1 = {
   levelUpDuration: 1400,
   levelUpParticles: [],
   xpPopFlash: 0,
-  hintState: "full",
+  hintState: "none",
   noiseTime: 0,
 
   speedCap: 0,
@@ -723,6 +723,7 @@ const Game1 = {
         {icon:"➕",text:"Finish a round = +20 seconds"},
         {icon:"🎯",text:"Numbers fly in from the ring toward center"},
         {icon:"✅",text:"Touch ONLY multiples (e.g. 3, 6, 9 for Skip 3)"},
+        {icon:"✨",text:"A NEUTRAL GLOW means the number is inside the ring and collectible!"}, // ── NEW RULE ──
         {icon:"💍",text:"Only tap when a number is touching the ring"},
         {icon:"⚠️",text:"Miss a good number = score goes down"},
         {icon:"❌",text:"Wrong touch = lose points + your streak breaks + speed drops"},
@@ -741,6 +742,7 @@ const Game1 = {
         {icon:"🎶",text:"Numbers appear in a repeating skip-collect cycle"},
         {icon:"⏭️",text:"SKIP a set, then COLLECT a set — repeat"},
         {icon:"🧠",text:"E.g. Skip 2, Collect 3 → ✗✗✓✓✓ then repeat"},
+        {icon:"✨",text:"A NEUTRAL GLOW means the number is inside the ring and collectible! "}, // ── NEW RULE ──
         {icon:"💍",text:"Only tap when a number is on the ring"},
         {icon:"⚠️",text:"Miss a good number = score goes down"},
         {icon:"❌",text:"Wrong touch = lose points + your streak breaks + speed drops"},
@@ -815,6 +817,14 @@ const Game1 = {
   init(modeKey = "default") {
     const rect = document.getElementById("container").getBoundingClientRect();
     this._applyResize(rect.width, rect.height);
+
+    // ── Fixed Tracking Property Initializer ──
+    this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
+    }
 
     this.notes = [];
     this.popEffects = [];
@@ -904,7 +914,6 @@ const Game1 = {
       });
 
       window.addEventListener("keydown", (e) => {
-        // --- LEVEL UP CHEAT CODE ---
         if (e.key === "1") {
           if (this.gameState === "playing") {
             this.roundCorrectTouches = 10;
@@ -916,21 +925,16 @@ const Game1 = {
           return;
         }
 
-        // --- ROUND COMPLETE ONLY CHEAT CODE ---
         if (e.key === "2") {
           if (this.gameState === "playing") {
-            // Give some performance metrics but reset skill points to 0 
-            // to strictly guarantee they don't hit the level up threshold
             this.roundCorrectTouches = 5;
             this.roundMaxCombo = 3;
             this.score += 50;
             this.skillPoints = 0; 
-            
             this._resolveRoundEnd();
           }
           return;
         }
-        // ---------------------------------------
 
         if (e.key === "3") this._setMode("orb");
         if (e.key === "4") this._setMode("triple");
@@ -1135,6 +1139,7 @@ _startPlaying() {
         { icon: "🎯", text: "Numbers fly from ring toward center." },
         { icon: "✅", text: `Collect multiples of ${this.skipAmount}.` },
         { icon: "💍", text: "Tap only when touching the outer ring." },
+        { icon: "🛡️", text: "Safe Zone: Center ring is safe! No tapping here. ⭕" },
         { isHeader: true,  text: "⭐ Scoring" },
         { icon: "✅", text: "Correct touch = +10 points + streak +1" },
         { icon: "❌", text: "Wrong touch = −5 points + streak reset" },
@@ -1151,7 +1156,8 @@ _startPlaying() {
         { isHeader: true,  text: "⚙️ Dynamic Scaling" },
         { icon: "🧠", text: "Numbers auto-reset back to 1 after reaching 100." },
         { icon: "📉", text: "Striking wrong choices forces fly speed drops." },
-        { icon: "📈", text: "Success streaks steadily ramp speed back up." }
+        { icon: "📈", text: "Success streaks steadily ramp speed back up." },
+        {icon:"✨",text:"A GLOW means the number is in the ring and collectible! "},
       );
     }
 
@@ -1427,6 +1433,7 @@ _startPlaying() {
       ctx.shadowBlur=10;
       ctx.fill();
       ctx.strokeStyle=cols.rimColor;
+
       ctx.lineWidth=2;
       ctx.stroke();
       ctx.shadowBlur=0;
@@ -1557,17 +1564,13 @@ _startPlaying() {
   },
 
   _getLevelThreshold(level = this.level) {
-    return 90 + Math.max(0, level - 1) * 18;
+    // Standard baseline scaled up 2.5x higher
+    return Math.round((90 + Math.max(0, level - 1) * 18) * 2.5);
   },
 
   _difficultyLabelForLevel(level = this.level) {
-    if (level <= 1) return "Bright clues";
-    if (level === 2) return "Softer clues";
-    if (level === 3) return "No clues";
-    if (level === 4) return "Mixed clues";
-    return "Chaos clues";
+    return `Speed Level up! Dynamic speed cap shifted up.`;
   },
-
   _syncTierForLevel() {
     for (let t = this.tierThresholds.length - 1; t >= 0; t--) {
       if (this.level >= this.tierThresholds[t]) {
@@ -1587,10 +1590,15 @@ _startPlaying() {
   },
 
   _syncDifficultyScalars() {
-    const boost = 1 + Math.min(0.55, Math.max(0, this.level - 1) * 0.08);
-    this.speedCap = this.baseOuterRadius * 0.25 * boost;
+    // Ramps speed baseline significantly higher on each successive level up
+    const speedMultiplier = 1 + Math.min(1.9, Math.max(0, this.level - 1) * 0.22); 
+    this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier;
     this.speedMin = this.speedCap * 0.15;
-    this.launcherSafeRadius = this.baseOuterRadius * 0.45;
+    
+    // Protection zone size calculation: 2.5x the size of the flying numbers
+    const noteRadius = this.baseOuterRadius * 0.12;
+    this.launcherSafeRadius = noteRadius * 2.5; 
+    
     this.levelThreshold = this._getLevelThreshold(this.level);
     this.xpToNext = this.levelThreshold;
     this.xp = this.skillPoints;
@@ -1639,6 +1647,13 @@ _startPlaying() {
   },
 
   _resetRoundTransientState() {
+    this._noHandDuration = 0; // Clear idle tracking timer
+    const pauseBtn = document.getElementById("pauseBtn");
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
+    }
+
     this.notes = [];
     this.popEffects = [];
     this.explosions = [];
@@ -1670,8 +1685,6 @@ _startPlaying() {
     this.gameOverFade = 0;
     this.assistTimeBonus = 0;
     this.assistAppliedThisRound = false;
-    // Don't reset tripleCannons here — keep the array from activate
-    // PRESERVE triple cannon config across round resets
     if (this.mode === "triple" && (!this.tripleCannons || this.tripleCannons.length === 0)) {
         this.tripleCannons = [
             { offset: 0 },
@@ -1680,7 +1693,7 @@ _startPlaying() {
         ];
         this.tripleCount = 3;
     }
-},
+  },
 
 
 
@@ -1776,7 +1789,7 @@ _startPlaying() {
     if (this.spawnTimer) clearInterval(this.spawnTimer);
   },
 
-  _resolveRoundEnd() {
+ _resolveRoundEnd() {
     if (this.gameState !== "playing") return;
     const roundSkillDelta = this._computeRoundSkillDelta();
     const progressBefore = this.skillPoints;
@@ -1786,18 +1799,25 @@ _startPlaying() {
     const canLevelUp = qualified && this.level < this.maxLevel;
     const currentRound = this.roundNumber;
     
-    // --- Dynamic Level and Round Progression Tracking ---
     let nextRound;
     const nextLevel = canLevelUp ? this.level + 1 : this.level;
     
     if (canLevelUp) {
-      nextRound = 1; // If transitioning to a new level, reset round counter back to 1
+      nextRound = 1;
     } else {
-      nextRound = currentRound + 1; // Otherwise, just proceed to the next sequential round
+      nextRound = currentRound + 1;
     }
-    // -----------------------------------------------------
 
-    const bonusTime = canLevelUp ? this.levelUpBonus : this.roundEndBonus;
+    // --- Performance Skill-Based Timer Allocator ---
+    let dynamicBonusTime = 0;
+    if (canLevelUp) {
+      dynamicBonusTime = 250; // Flat 250 seconds award on level ups
+    } else {
+      // Normal round bonuses scale dynamically from +10s up to +35s based on accuracy math
+      const skillFactor = Math.max(0, Math.min(1, roundSkillDelta / 64));
+      dynamicBonusTime = Math.round(10 + (skillFactor * 25));
+    }
+
     const summary = {
       roundNumber: currentRound,
       nextRoundNumber: nextRound,
@@ -1808,7 +1828,7 @@ _startPlaying() {
       progressAfter: this.skillPoints,
       progressPercent: this._computeProgressPercent(false),
       timeBeforeBonus: Math.max(0, Math.ceil(this.timeRemaining)),
-      bonusTime,
+      bonusTime: dynamicBonusTime,
       totalScore: this.score,
       maxCombo: this.bestCombo,
       roundMaxCombo: this.roundMaxCombo,
@@ -1840,19 +1860,15 @@ _startPlaying() {
     this.multiplier = 1;
     this.lastHitType = "";
 
-    // Set time limits: New levels reset directly to 180 seconds, standard rounds append the bonus
-    if (canLevelUp) {
-      this.timeRemaining = this.timeLimit; // 180 seconds
-    } else {
-      this.timeRemaining = Math.max(0, this.timeRemaining + bonusTime);
-    }
+    // Apply the newly calculated rewards safely to our structural parameters
+    this.timeRemaining = Math.max(0, this.timeRemaining + dynamicBonusTime);
 
     this.assistTimeBonus = 0;
     this.assistAppliedThisRound = false;
 
     if (canLevelUp) {
       this.level = nextLevel;
-      this.roundNumber = nextRound; // Apply the level-reset round configuration (1)
+      this.roundNumber = nextRound;
       this.nextRoundNumber = nextRound + 1;
       this.skillPoints = 0;
       this.xp = 0;
@@ -1864,7 +1880,7 @@ _startPlaying() {
       this._triggerLevelUpBurst();
       this.gameState = "levelCongrats";
     } else {
-      this.roundNumber = currentRound; // Preserve current tracking for standard breaks
+      this.roundNumber = currentRound;
       this.nextRoundNumber = nextRound;
       this.gameState = "roundBreak";
     }
@@ -1994,16 +2010,8 @@ _startPlaying() {
   },
 
   _updateHintState() {
-    const lv = this.level, prev = this.hintState;
-    if      (lv <= 1)  this.hintState = "full";
-    else if (lv === 2) this.hintState = "subtle";
-    else if (lv === 3) this.hintState = "none";
-    else if (lv === 4) this.hintState = "decoy";
-    else               this.hintState = "chaos";
-    if (this.hintState !== prev) {
-      this._hintChangeTimer   = 2800;
-      this._hintChangeMessage = this._hintChangeMessages[this.hintState] || "";
-    }
+    // All levels from 1 to end are now permanently neutral (Level 3 style)
+    this.hintState = "none";
   },
 
   // Reused visual result object — avoids allocating a new object every note every frame
@@ -2477,7 +2485,7 @@ _startPlaying() {
       this.overlayHoldProgress = Math.max(0, this.overlayHoldProgress - dt * 0.45);
     }
 
-    const box = this._drawOverlayCard(ctx, `Level ${summary.levelAfter || this.level}`, `Round ${summary.nextRoundNumber || (this.roundNumber + 1)} starts at 1`, this.C.accent, 540);
+    const box = this._drawOverlayCard(ctx, `Level ${summary.levelAfter || this.level}`, `Round ${summary.nextRoundNumber || (this.roundNumber + 1)} Ready!`, this.C.accent, 540);
     const visX = box.cardX + 16, visY = box.cardY + 84;
     const visW = box.isMob ? box.cardW - 32 : Math.floor(box.cardW * 0.42);
     const visH = box.isMob ? 130 : 260;
@@ -2496,14 +2504,17 @@ _startPlaying() {
     const rulesX = box.isMob ? box.cardX + 16 : box.cardX + visW + 24;
     const rulesY = box.isMob ? visY + visH + 12 : box.cardY + 84;
     const rulesW = box.isMob ? box.cardW - 32 : box.cardW - visW - 40;
+    
+    // Simplified, kid-friendly rows that prevent layout overflow
     const rows = [
-      { label: "What changed", value: this._difficultyLabelForLevel(summary.levelAfter || this.level) },
-      { label: "Speed", value: "The game gets a little faster" },
-      { label: "Numbers", value: "Every round starts again at 1" },
-      { label: "Goal", value: `Hold for ${this.roundHoldSec} seconds to begin` },
+      { label: "What's New",       value: "Speed up! 🚀" },
+      { label: "Game Speed",      value: "Numbers fly faster now!" },
+      { label: "Color Hints",     value: "Hidden! Use your math brain 🧠" },
+      { label: "Where to Tap",    value: "Inside the big gold ring! ⭕" },
     ];
+    
     this._drawOverlayLines(ctx, rows, rulesX, rulesY, rulesW - 16, this.C.accent, box.isMob);
-    this._drawHoldPrompt(ctx, `Hold your finger still for ${this.roundHoldSec} seconds to start round ${summary.nextRoundNumber || (this.roundNumber + 1)}`, this.C.correct, box.cardY + box.cardH - 54, this.overlayHoldProgress);
+    this._drawHoldPrompt(ctx, `Hold your finger still for 3 seconds to play!`, this.C.correct, box.cardY + box.cardH - 54, this.overlayHoldProgress);
   },
 
   _drawGameOverScreen(ctx, fingers, dt) {
@@ -2602,7 +2613,39 @@ _startPlaying() {
       return;
     }
 
-    // Playing state
+    // ── Live Playing State (Hand Detection Logic) ──
+    if (this._noHandDuration === undefined) this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    
+    if (fingers.length > 0) {
+      this._noHandDuration = 0;
+      if (pauseBtn) {
+        pauseBtn.style.display = "none";
+        pauseBtn.style.opacity = "0";
+      }
+    } else {
+      this._noHandDuration += dt;
+
+      // 7 Seconds Flag: Reveal pause button safely
+      if (this._noHandDuration >= 7 && this._noHandDuration < 15) {
+        if (pauseBtn) {
+          pauseBtn.style.display = "block";
+          pauseBtn.style.opacity = "1";
+        }
+      }
+
+      // 15 Seconds Flag: Force Auto-Pause Menu Open
+      if (this._noHandDuration >= 15) {
+        this._noHandDuration = 0;
+        if (pauseBtn) {
+          pauseBtn.style.display = "none";
+          pauseBtn.style.opacity = "0";
+        }
+        window.pauseGame(); 
+        return;
+      }
+    }
+
     this._drawBg(ctx);
     this._drawBgStars(ctx);
     this._updateLevelUp(dt);
@@ -2643,24 +2686,19 @@ _startPlaying() {
 
     this.drawPopEffects(ctx);
 
-    // Always draw fingers (visual stays smooth)
-fingers.forEach(finger => {
-  this.drawFinger(ctx, finger.x, finger.y);
-});
+    fingers.forEach(finger => {
+      this.drawFinger(ctx, finger.x, finger.y);
+    });
 
-// Throttle collision detection to every 33ms
-const now = performance.now();
-
-if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
-  this._lastFingerUpdateTime = now;
-
-  for (let i = 0; i < fingers.length; i++) {
-    const finger = fingers[i];
-
-    if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
-    else            this.checkCollision(finger.x, finger.y);
-  }
-}
+    const now = performance.now();
+    if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
+      this._lastFingerUpdateTime = now;
+      for (let i = 0; i < fingers.length; i++) {
+        const finger = fingers[i];
+        if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
+        else            this.checkCollision(finger.x, finger.y);
+      }
+    }
 
     this._drawHUD(ctx, isLauncher);
     this._drawLevelUpBurst(ctx);
@@ -2843,14 +2881,26 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
     });
   },
   drawNotes(ctx, dt) {
+    // Ensure the protection ring circle is drawn on screen for Skip and Pattern modes too
+    const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
+    if (!isLauncher) {
+      this.drawLauncherZone(ctx);
+    }
+
     for (let i = this.notes.length - 1; i >= 0; i--) {
       const note = this.notes[i];
       const dx = this.centerX - note.x, dy = this.centerY - note.y;
       const len = Math.sqrt(dx*dx + dy*dy);
       const step = Math.min(this.noteSpeed * dt, len);
       note.x += (dx/len)*step; note.y += (dy/len)*step;
+      
       this._drawNoteCircle(ctx, note);
       
+      // Update entry into the central no-hit protection boundary ring area
+      if (len <= this.launcherSafeRadius) {
+        note.spawnProtected = true; // Flips state flag to active no-hit confirmation
+      }
+
       if (len <= step + 1) {
         if (this.shouldCollect(note.value)) {
           this.roundMissedCorrect++;
@@ -2867,10 +2917,9 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
           this.missedCorrectStreak = 0;
         }
 
-        // --- Handle End of Round Trigger when 100 Despawns ---
         if (note.value === this.maxNumber) {
           this.roundWrapPending = true;
-          this.roundWrapDelay = 1.0; // Force exact 1-second delay wait before continuing
+          this.roundWrapDelay = 1.0; 
           if (this.spawnTimer) clearInterval(this.spawnTimer);
         }
 
@@ -2879,14 +2928,42 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
     }
   },
 
-  _drawNoteCircle(ctx, note) {
+ _drawNoteCircle(ctx, note) {
     const r   = note.radius;
     const isC = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple")
                 ? this.shouldCollectCannon(note.value) : this.shouldCollect(note.value);
     const vis    = this._noteVisual(isC, note.id || note.value);
     const h      = this.hintState;
     const isVisC = vis.showCorrect, isVisW = vis.showWrong;
+    
+    // ── Calculate if the note is physically crossing into the gold ring zone ──
+    const distFromCenter = Math.hypot(note.x - this.centerX, note.y - this.centerY);
+    const isInsideRingZone = (distFromCenter - r) <= (this.currentOuterRadius + 15);
+    
+    // ── CHANGED: Glow applies strictly based on POSITION, completely neutral to math rules ──
+    const shouldGlow = isInsideRingZone && !note.spawnProtected;
+
     ctx.save();
+    
+    // ── Neutral Feedback Glow Aura Pass ──
+    if (shouldGlow) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      
+      // Using a soft, bright celestial cyan/gold blend for an absolute neutral feedback aura
+      const glowGrd = ctx.createRadialGradient(note.x, note.y, r * 0.1, note.x, note.y, r * 1.8);
+      glowGrd.addColorStop(0, "rgba(235, 245, 255, 0.45)"); // Soft cosmic white core
+      glowGrd.addColorStop(0.4, "rgba(142, 202, 230, 0.25)"); // Fades into neutral UI light blue
+      glowGrd.addColorStop(1, "rgba(0, 0, 0, 0)");
+      
+      ctx.fillStyle = glowGrd;
+      ctx.beginPath();
+      ctx.arc(note.x, note.y, r * 1.8, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // ── Original Background Hint Glow Path ──
     if (isVisC || isVisW || vis.shimmerAmt > 0) {
       let ha = isVisC ? 0.16 : isVisW ? 0.11 : vis.shimmerAmt*0.12;
       if (h === "subtle" && isVisC) ha = 0.07;
@@ -2899,6 +2976,7 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       ctx.arc(note.x,note.y,r*1.4,0,Math.PI*2);
       ctx.fill();
     }
+
     let bodyFill, rimColor, shadowCol;
     if (isVisC && h !== "subtle") { bodyFill="#0e3028"; rimColor=this.C.correct; shadowCol="rgba(109,232,180,0.45)"; }
     else if (isVisW)               { bodyFill="#2a1010"; rimColor=this.C.wrong;   shadowCol="rgba(232,124,109,0.4)"; }
@@ -2907,20 +2985,29 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       rimColor  = `rgba(${Math.round(100+vis.shimmerAmt*80)},${Math.round(160+vis.shimmerAmt*40)},${Math.round(200+vis.shimmerAmt*30)},${0.55+vis.shimmerAmt*0.35})`;
       shadowCol = `rgba(90,150,200,${0.25+vis.shimmerAmt*0.2})`;
     }
+    
+    // Highlight the card board structure cleanly when inside the active interaction zone
+    if (shouldGlow) {
+      shadowCol = "rgba(142, 202, 230, 0.6)"; // Bright neutral shadow drop
+      rimColor  = "#ffffff";                  // Crisp white edge highlight
+    }
+
     ctx.shadowColor=shadowCol;
-    ctx.shadowBlur=20;
+    ctx.shadowBlur=shouldGlow ? 30 : 20; 
     ctx.beginPath();
     ctx.arc(note.x,note.y,r,0,Math.PI*2);
     ctx.fillStyle=bodyFill;
     ctx.fill();
     ctx.strokeStyle=rimColor;
-    ctx.lineWidth=2.5;
+    ctx.lineWidth=shouldGlow ? 3.5 : 2.5; 
     ctx.stroke();
     ctx.shadowBlur=0;
+
     ctx.beginPath();
     ctx.arc(note.x-r*0.27,note.y-r*0.27,r*0.20,0,Math.PI*2);
     ctx.fillStyle = isVisC && h !== "subtle" ? "rgba(200,255,230,0.30)" : "rgba(200,230,255,0.22)";
     ctx.fill();
+
     if (h === "subtle" && !isC) {
       ctx.globalAlpha=0.18;
       ctx.fillStyle="#aac8e0";
@@ -2930,6 +3017,7 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       ctx.fillText("?",note.x,note.y-r*0.55);
       ctx.globalAlpha=1;
     }
+
     ctx.fillStyle=this.C.noteText;
     ctx.font=`bold ${Math.round(r*0.72)}px 'Trebuchet MS', sans-serif`;
     ctx.textAlign="center";
@@ -2937,7 +3025,6 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
     ctx.fillText(note.value,note.x,note.y);
     ctx.restore();
   },
-
   /* ── Collision ───────────────────────────────────────────── */
   shouldCollect(number) {
     if (this.mode === "default") return number % this.skipAmount === 0;
@@ -2946,15 +3033,22 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
   },
   shouldCollectCannon(number) { return number % this.skipAmount === 0; },
 
-  checkCollision(fingerX, fingerY) {
-    for (let index = this.notes.length-1; index >= 0; index--) {
+ checkCollision(fingerX, fingerY) {
+    for (let index = this.notes.length - 1; index >= 0; index--) {
       const note = this.notes[index];
-      const dx=fingerX-note.x, dy=fingerY-note.y;
-      const dist=Math.sqrt(dx*dx+dy*dy);
-      const dfc=Math.sqrt((note.x-this.centerX)**2+(note.y-this.centerY)**2);
-      const onRing = dfc+note.radius>this.currentInnerRadius && dfc-note.radius<this.currentOuterRadius;
       
-      if (dist < note.radius+20 && onRing) {
+      // GUARD: If a number is 100% inside our protection zone, it becomes a no-hit zone
+      if (note.spawnProtected) continue;
+
+      const dx = fingerX - note.x, dy = fingerY - note.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      
+      const dfc = Math.sqrt((note.x - this.centerX)**2 + (note.y - this.centerY)**2);
+      
+      // Optimized Condition: Valid collection anywhere INSIDE or ON the outer boundary ring radius limit
+      const validCaptureArea = dfc - note.radius <= this.currentOuterRadius;
+
+      if (dist < note.radius + 20 && validCaptureArea) {
         if (this.shouldCollect(note.value)) {
           this.roundCorrectTouches++;
           this.totalCorrectTouches++;
@@ -2963,33 +3057,38 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
           this.combo++;
           if (this.combo > this.bestCombo) this.bestCombo = this.combo;
           if (this.combo > this.roundMaxCombo) this.roundMaxCombo = this.combo;
-          if (this.combo%5===0) {
+          if (this.combo % 5 === 0) {
             this.multiplier++;
             this._gainXP(1);
           }
-          this.score += 10*this.multiplier; this.lastHitType="CORRECT";
-          this._gainXP(1); this._recoverSpeed();
-          if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x,y:note.y,life:0,color:this.C.correct});
+          this.score += 10 * this.multiplier; 
+          this.lastHitType = "CORRECT";
+          this._gainXP(1); 
+          this._recoverSpeed();
+          if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x, y:note.y, life:0, color:this.C.correct});
         } else {
           this.roundWrongTouches++;
           this.totalWrongTouches++;
           this.wrongTouchStreak++;
           this.missedCorrectStreak = 0;
           if (this.wrongTouchStreak > this.roundWrongStreakPeak) this.roundWrongStreakPeak = this.wrongTouchStreak;
-          this.combo=0; this.multiplier=1; this.score-=5; this.lastHitType="WRONG";
+          this.combo = 0; 
+          this.multiplier = 1; 
+          this.score -= 5; 
+          this.lastHitType = "WRONG";
           this._adjustSkill(-(1 + Math.min(2, this.wrongTouchStreak * 0.18)));
           this._penalizeSpeed();
-          if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x,y:note.y,life:0,color:this.C.wrong});
+          if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x, y:note.y, life:0, color:this.C.wrong});
         }
         
-        // --- Handle End of Round Trigger when 100 is Collected ---
         if (note.value === this.maxNumber) {
           this.roundWrapPending = true;
-          this.roundWrapDelay = 1.0; // Force exact 1-second delay wait before continuing
+          this.roundWrapDelay = 1.0; 
           if (this.spawnTimer) clearInterval(this.spawnTimer);
         }
 
-        this.hitTextTimer=30; this.notes.splice(index,1);
+        this.hitTextTimer = 30; 
+        this.notes.splice(index, 1);
       }
     }
   },
