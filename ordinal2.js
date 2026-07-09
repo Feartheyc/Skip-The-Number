@@ -108,6 +108,14 @@ const Game10 = {
   init() {
     this._applyResize(window.innerWidth, window.innerHeight);
 
+    // ── NEW: Initialize Auto-Pause Tracking ──
+    this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
+    }
+
     this.score = 0; this.running = true; this.lastTime = performance.now();
     this.hearts = 3; this.streak = 0; this.roundsCompleted = 0;
     this.level = 1; this.numberRange = 10;
@@ -269,7 +277,7 @@ const Game10 = {
     ctx.fillText("🌌  GALAXY COLLECTOR", cx, cardY + 28); ctx.shadowBlur = 0;
     ctx.font = `${isMob ? 12 : 14}px 'Fredoka', 'Trebuchet MS', sans-serif`;
     ctx.fillStyle = "rgba(226,232,240,0.68)";
-    ctx.fillText("Like Pac-Man in space — BE the portal and swallow matching numbers!", cx, cardY + 58);
+    ctx.fillText("Like Pac-Man in space — BE the portal and swallow matching numbers!", cx, cardY + 65);
 
     // Visual box
     const visX = cardX + 12, visY = cardY + 76;
@@ -608,7 +616,49 @@ const Game10 = {
       return;
     }
 
-    // Playing state
+    // ── Live Playing State (Hand Detection Logic) ──
+    if (this._noHandDuration === undefined) this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    const fingers = window.fingerPositions || [];
+    const dtSeconds = delta / 1000;
+
+    // Suppress if intermediate menus or collapse sequences lock game inputs
+    if (this.mode1GameOver || this.blackHoleActive || this.mode1Confirming) {
+      this._noHandDuration = 0;
+      if (pauseBtn) {
+        pauseBtn.style.display = "none";
+        pauseBtn.style.opacity = "0";
+      }
+    } else if (fingers.length > 0) {
+      this._noHandDuration = 0;
+      if (pauseBtn) {
+        pauseBtn.style.display = "none";
+        pauseBtn.style.opacity = "0";
+      }
+    } else {
+      this._noHandDuration += dtSeconds;
+
+      // 7 Seconds Interval: Show the overlay pause button fallback
+      if (this._noHandDuration >= 7 && this._noHandDuration < 15) {
+        if (pauseBtn) {
+          pauseBtn.style.display = "block";
+          pauseBtn.style.opacity = "1";
+        }
+      }
+
+      // 15 Seconds Interval: Trigger absolute auto-pause system freeze
+      if (this._noHandDuration >= 15) {
+        this._noHandDuration = 0;
+        if (pauseBtn) {
+          pauseBtn.style.display = "none";
+          pauseBtn.style.opacity = "0";
+        }
+        window.pauseGame();
+        return;
+      }
+    }
+
+    // Playing state drawing loops...
     this.drawBackground(ctx);
     if (this.theme === "space") {
       this.updateStars(delta); this.drawStars(ctx);
@@ -1028,6 +1078,13 @@ const Game10 = {
   },
 
   retryMode1(){
+    this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
+    }
+
     this.mode1GameOver=false;this.hearts=3;this.streak=0;this.score=0;this.level=1;this.numberRange=10;this.roundsCompleted=0;
     this.particles=[];this.sparkBursts=[];this.floatNumbers=[];this.shootingStars=[];this.heartShakeTime=0;this.streakPulse=0;
     const s=["st","nd","rd","th"];this.mode1TargetSuffix=s[Math.floor(Math.random()*4)];

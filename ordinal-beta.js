@@ -67,7 +67,7 @@ const Game9 = {
   mascot: {
     x:0, y:0, vx:0, vy:0,
     /* Faster accel + higher maxSpeed = responsive, still smooth */
-    accel: 0.022,
+    accel: 0.065,
     maxSpeed: 1.1,
     friction: 0.970,
     size: 140,
@@ -121,6 +121,14 @@ const Game9 = {
   ============================================================ */
   init() {
     this._applyResize(window.innerWidth, window.innerHeight);
+
+    // ── NEW: Initialize Auto-Pause Tracking ──
+    this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
+    }
 
     this.score            = 0;
     this.hearts           = 3;
@@ -298,7 +306,7 @@ const Game9 = {
     ctx.shadowBlur = 0;
     ctx.font = `${isMob ? 13 : 15}px 'Fredoka', sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.fillText("Carry the number to the right ordinal door!", cx, cardY + 58);
+    ctx.fillText("Carry the number to the right ordinal door!", cx, cardY +65 );
 
     /* Visual box */
     const visX = cardX + 12, visY = cardY + 76;
@@ -823,6 +831,41 @@ const Game9 = {
       return;
     }
 
+    // ── Live Playing State (Hand Detection Logic) ──
+    if (this._noHandDuration === undefined) this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    const fingers = window.fingerPositions || [];
+    const dtSeconds = delta / 1000;
+
+    if (fingers.length > 0) {
+      this._noHandDuration = 0;
+      if (pauseBtn) {
+        pauseBtn.style.display = "none";
+        pauseBtn.style.opacity = "0";
+      }
+    } else {
+      this._noHandDuration += dtSeconds;
+
+      // 7 Seconds: Show pause button
+      if (this._noHandDuration >= 7 && this._noHandDuration < 15) {
+        if (pauseBtn) {
+          pauseBtn.style.display = "block";
+          pauseBtn.style.opacity = "1";
+        }
+      }
+
+      // 15 Seconds: Trigger Auto-Pause overlay window
+      if (this._noHandDuration >= 15) {
+        this._noHandDuration = 0;
+        if (pauseBtn) {
+          pauseBtn.style.display = "none";
+          pauseBtn.style.opacity = "0";
+        }
+        window.pauseGame();
+        return;
+      }
+    }
+
     /* Playing background always drawn first */
     this.drawDreamBackground(ctx);
     this.updateStarLayer(this.starsFar,  delta);
@@ -870,7 +913,6 @@ const Game9 = {
     this.drawToast(ctx);
     this._drawNoFingerPrompt(ctx);
   },
-
   /* ── HUD timers ──────────────────────────────────────────── */
   updateHUDTimers(delta) {
     if (this.heartShakeTime > 0) this.heartShakeTime = Math.max(0, this.heartShakeTime - delta);
@@ -1074,6 +1116,13 @@ const Game9 = {
   },
 
   retryGame() {
+    this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
+    }
+
     this.score=0; this.hearts=3; this.level=1; this.correctAnswers=0;
     this.correctThisLevel=0; this.numberRange=10; this.streak=0; this.bestStreak=0;
     this.streakPulse=0; this.heartShakeTime=0; this.levelUpBurst=null;
@@ -1306,40 +1355,60 @@ const Game9 = {
     ctx.fillStyle=glow; ctx.fillRect(0,0,this.cssWidth,this.cssHeight);
   },
   drawFloatingSparkles(ctx,x,y) {
-    const time=performance.now()*0.002; ctx.beginPath();
-    for(let i=0;i<6;i++){const a=(Math.PI*2/6)*i+time,sx=x+Math.cos(a)*70*this.scale,sy=y+Math.sin(a)*70*this.scale;ctx.moveTo(sx+6*this.scale,sy);ctx.arc(sx,sy,6*this.scale,0,Math.PI*2);}
-    ctx.fillStyle="#FFFACD"; ctx.fill();
+    const time=performance.now()*0.002; 
+    ctx.beginPath();
+    for(let i=0;i<6;i++){
+      const a=(Math.PI*2/6)*i+time,sx=x+Math.cos(a)*70*this.scale,sy=y+Math.sin(a)*70*this.scale;
+      ctx.moveTo(sx+6*this.scale,sy);
+      ctx.arc(sx,sy,6*this.scale,0,Math.PI*2);}
+    ctx.fillStyle="#FFFACD"; 
+    ctx.fill();
   },
 
   /* ── Utility ─────────────────────────────────────────────── */
   _rrect(ctx,x,y,w,h,r) {
     r=Math.min(r,w/2,h/2);
-    ctx.beginPath(); ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y);
-    ctx.quadraticCurveTo(x+w,y,x+w,y+r); ctx.lineTo(x+w,y+h-r);
-    ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h); ctx.lineTo(x+r,y+h);
-    ctx.quadraticCurveTo(x,y+h,x,y+h-r); ctx.lineTo(x,y+r);
-    ctx.quadraticCurveTo(x,y,x+r,y); ctx.closePath();
+    ctx.beginPath(); 
+    ctx.moveTo(x+r,y); 
+    ctx.lineTo(x+w-r,y);
+    ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+     ctx.lineTo(x+w,y+h-r);
+    ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+     ctx.lineTo(x+r,y+h);
+    ctx.quadraticCurveTo(x,y+h,x,y+h-r); 
+    ctx.lineTo(x,y+r);
+    ctx.quadraticCurveTo(x,y,x+r,y);
+     ctx.closePath();
   },
 
   /* ── Loading screen ──────────────────────────────────────── */
   drawLoadingScreen(ctx) {
     const W=this.cssWidth, H=this.cssHeight;
     const g=ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,"#60A5FA"); g.addColorStop(0.5,"#A78BFA"); g.addColorStop(1,"#F472B6");
-    ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+    g.addColorStop(0,"#60A5FA"); 
+    g.addColorStop(0.5,"#A78BFA"); 
+    g.addColorStop(1,"#F472B6");
+    ctx.fillStyle=g; 
+    ctx.fillRect(0,0,W,H);
     const glow=ctx.createRadialGradient(this.CENTER_X,this.CENTER_Y,0,this.CENTER_X,this.CENTER_Y,W*0.7);
-    glow.addColorStop(0,"rgba(255,255,255,0.15)"); glow.addColorStop(1,"rgba(255,255,255,0)");
-    ctx.fillStyle=glow; ctx.fillRect(0,0,W,H);
+    glow.addColorStop(0,"rgba(255,255,255,0.15)"); 
+    glow.addColorStop(1,"rgba(255,255,255,0)");
+    ctx.fillStyle=glow; 
+    ctx.fillRect(0,0,W,H);
     ctx.fillStyle="#ffffff";
     ctx.font=`bold ${Math.round(36*this.scale)}px 'Fredoka', sans-serif`;
-    ctx.textAlign="center"; ctx.textBaseline="middle";
+    ctx.textAlign="center"; 
+    ctx.textBaseline="middle";
     ctx.fillText("✨ Loading Ordinal Express...", this.CENTER_X, this.CENTER_Y - 40*this.scale);
     const progress=this.assetsToLoad===0?0:this.assetsLoaded/this.assetsToLoad;
     const barW=300*this.scale, barH=14*this.scale;
     const bx=this.CENTER_X-barW/2, by=this.CENTER_Y+20*this.scale;
-    ctx.fillStyle="rgba(255,255,255,0.2)"; ctx.fillRect(bx,by,barW,barH);
-    ctx.fillStyle="#a78bfa"; ctx.fillRect(bx,by,barW*progress,barH);
+    ctx.fillStyle="rgba(255,255,255,0.2)"; 
+    ctx.fillRect(bx,by,barW,barH);
+    ctx.fillStyle="#a78bfa"; 
+    ctx.fillRect(bx,by,barW*progress,barH);
     ctx.font=`bold ${Math.round(18*this.scale)}px 'Fredoka', sans-serif`;
-    ctx.fillStyle="#fff"; ctx.fillText(`${Math.round(progress*100)}%`, this.CENTER_X, by+36*this.scale);
+    ctx.fillStyle="#fff"; 
+    ctx.fillText(`${Math.round(progress*100)}%`, this.CENTER_X, by+36*this.scale);
   },
 };
