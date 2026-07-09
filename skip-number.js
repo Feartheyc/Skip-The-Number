@@ -588,8 +588,8 @@ const Game1 = {
   roundNumber: 1,
   nextRoundNumber: 1,
   roundCycleGoal: 100,
-  timeLimit: 180,
-  timeRemaining: 180,
+  timeLimit: 300,
+  timeRemaining: 300,
   skillPoints: 0,
   levelThreshold: 90,
   bestCombo: 0,
@@ -610,7 +610,7 @@ const Game1 = {
   roundWrapPending: false,
   roundWrapDelay: 0,
   roundEndBonus: 20,
-  levelUpBonus: 120,
+  levelUpBonus: 180,
   roundHoldSec: 3.0,
   overlayHoldProgress: 0,
   levelCongratsTapHold: 0,
@@ -806,6 +806,12 @@ const Game1 = {
   /* ============================================================
      INIT
   ============================================================ */
+  /* ============================================================
+      INIT
+  ============================================================ */
+  /* ============================================================
+      INIT
+  ============================================================ */
   init(modeKey = "default") {
     const rect = document.getElementById("container").getBoundingClientRect();
     this._applyResize(rect.width, rect.height);
@@ -898,14 +904,39 @@ const Game1 = {
       });
 
       window.addEventListener("keydown", (e) => {
-        if (e.key === "1") this._setMode("pattern");
-        if (e.key === "2") this._setMode("cannon");
+        // --- LEVEL UP CHEAT CODE ---
+        if (e.key === "1") {
+          if (this.gameState === "playing") {
+            this.roundCorrectTouches = 10;
+            this.roundMaxCombo = 10;
+            this.score += 100;
+            this.skillPoints = this.levelThreshold; 
+            this._resolveRoundEnd();
+          }
+          return;
+        }
+
+        // --- ROUND COMPLETE ONLY CHEAT CODE ---
+        if (e.key === "2") {
+          if (this.gameState === "playing") {
+            // Give some performance metrics but reset skill points to 0 
+            // to strictly guarantee they don't hit the level up threshold
+            this.roundCorrectTouches = 5;
+            this.roundMaxCombo = 3;
+            this.score += 50;
+            this.skillPoints = 0; 
+            
+            this._resolveRoundEnd();
+          }
+          return;
+        }
+        // ---------------------------------------
+
         if (e.key === "3") this._setMode("orb");
         if (e.key === "4") this._setMode("triple");
       });
     }
   },
-
   /* ── Resize — layout only, never resets gameplay ────────── */
   _onResize() {
     const w = window.innerWidth, h = window.innerHeight;
@@ -1000,12 +1031,17 @@ _startPlaying() {
   },
 
   /* ============================================================
-     TUTORIAL — main draw
+     TUTORIAL — main draw (Page-Based System to Prevent Overflow)
   ============================================================ */
   _updateTutorial(ctx, fingers, dt) {
     this._tutEnterAnim  = Math.min(1, this._tutEnterAnim + dt * 2);
     this._tutOrbT      += dt;
     this._tutPulseT    += dt * 1.8;
+
+    // Initialize tutorial page tracking if it doesn't exist
+    if (this._tutPage === undefined) {
+      this._tutPage = 1;
+    }
 
     const alpha  = 1 - Math.pow(1 - Math.max(0, Math.min(1, this._tutEnterAnim)), 3);
     const W = this.centerX * 2, H = this.centerY * 2;
@@ -1033,7 +1069,7 @@ _startPlaying() {
     }
     ctx.globalAlpha = alpha;
 
-    // Card
+    // Card dimensions
     const isMob = W < 540;
     const cardW = Math.min(W - 32, isMob ? 360 : 700);
     const cardH = Math.min(H - 60, isMob ? 580 : 540);
@@ -1075,10 +1111,10 @@ _startPlaying() {
 
     ctx.font = `${isMob?12:14}px 'Trebuchet MS', sans-serif`;
     ctx.fillStyle = "rgba(240,244,255,0.68)";
-    ctx.fillText(td.tagline, this.centerX, cardY + 58);
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Gameplay & Scoring' : 'Time & Speed Parameters'}`, this.centerX, cardY + 65);
 
-    // Visual box
-    const visX = cardX + 12, visY = cardY + 76;
+    // Visual Box (Always on left/top)
+    const visX = cardX + 12, visY = cardY + 82;
     const visW = isMob ? cardW - 24 : cardW * 0.42;
     const visH = isMob ? 130 : cardH - 200;
     ctx.fillStyle = "rgba(8,16,36,0.68)";
@@ -1090,32 +1126,73 @@ _startPlaying() {
     ctx.stroke();
     this._drawTutVisual(ctx, td.visual, visX, visY, visW, visH, this._tutOrbT, tColor);
 
-    // Rules
-    const rulesX = isMob ? cardX + 12 : cardX + visW + 24;
-    const rulesY = isMob ? visY + visH + 10 : cardY + 76;
-    const rulesW = isMob ? cardW - 24 : cardW - visW - 36;
-    const rowH   = isMob ? 34 : 42;
-    for (let i = 0; i < td.rules.length; i++) {
-      const rule = td.rules[i];
-      const prog = Math.max(0, Math.min(1, (this._tutEnterAnim - i * 0.08) / 0.6));
-      const ea   = 1 - Math.pow(1 - prog, 3);
-      ctx.globalAlpha = alpha * ea;
-      ctx.fillStyle = i % 2 === 0 ? "rgba(20,40,70,0.45)" : "rgba(10,24,44,0.3)";
-      ctx.beginPath();
-      ctx.roundRect(rulesX, rulesY + i * rowH, rulesW, rowH - 4, 8);
-      ctx.fill();
-      ctx.font = `${isMob?15:17}px 'Trebuchet MS', sans-serif`;
-      ctx.fillStyle = "#f0f4ff";
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      ctx.fillText(rule.icon, rulesX + 10, rulesY + i * rowH + rowH / 2 - 2);
-      ctx.font = `${isMob?11:13}px 'Trebuchet MS', sans-serif`;
-      ctx.fillStyle = "rgba(240,244,255,0.85)";
-      ctx.fillText(rule.text, rulesX + 36, rulesY + i * rowH + rowH / 2 - 2);
+    // Dynamic Page Content Building
+    const contentRows = [];
+    if (this._tutPage === 1) {
+      contentRows.push(
+        { isHeader: true,  text: "🎮 Gameplay" },
+        { icon: "☝️", text: "Your index finger is the green dot." },
+        { icon: "🎯", text: "Numbers fly from ring toward center." },
+        { icon: "✅", text: `Collect multiples of ${this.skipAmount}.` },
+        { icon: "💍", text: "Tap only when touching the outer ring." },
+        { isHeader: true,  text: "⭐ Scoring" },
+        { icon: "✅", text: "Correct touch = +10 points + streak +1" },
+        { icon: "❌", text: "Wrong touch = −5 points + streak reset" },
+        { icon: "⚠️", text: "Miss correct number = −10 points + streak reset" },
+        { icon: "🔥", text: "5-combo streaks multiply your score!" }
+      );
+    } else {
+      contentRows.push(
+        { isHeader: true,  text: "⏱️ Time Metrics" },
+        { icon: "⏱️", text: "You begin with a clean 180 seconds." },
+        { icon: "⏳", text: "The countdown bar depletes continuously." },
+        { icon: "➕", text: "Completing a round adds +20 seconds." },
+        { icon: "🚀", text: "Leveling up instantly restores time to 180s." },
+        { isHeader: true,  text: "⚙️ Dynamic Scaling" },
+        { icon: "🧠", text: "Numbers auto-reset back to 1 after reaching 100." },
+        { icon: "📉", text: "Striking wrong choices forces fly speed drops." },
+        { icon: "📈", text: "Success streaks steadily ramp speed back up." }
+      );
     }
-    ctx.globalAlpha = alpha;
 
-    // Hold section
+    // Rules Layout Coordinates Engine
+    const rulesX = isMob ? cardX + 12 : cardX + visW + 24;
+    const rulesY = isMob ? visY + visH + 10 : cardY + 82;
+    const rulesW = isMob ? cardW - 24 : cardW - visW - 36;
+    
+    // Auto-calculate tight row heights to completely eliminate structural boundary collision
+    const dynamicRowH = isMob ? (this._tutPage === 1 ? 26 : 30) : (this._tutPage === 1 ? 32 : 36);
+
+    for (let i = 0; i < contentRows.length; i++) {
+      const item = contentRows[i];
+      const currentY = rulesY + (i * dynamicRowH);
+
+      if (item.isHeader) {
+        ctx.font = `bold ${isMob?13:15}px 'Trebuchet MS', sans-serif`;
+        ctx.fillStyle = tColor;
+        ctx.textAlign = "left";
+        ctx.textBaseline = "middle";
+        ctx.fillText(item.text, rulesX + 4, currentY + dynamicRowH / 2);
+      } else {
+        ctx.fillStyle = i % 2 === 0 ? "rgba(20,40,70,0.45)" : "rgba(10,24,44,0.3)";
+        ctx.beginPath();
+        ctx.roundRect(rulesX, currentY, rulesW, dynamicRowH - 2, 6);
+        ctx.fill();
+
+        ctx.font = `${isMob?13:15}px 'Trebuchet MS', sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "#ffffff";
+        ctx.fillText(item.icon, rulesX + 16, currentY + dynamicRowH / 2);
+
+        ctx.font = `${isMob?10.5:12.5}px 'Trebuchet MS', sans-serif`;
+        ctx.textAlign = "left";
+        ctx.fillStyle = "rgba(240,244,255,0.9)";
+        ctx.fillText(item.text, rulesX + 36, currentY + dynamicRowH / 2);
+      }
+    }
+
+    // Hold & Action Navigation Footer System
     const holdY = cardY + cardH - (isMob ? 82 : 86);
     ctx.strokeStyle = `rgba(${hr(tColor)},0.15)`;
     ctx.lineWidth = 1;
@@ -1128,9 +1205,17 @@ _startPlaying() {
     if (hasFing) {
       this._tutHoldProgress = Math.min(1, this._tutHoldProgress + dt / this.HOLD_SEC);
       if (this._tutHoldProgress >= 1) {
-        ctx.globalAlpha = 1;
-        this._startPlaying();
-        return;
+        // Multi-page redirection engine link
+        if (this._tutPage === 1) {
+          this._tutPage = 2;
+          this._tutHoldProgress = 0; // Flash reset progress bar for next page confirmation
+          this._tutEnterAnim = 0.3;  // Quick re-fade effect layout anchor
+        } else {
+          this._tutPage = 1; // Sanitize page value state back to baseline for standard gameplay init loops
+          ctx.globalAlpha = 1;
+          this._startPlaying();
+          return;
+        }
       }
     } else {
       this._tutHoldProgress = Math.max(0, this._tutHoldProgress - dt * 0.5);
@@ -1148,7 +1233,9 @@ _startPlaying() {
       ctx.shadowBlur = 0;
       ctx.font = `${isMob?11:13}px 'Trebuchet MS', sans-serif`;
       ctx.fillStyle = "rgba(142,202,230,0.65)";
-      ctx.fillText("Hold still for 3 seconds to start playing", this.centerX, holdY + 40);
+      
+      const promptStr = this._tutPage === 1 ? "Hold still for 3 seconds to view Page 2" : "Hold still for 3 seconds to Launch Game";
+      ctx.fillText(promptStr, this.centerX, holdY + 40);
     } else {
       const pct = Math.round(this._tutHoldProgress * 100);
       ctx.font = `bold ${isMob?13:15}px 'Trebuchet MS', sans-serif`;
@@ -1157,8 +1244,11 @@ _startPlaying() {
       ctx.textBaseline = "middle";
       ctx.shadowColor = tColor;
       ctx.shadowBlur = 10;
-      ctx.fillText(`Hold still... ${pct}%`, this.centerX, holdY + 16);
+      
+      const actionStr = this._tutPage === 1 ? `Loading Page 2... ${pct}%` : `Launching Session... ${pct}%`;
+      ctx.fillText(actionStr, this.centerX, holdY + 16);
       ctx.shadowBlur = 0;
+      
       const barW = cardW * 0.6, barH = 8;
       const barX = this.centerX - barW / 2, barY = holdY + 34;
       ctx.fillStyle = "rgba(20,40,70,0.8)";
@@ -1174,7 +1264,7 @@ _startPlaying() {
       ctx.shadowBlur = 0;
     }
 
-    // Finger dot on tutorial
+    // Finger Calibration Dot System Tracking Overlay
     if (hasFing) {
       const fx = fingers[0].x, fy = fingers[0].y;
       const FING_R = 28;
@@ -1206,7 +1296,6 @@ _startPlaying() {
       ctx.fill();
       ctx.shadowBlur = 0;
     }
-
     ctx.globalAlpha = 1;
   },
 
@@ -1346,7 +1435,7 @@ _startPlaying() {
       ctx.textAlign="center";
       ctx.textBaseline="middle";
       ctx.fillText("6",fnx,fny);
-      this._tutFingerLegend(ctx, pw/2, ph-4);
+      this._tutFingerLegend(ctx, pw/2, ph-12);
 
     } else if (mode === "orb") {
       const orx=pw/2,ory=ph/2,oA=t*0.8;
@@ -1413,8 +1502,8 @@ _startPlaying() {
       ctx.font="10px 'Trebuchet MS',sans-serif";
       ctx.fillStyle=this.C.gold;
       ctx.textAlign="center";
-      ctx.fillText("✦ glowing = fires next",pw/2,ph-14);
-      this._tutFingerLegend(ctx, pw/2, ph-4);
+      ctx.fillText("✦ glowing = fires next",pw/2,ph+8);
+      this._tutFingerLegend(ctx, pw/2, ph-12);
     }
     ctx.restore();
   },
@@ -1696,8 +1785,18 @@ _startPlaying() {
     const qualified = this.skillPoints >= this.levelThreshold;
     const canLevelUp = qualified && this.level < this.maxLevel;
     const currentRound = this.roundNumber;
-    const nextRound = currentRound + 1;
+    
+    // --- Dynamic Level and Round Progression Tracking ---
+    let nextRound;
     const nextLevel = canLevelUp ? this.level + 1 : this.level;
+    
+    if (canLevelUp) {
+      nextRound = 1; // If transitioning to a new level, reset round counter back to 1
+    } else {
+      nextRound = currentRound + 1; // Otherwise, just proceed to the next sequential round
+    }
+    // -----------------------------------------------------
+
     const bonusTime = canLevelUp ? this.levelUpBonus : this.roundEndBonus;
     const summary = {
       roundNumber: currentRound,
@@ -1740,12 +1839,21 @@ _startPlaying() {
     this.combo = 0;
     this.multiplier = 1;
     this.lastHitType = "";
-    this.timeRemaining = Math.max(0, this.timeRemaining + bonusTime);
+
+    // Set time limits: New levels reset directly to 180 seconds, standard rounds append the bonus
+    if (canLevelUp) {
+      this.timeRemaining = this.timeLimit; // 180 seconds
+    } else {
+      this.timeRemaining = Math.max(0, this.timeRemaining + bonusTime);
+    }
+
     this.assistTimeBonus = 0;
     this.assistAppliedThisRound = false;
 
     if (canLevelUp) {
       this.level = nextLevel;
+      this.roundNumber = nextRound; // Apply the level-reset round configuration (1)
+      this.nextRoundNumber = nextRound + 1;
       this.skillPoints = 0;
       this.xp = 0;
       this.levelThreshold = this._getLevelThreshold(this.level);
@@ -1756,6 +1864,8 @@ _startPlaying() {
       this._triggerLevelUpBurst();
       this.gameState = "levelCongrats";
     } else {
+      this.roundNumber = currentRound; // Preserve current tracking for standard breaks
+      this.nextRoundNumber = nextRound;
       this.gameState = "roundBreak";
     }
 
@@ -2147,10 +2257,10 @@ _startPlaying() {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "rgba(240,244,255,0.8)";
-    ctx.fillText(`Time ${Math.ceil(this.timeRemaining)}s`, W / 2, y - 12);
+    ctx.fillText(`Time ${Math.ceil(this.timeRemaining)}s`, (W / 2) +220, y +7);
     ctx.fillStyle = "rgba(8,18,36,0.76)";
     ctx.beginPath();
-    ctx.roundRect(x, y, barW, barH, 6);
+    ctx.roundRect(x-4, y, barW, barH, 6);
     ctx.fill();
     const g = ctx.createLinearGradient(x, y, x + barW, y);
     g.addColorStop(0, "#e87c6d");
@@ -2160,7 +2270,7 @@ _startPlaying() {
     ctx.shadowColor = this.timeRemaining < 30 ? "#e87c6d" : this.C.gold;
     ctx.shadowBlur = 10;
     ctx.beginPath();
-    ctx.roundRect(x, y, barW * pct, barH, 6);
+    ctx.roundRect(x-4, y, barW * pct, barH, 6);
     ctx.fill();
     ctx.shadowBlur = 0;
     ctx.strokeStyle = "rgba(140,180,220,0.18)";
@@ -2208,7 +2318,7 @@ _startPlaying() {
     ctx.shadowBlur = 0;
     ctx.font = `${isMob ? 12 : 14}px 'Trebuchet MS', sans-serif`;
     ctx.fillStyle = "rgba(240,244,255,0.7)";
-    ctx.fillText(subtitle || "", this.centerX, cardY + 52);
+    ctx.fillText(subtitle || "", this.centerX, cardY + 65);
     ctx.restore();
     return { W, H, isMob, cardW, cardH: ch, cardX, cardY, accent, hr };
   },
@@ -2263,9 +2373,15 @@ _startPlaying() {
   },
 
   _startNextRoundFromOverlay() {
-    this.roundNumber = this.nextRoundNumber || (this.roundNumber + 1);
+    // If we are breaking into a brand new level, maintain the reset roundNumber (1)
+    if (this.gameState === "levelExplain") {
+      this.nextRoundNumber = this.roundNumber; // Set next to 1 so _beginRound() initializes at Round 1
+    } else {
+      this.roundNumber = this.nextRoundNumber || (this.roundNumber + 1);
+    }
     this._beginRound();
   },
+
 
   _restartSessionFromGameOver() {
     this._resetSessionFlow(this._pendingMode || this.mode || "default");
@@ -2709,17 +2825,23 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
   spawnNote() {
     if (this.notes.length >= this.maxNotesOnScreen) return;
     if (this.roundWrapPending || this.gameState !== "playing") return;
+    
+    // GUARD: If 100 has already been spawned, stop producing new notes entirely
+    if (this.currentNumber > this.maxNumber) return;
+
     const angle = Math.random() * Math.PI * 2;
     const minR  = this.currentOuterRadius + 150, maxR = this.currentOuterRadius + 210;
     const spawnR = Math.random() * (maxR - minR) + minR;
     const num = this.currentNumber++;
-    if (this.currentNumber > this.maxNumber) {
-      this.currentNumber = 1;
-      this._queueRoundEnd();
-    }
-    this.notes.push({ x: this.centerX + Math.cos(angle)*spawnR, y: this.centerY + Math.sin(angle)*spawnR, radius: this.baseOuterRadius*0.12, value: num, id: num });
-  },
 
+    this.notes.push({ 
+      x: this.centerX + Math.cos(angle)*spawnR, 
+      y: this.centerY + Math.sin(angle)*spawnR, 
+      radius: this.baseOuterRadius*0.12, 
+      value: num, 
+      id: num 
+    });
+  },
   drawNotes(ctx, dt) {
     for (let i = this.notes.length - 1; i >= 0; i--) {
       const note = this.notes[i];
@@ -2728,6 +2850,7 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       const step = Math.min(this.noteSpeed * dt, len);
       note.x += (dx/len)*step; note.y += (dy/len)*step;
       this._drawNoteCircle(ctx, note);
+      
       if (len <= step + 1) {
         if (this.shouldCollect(note.value)) {
           this.roundMissedCorrect++;
@@ -2743,6 +2866,14 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
         } else {
           this.missedCorrectStreak = 0;
         }
+
+        // --- Handle End of Round Trigger when 100 Despawns ---
+        if (note.value === this.maxNumber) {
+          this.roundWrapPending = true;
+          this.roundWrapDelay = 1.0; // Force exact 1-second delay wait before continuing
+          if (this.spawnTimer) clearInterval(this.spawnTimer);
+        }
+
         this.notes.splice(i, 1);
       }
     }
@@ -2822,6 +2953,7 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       const dist=Math.sqrt(dx*dx+dy*dy);
       const dfc=Math.sqrt((note.x-this.centerX)**2+(note.y-this.centerY)**2);
       const onRing = dfc+note.radius>this.currentInnerRadius && dfc-note.radius<this.currentOuterRadius;
+      
       if (dist < note.radius+20 && onRing) {
         if (this.shouldCollect(note.value)) {
           this.roundCorrectTouches++;
@@ -2849,6 +2981,14 @@ if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
           this._penalizeSpeed();
           if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x,y:note.y,life:0,color:this.C.wrong});
         }
+        
+        // --- Handle End of Round Trigger when 100 is Collected ---
+        if (note.value === this.maxNumber) {
+          this.roundWrapPending = true;
+          this.roundWrapDelay = 1.0; // Force exact 1-second delay wait before continuing
+          if (this.spawnTimer) clearInterval(this.spawnTimer);
+        }
+
         this.hitTextTimer=30; this.notes.splice(index,1);
       }
     }
