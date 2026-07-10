@@ -59,6 +59,10 @@ window.changeMode = function () {
 window.resumeGame = function () {
   window.isPaused = false;
   lastTime        = performance.now();
+  // Reset the game object's internal timer to avoid accumulated paused time
+  if (window.currentGame && window.currentGame.lastTime) {
+    window.currentGame.lastTime = performance.now();
+  }
   document.getElementById("pauseOverlay").style.display = "none";
   // Restart finger-frame counter so prompt doesn't flash immediately on resume
   _noFingerFrames = 0;

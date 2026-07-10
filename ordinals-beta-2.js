@@ -421,16 +421,16 @@ const Game11 = {
   detectSuffixFromFingerStates() {
     if (!window.fingerStates) return null;
 
-    const { index, middle, ring, thumb } = window.fingerStates;
+    const { index, middle, ring, thumb, little } = window.fingerStates;
 
     // No correct visible gesture.
-    if (!index && !middle && !ring && !thumb) return null;
+    if (!index && !middle && !ring && !thumb && !little) return null;
 
     // Correct patterns used by this game.
-    if (index && middle && ring && thumb) return "th";
-    if (index && middle && thumb && !ring) return "rd";
-    if (index && middle && !ring && !thumb) return "nd";
-    if (index && !middle && !ring && !thumb) return "st";
+    if (index && middle && little && ring && !thumb) return "th";
+    if (index && middle && ring && !thumb && !little) return "rd";
+    if (index && middle && !ring && !thumb && !little) return "nd";
+    if (index && !middle && !ring && !thumb && !little) return "st";
 
     // Any other combination is a wrong/unclear gesture.
     // Important: return null so the current ordinal does NOT glitch/change.
@@ -741,8 +741,11 @@ const Game11 = {
     if (!this.running) return;
 
     const now = performance.now();
-    const delta = now - this.lastTime;
+    let delta = now - this.lastTime;
     this.lastTime = now;
+
+    // Stop all timers when paused via the pause button
+    if (window.isPaused) delta = 0;
 
     this.drawBackground(ctx);
     this.updateStars(delta);
@@ -1846,6 +1849,7 @@ const Game11 = {
 
     this.mode1SuctionData = {
       index: index,
+      expectedSuffix: this.mode1TargetSuffix,
       startX: n.x,
       startY: n.y,
       time: 0,
@@ -1912,7 +1916,9 @@ const Game11 = {
       return;
     }
 
-    if (collectedSuffix === this.mode1TargetSuffix) {
+    const expectedSuffix = s.expectedSuffix || this.mode1TargetSuffix;
+
+    if (collectedSuffix === expectedSuffix) {
       sfxCorrect_11.currentTime = 0;
       sfxCorrect_11.play().catch(() => { });
 
