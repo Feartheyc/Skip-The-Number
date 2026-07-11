@@ -210,6 +210,7 @@ const Game3 = {
     this.currentLevel = 1; 
     this.score = 0;
     this.combo = 0;
+    this.onResize(window.innerWidth, window.innerHeight);
     this.spawnNumbers();
   },
 
@@ -387,28 +388,6 @@ const Game3 = {
     if (typeof PauseArea !== 'undefined') { PauseArea.drawPauseIcon(ctx); if (isPaused) PauseArea.draw(); }
   },
 
-  drawDifficultyMenu(ctx) {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
-    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
-    ctx.textAlign = "center"; ctx.fillStyle = "white";
-    ctx.font = `bold ${32 * this.scale}px Arial`;
-    ctx.fillText("Select Difficulty", this.centerX, this.centerY - 160 * this.scale);
-
-    this.menuOptions.forEach((opt, i) => {
-      const btnW = 340 * this.scale; const btnH = 55 * this.scale;
-      const x = this.centerX - btnW / 2;
-      const y = this.centerY - 90 * this.scale + (i * 75 * this.scale);
-
-      ctx.fillStyle = opt.color; ctx.beginPath(); ctx.roundRect(x, y, btnW, btnH, 12 * this.scale); ctx.fill();
-
-      if (this.currentGrade === opt.grade) {
-        ctx.strokeStyle = "white"; ctx.lineWidth = 4 * this.scale; ctx.stroke();
-      }
-      ctx.fillStyle = "white"; ctx.font = `bold ${22 * this.scale}px Arial`;
-      ctx.fillText(opt.label, this.centerX, y + 35 * this.scale);
-    });
-  },
-
   drawTutorialWindow(ctx, landmarks) {
     this._tutOrbT += 0.016;
     this._tutPulseT += 0.03;
@@ -507,7 +486,6 @@ const Game3 = {
     ctx.textAlign = "center"; ctx.fillText("15", cx - 70 * this.scale, cy - 28 * this.scale);
     ctx.fillText("3", cx + 70 * this.scale, cy - 28 * this.scale);
 
-    // 🎯 FIX: Lowered the base diagram drawing anchor point so it fits comfortably below card elements
     const baseDrawingY = cy + 45 * this.scale;
     const waveOffset = Math.sin(this._tutOrbT * 2) * 25 * this.scale;
 
@@ -563,11 +541,12 @@ const Game3 = {
       if (overlap < 0.5) { this.resetHolds(dt); return; }
     }
 
+    // 🎯 FIXED DUAL HAND SELECTION: Compare fingertip offset relative to your own wrist position rather than raw canvas center!
     const tipsX = isSmallerNumberChallenge ? indexTip.x : (indexTip.x + thumbTip.x) / 2;
     const threshold = 30 * this.scale;
 
-    if (tipsX < this.centerX - threshold) this.detectedSymbol = ">";
-    else if (tipsX > this.centerX + threshold) this.detectedSymbol = "<";
+    if (tipsX < wrist.x - threshold) this.detectedSymbol = ">";
+    else if (tipsX > wrist.x + threshold) this.detectedSymbol = "<";
     else this.detectedSymbol = "Center";
 
     const isCorrect = this.detectedSymbol === this.currentRelation;
