@@ -48,6 +48,10 @@ const Game3 = {
 
   showTutorial: true,
   tutorialHoldTime: 0,
+  _tutPage: 1,
+  _tutOrbT: 0,
+  _tutPulseT: 0,
+  HOLD_SEC: 3.0,
 
   eventsBound: false,
   helpBtn: null,
@@ -99,6 +103,7 @@ const Game3 = {
     this.running = true;
     this.showTutorial = true;
     this.tutorialHoldTime = 0;
+    this._tutPage = 1; 
     this.difficultyMenuOpen = false;
     this.confetti = [];
     this.popups = [];
@@ -161,6 +166,7 @@ const Game3 = {
             if (dx * dx + dy * dy <= hitRadius * hitRadius) {
               this.showTutorial = true;
               this.tutorialHoldTime = 0;
+              this._tutPage = 1;
             }
           }
         });
@@ -173,6 +179,8 @@ const Game3 = {
       const canvas = document.getElementById("game_canvas") || document.querySelector("canvas");
       if (canvas) PauseArea.init(canvas, canvas.getContext('2d'), this);
     }
+
+    this.startDetection();
   },
 
   reset() {
@@ -202,6 +210,7 @@ const Game3 = {
     this.currentLevel = 1; 
     this.score = 0;
     this.combo = 0;
+    this.onResize(window.innerWidth, window.innerHeight);
     this.spawnNumbers();
   },
 
@@ -356,95 +365,158 @@ const Game3 = {
 
         if (this.showTutorial) {
           this.tutorialHoldTime += dt;
-          if (this.tutorialHoldTime >= 1.5) { this.showTutorial = false; this.spawnNumbers(); }
+          if (this.tutorialHoldTime >= this.HOLD_SEC) {
+            if (this._tutPage === 1) {
+              this._tutPage = 2;
+              this.tutorialHoldTime = 0;
+            } else {
+              this._tutPage = 1;
+              this.showTutorial = false;
+              this.spawnNumbers();
+            }
+          }
         } else if (isPlaying) {
           this.checkPose(ctx, indexTip, thumbTip, wrist, dt);
         }
       }
     }
 
-    if (this.showTutorial) this.drawTutorialWindow(ctx);
+    if (this.showTutorial) this.drawTutorialWindow(ctx, activeLandmarks);
     if (this.difficultyMenuOpen) this.drawDifficultyMenu(ctx);
 
     ctx.restore();
     if (typeof PauseArea !== 'undefined') { PauseArea.drawPauseIcon(ctx); if (isPaused) PauseArea.draw(); }
   },
 
-  drawDifficultyMenu(ctx) {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
-    ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
-    ctx.textAlign = "center"; ctx.fillStyle = "white";
-    ctx.font = `bold ${32 * this.scale}px Arial`;
-    ctx.fillText("Select Difficulty", this.centerX, this.centerY - 160 * this.scale);
+  drawTutorialWindow(ctx, landmarks) {
+    this._tutOrbT += 0.016;
+    this._tutPulseT += 0.03;
 
-    this.menuOptions.forEach((opt, i) => {
-      const btnW = 340 * this.scale; const btnH = 55 * this.scale;
-      const x = this.centerX - btnW / 2;
-      const y = this.centerY - 90 * this.scale + (i * 75 * this.scale);
-
-      ctx.fillStyle = opt.color; ctx.beginPath(); ctx.roundRect(x, y, btnW, btnH, 12 * this.scale); ctx.fill();
-
-      if (this.currentGrade === opt.grade) {
-        ctx.strokeStyle = "white"; ctx.lineWidth = 4 * this.scale; ctx.stroke();
-      }
-      ctx.fillStyle = "white"; ctx.font = `bold ${22 * this.scale}px Arial`;
-      ctx.fillText(opt.label, this.centerX, y + 35 * this.scale);
-    });
-  },
-
-  drawTutorialWindow(ctx) {
-    ctx.fillStyle = "rgba(0, 0, 0, 0.85)";
+    ctx.save();
+    ctx.fillStyle = "rgba(10, 10, 10, 0.88)";
     ctx.fillRect(0, 0, window.innerWidth, window.innerHeight);
 
-    const boxW = 850 * this.scale; const boxH = 540 * this.scale;
-    const boxX = this.centerX - boxW / 2; const boxY = this.centerY - boxH / 2;
+    const boxW = 850 * this.scale;
+    const boxH = 540 * this.scale;
+    const boxX = this.centerX - boxW / 2;
+    const boxY = this.centerY - boxH / 2;
 
     ctx.fillStyle = "#1A1A1A"; ctx.beginPath(); ctx.roundRect(boxX, boxY, boxW, boxH, 25 * this.scale); ctx.fill();
     ctx.strokeStyle = "#00FFCC"; ctx.lineWidth = 4 * this.scale; ctx.stroke();
 
     ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = "#FFFFFF";
-    ctx.font = `bold ${40 * this.scale}px Arial`;
-    ctx.fillText("How to Play!", this.centerX, boxY + 35 * this.scale);
+    ctx.font = `bold ${38 * this.scale}px Arial`;
+    ctx.fillText("COMPARATORS: HOW TO PLAY!", this.centerX, boxY + 35 * this.scale);
 
-    const leftMargin = boxX + 60 * this.scale;
-    const contentStartY = boxY + 120 * this.scale;
-    const verticalSpacing = 80 * this.scale;
-    const textSafeWidth = boxW - 220 * this.scale;
+    ctx.font = `${14 * this.scale}px Arial`; ctx.fillStyle = "rgba(240,244,255,0.6)";
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Gameplay & Gestures' : 'Intensive Combo System'}`, this.centerX, boxY + 80 * this.scale);
 
-    ctx.textAlign = "left"; ctx.font = `bold ${24 * this.scale}px Arial`;
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillText("1. Look at the numbers on the screen.", leftMargin, contentStartY);
-    ctx.fillText("2. For BIGGER numbers, make a wide 'V' shape.", leftMargin, contentStartY + verticalSpacing);
-    this.drawHandIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing + 10 * this.scale);
+    const visX = boxX + 40 * this.scale, visY = boxY + 120 * this.scale;
+    const visW = 320 * this.scale, visH = 260 * this.scale;
+    ctx.fillStyle = "rgba(8,16,36,0.68)"; ctx.beginPath(); ctx.roundRect(visX, visY, visW, visH, 15 * this.scale); ctx.fill();
+    ctx.strokeStyle = "rgba(0,255,204,0.15)"; ctx.stroke();
 
-    ctx.fillText("3. For SMALLER numbers, point with just one finger.", leftMargin, contentStartY + verticalSpacing * 2); 
-    this.drawComparisonIcon(ctx, boxX + boxW - 100 * this.scale, contentStartY + verticalSpacing * 2 + 10 * this.scale);
+    this._drawTutSandboxDiagram(ctx, visX, visY, visW, visH);
 
-    ctx.fillStyle = "#00FFCC";
-    const line4 = "4. Tap the 'Grade' button in the top-left corner to change the difficulty level.";
-    this.wrapText(ctx, line4, leftMargin, contentStartY + verticalSpacing * 3, textSafeWidth, 34 * this.scale);
+    const rulesX = boxX + 390 * this.scale, rulesY = boxY + 120 * this.scale;
+    const rulesW = boxW - 430 * this.scale, rowH = 36 * this.scale;
 
-    ctx.textAlign = "center"; const barY = boxY + boxH - 60 * this.scale;
-    if (this.tutorialHoldTime > 0) {
-      let progress = Math.min(1, this.tutorialHoldTime / 1.5);
-      ctx.fillStyle = "#333"; ctx.beginPath(); ctx.roundRect(this.centerX - 150 * this.scale, barY, 300 * this.scale, 14 * this.scale, 7 * this.scale); ctx.fill();
-      ctx.fillStyle = "#00FFCC"; ctx.beginPath(); ctx.roundRect(this.centerX - 150 * this.scale, barY, 300 * this.scale * progress, 14 * this.scale, 7 * this.scale); ctx.fill();
+    const contentRows = [];
+    if (this._tutPage === 1) {
+      contentRows.push(
+        { isHeader: true, text: "🎮 Challenge Rules" },
+        { icon: "👀", text: "Look at the number cards in center." },
+        { icon: "✌️", text: "Bigger number: Make a wide 'V' hand shape." },
+        { icon: "☝️", text: "Smaller number: Switch to a single pointing finger." },
+        { icon: "🎯", text: "Tilt or aim toward the winning value card." },
+        { icon: "⭕", text: "Equal values: Point straight up at the sky!" }
+      );
     } else {
-      ctx.fillStyle = "#FFD700"; ctx.font = `bold ${26 * this.scale}px Arial`;
-      ctx.fillText("Hold hand up to Start!", this.centerX, barY);
+      contentRows.push(
+        { isHeader: true, text: "🔥 Intensive Combo Meter" },
+        { icon: "⏱️", text: "Getting answers right triggers a 5s combo timer." },
+        { icon: "⏳", text: "A sleek multiplier meter bar appears at the top." },
+        { icon: "📉", text: "If the bar drains to 0, your combo drops back to 0!" },
+        { icon: "❌", text: "Striking a wrong card drops your score by -5." },
+        { icon: "🎉", text: "Success milestones release epic confetti storms!" }
+      );
     }
+
+    contentRows.forEach((item, i) => {
+      const currentY = rulesY + (i * rowH);
+      if (item.isHeader) {
+        ctx.font = `bold ${16 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
+        ctx.textAlign = "left"; ctx.fillText(item.text, rulesX, currentY + 6 * this.scale);
+      } else {
+        ctx.fillStyle = "rgba(25,50,80,0.3)"; ctx.beginPath(); ctx.roundRect(rulesX, currentY, rulesW, rowH - 4 * this.scale, 6 * this.scale); ctx.fill();
+        ctx.font = `${14 * this.scale}px Arial`; ctx.textAlign = "center"; ctx.fillStyle = "#fff"; ctx.fillText(item.icon, rulesX + 18 * this.scale, currentY + 8 * this.scale);
+        ctx.font = `${12 * this.scale}px Arial`; ctx.textAlign = "left"; ctx.fillStyle = "rgba(240,244,255,0.9)"; ctx.fillText(item.text, rulesX + 38 * this.scale, currentY + 8 * this.scale);
+      }
+    });
+
+    const holdY = boxY + boxH - 75 * this.scale;
+    ctx.textAlign = "center";
+    if (landmarks && landmarks.length > 0) {
+      const pct = Math.round((this.tutorialHoldTime / this.HOLD_SEC) * 100);
+      ctx.font = `bold ${16 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
+      ctx.fillText(this._tutPage === 1 ? `Loading Page 2... ${pct}%` : `Launching Game... ${pct}%`, this.centerX, holdY);
+
+      const barW = 300 * this.scale, barH = 8 * this.scale;
+      const barX = this.centerX - barW / 2;
+      ctx.fillStyle = "rgba(40,70,100,0.5)"; ctx.beginPath(); ctx.roundRect(barX, holdY + 15 * this.scale, barW, barH, 4 * this.scale); ctx.fill();
+      ctx.fillStyle = "#00FFCC"; ctx.beginPath(); ctx.roundRect(barX, holdY + 15 * this.scale, barW * (this.tutorialHoldTime / this.HOLD_SEC), barH, 4 * this.scale); ctx.fill();
+    } else {
+      const blink = Math.sin(this._tutPulseT * 5) > 0;
+      ctx.font = `bold ${16 * this.scale}px Arial`; ctx.fillStyle = blink ? "#FFD700" : "rgba(255,215,0,0.5)";
+      ctx.fillText("☝ Hold your hand up in camera view to proceed", this.centerX, holdY);
+      ctx.font = `${12 * this.scale}px Arial`; ctx.fillStyle = "rgba(255,255,255,0.4)";
+      ctx.fillText(this._tutPage === 1 ? "Keep hand steady for 3s to view Page 2" : "Keep hand steady for 3s to Enter Game", this.centerX, holdY + 22 * this.scale);
+    }
+    ctx.restore();
   },
 
-  drawHandIcon(ctx, x, y) {
-    ctx.save(); ctx.strokeStyle = "#00FFCC"; ctx.lineWidth = 6 * this.scale; ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(x - 25 * this.scale, y - 35 * this.scale); ctx.lineTo(x, y); ctx.lineTo(x + 30 * this.scale, y - 15 * this.scale); ctx.stroke();
-    ctx.fillStyle = "white"; ctx.beginPath(); ctx.arc(x, y, 5 * this.scale, 0, 7); ctx.fill(); ctx.restore();
-  },
+  _drawTutSandboxDiagram(ctx, x, y, w, h) {
+    const cx = x + w / 2, cy = y + h / 2;
+    
+    ctx.fillStyle = "rgba(255,255,255,0.05)";
+    ctx.fillRect(cx - 100 * this.scale, cy - 60 * this.scale, 60 * this.scale, 50 * this.scale);
+    ctx.fillRect(cx + 40 * this.scale, cy - 60 * this.scale, 60 * this.scale, 50 * this.scale);
+    
+    ctx.font = `bold ${22 * this.scale}px Arial`; ctx.fillStyle = "rgba(255,255,255,0.2)";
+    ctx.textAlign = "center"; ctx.fillText("15", cx - 70 * this.scale, cy - 28 * this.scale);
+    ctx.fillText("3", cx + 70 * this.scale, cy - 28 * this.scale);
 
-  drawComparisonIcon(ctx, x, y) {
-    ctx.save(); ctx.fillStyle = "rgba(255, 255, 255, 0.1)"; ctx.beginPath(); ctx.roundRect(x - 45 * this.scale, y - 22 * this.scale, 90 * this.scale, 44 * this.scale, 10 * this.scale); ctx.fill();
-    ctx.font = `bold ${20 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText("< | >", x, y); ctx.restore();
+    const baseDrawingY = cy + 45 * this.scale;
+    const waveOffset = Math.sin(this._tutOrbT * 2) * 25 * this.scale;
+
+    if (this._tutPage === 1) {
+      ctx.strokeStyle = "#00FFCC"; ctx.lineWidth = 6 * this.scale; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(cx - 50 * this.scale + waveOffset, baseDrawingY - 15 * this.scale);
+      ctx.lineTo(cx + waveOffset, baseDrawingY + 45 * this.scale);
+      ctx.lineTo(cx - 10 * this.scale + waveOffset, baseDrawingY - 20 * this.scale);
+      ctx.stroke();
+
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.arc(cx + waveOffset, baseDrawingY + 45 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx - 50 * this.scale + waveOffset, baseDrawingY - 15 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
+      
+      ctx.font = `bold ${12 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
+      ctx.fillText("Tilt V-Shape to Select", cx, baseDrawingY + 75 * this.scale);
+    } else {
+      const barW = 160 * this.scale, barH = 8 * this.scale;
+      const bx = cx - barW / 2, by = baseDrawingY + 20 * this.scale;
+      const ratio = Math.abs(Math.sin(this._tutOrbT * 1.5));
+
+      ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(bx, by, barW, barH);
+      ctx.fillStyle = `hsl(${ratio * 40}, 100%, 50%)`; ctx.fillRect(bx, by, barW * ratio, barH);
+
+      ctx.font = `bold ${14 * this.scale}px Arial`; ctx.fillStyle = "#FF6600";
+      ctx.fillText(`Combo x4 (Draining)`, cx, baseDrawingY + 5 * this.scale);
+      
+      ctx.fillStyle = "#00FF66"; ctx.fillRect(cx - 45 * this.scale, baseDrawingY - 10 * this.scale + waveOffset * 0.3, 6 * this.scale, 6 * this.scale);
+      ctx.fillStyle = "#FFD700"; ctx.fillRect(cx + 45 * this.scale, baseDrawingY - 15 * this.scale - waveOffset * 0.2, 5 * this.scale, 8 * this.scale);
+    }
   },
 
   wrapText(ctx, text, x, y, maxWidth, lineHeight) {
@@ -469,11 +541,12 @@ const Game3 = {
       if (overlap < 0.5) { this.resetHolds(dt); return; }
     }
 
+    // 🎯 FIXED DUAL HAND SELECTION: Compare fingertip offset relative to your own wrist position rather than raw canvas center!
     const tipsX = isSmallerNumberChallenge ? indexTip.x : (indexTip.x + thumbTip.x) / 2;
     const threshold = 30 * this.scale;
 
-    if (tipsX < this.centerX - threshold) this.detectedSymbol = ">";
-    else if (tipsX > this.centerX + threshold) this.detectedSymbol = "<";
+    if (tipsX < wrist.x - threshold) this.detectedSymbol = ">";
+    else if (tipsX > wrist.x + threshold) this.detectedSymbol = "<";
     else this.detectedSymbol = "Center";
 
     const isCorrect = this.detectedSymbol === this.currentRelation;
@@ -598,12 +671,6 @@ const Game3 = {
 
   drawPopups(ctx, dt) {
     const now = performance.now();
-    
-    const successActive = this.popups.some(p => p.text === "SUCCESS!" || p.isMilestone);
-    if (!successActive && this.gameState !== "PLAYING") {
-      // Intentional empty hook block to fulfill cascade structures properly
-    }
-
     this.popups.forEach(p => {
       const elapsed = now - p.timestamp;
       let targetAlpha = 1.0;
@@ -708,7 +775,8 @@ const Game3 = {
     const topBarH = 80 * this.scale;
     this.helpBtn.x = window.innerWidth - 40 * this.scale; this.helpBtn.y = topBarH / 2;
     ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(this.helpBtn.x, this.helpBtn.y, this.helpBtn.r, 0, 7); ctx.fill();
-    ctx.fillStyle = "white"; ctx.font = `bold ${18 * this.scale}px Arial`; ctx.textAlign = "center"; ctx.fillText("?", this.helpBtn.x, this.helpBtn.y);
+    ctx.fillStyle = "white"; ctx.font = `bold ${18 * this.scale}px Arial`; ctx.textAlign = "center";
+    ctx.fillText("?", this.helpBtn.x, this.helpBtn.y);
   },
 
   drawFeedback(ctx, text, color) {
