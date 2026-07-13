@@ -911,9 +911,10 @@ const Game1 = {
         this._resizeTimer = setTimeout(() => this._onResize(), 300);
       });
 
-      // ── Double Tap Interaction Listener ──
+      // ── Unified Double Click / Double Tap Interaction Listener ──
       this._lastTapTime = 0;
-      window.addEventListener("touchstart", (e) => {
+      window.addEventListener("pointerdown", (e) => {
+        // Only allow freezing actions inside the live execution gameplay loop
         if (this.gameState !== "playing") return;
         
         const now = performance.now();
@@ -931,7 +932,7 @@ const Game1 = {
           window.pauseGame();
         }
         this._lastTapTime = now;
-      }, { passive: false });
+      });
 
       window.addEventListener("keydown", (e) => {
         if (e.key === "1") {

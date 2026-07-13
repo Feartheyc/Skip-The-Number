@@ -106,9 +106,10 @@ const Game10 = {
      INIT
   ============================================================ */
    /* ── INIT (only the relevant lines shown — merge into your existing init()) ── */
-  init() {
+ init() {
     this._applyResize(window.innerWidth, window.innerHeight);
 
+    // ── Fixed Tracking Property Initializer ──
     this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
     if (pauseBtn) {
@@ -157,6 +158,28 @@ const Game10 = {
       window.addEventListener("orientationchange", () => {
         clearTimeout(this._resizeTimer);
         this._resizeTimer = setTimeout(() => this._onResize(), 300);
+      });
+
+      // ── Unified Double Click / Double Tap Interaction Listener ──
+      this._lastTapTime = 0;
+      window.addEventListener("pointerdown", (e) => {
+        if (this.gameState !== "playing") return;
+        
+        const now = performance.now();
+        const timespan = now - this._lastTapTime;
+        
+        if (timespan > 0 && timespan < 300) {
+          e.preventDefault();
+          this._noHandDuration = 0;
+          
+          const pBtn = document.getElementById("pauseBtn");
+          if (pBtn) {
+            pBtn.style.display = "none";
+            pBtn.style.opacity = "0";
+          }
+          window.pauseGame();
+        }
+        this._lastTapTime = now;
       });
 
       canvasElement.addEventListener("click", () => {
@@ -629,46 +652,12 @@ const Game10 = {
       return;
     }
 
-    // ── Live Playing State (Hand Detection Logic) ──
-    if (this._noHandDuration === undefined) this._noHandDuration = 0;
+    // ── Live Playing State (Double Tap Active) ──
+    this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
-    const fingers = window.fingerPositions || [];
-    const dtSeconds = delta / 1000;
-
-    // Suppress if intermediate menus or collapse sequences lock game inputs
-    if (this.mode1GameOver || this.blackHoleActive || this.mode1Confirming) {
-      this._noHandDuration = 0;
-      if (pauseBtn) {
-        pauseBtn.style.display = "none";
-        pauseBtn.style.opacity = "0";
-      }
-    } else if (fingers.length > 0) {
-      this._noHandDuration = 0;
-      if (pauseBtn) {
-        pauseBtn.style.display = "none";
-        pauseBtn.style.opacity = "0";
-      }
-    } else {
-      this._noHandDuration += dtSeconds;
-
-      // 7 Seconds Interval: Show the overlay pause button fallback
-      if (this._noHandDuration >= 7 && this._noHandDuration < 15) {
-        if (pauseBtn) {
-          pauseBtn.style.display = "block";
-          pauseBtn.style.opacity = "1";
-        }
-      }
-
-      // 15 Seconds Interval: Trigger absolute auto-pause system freeze
-      if (this._noHandDuration >= 15) {
-        this._noHandDuration = 0;
-        if (pauseBtn) {
-          pauseBtn.style.display = "none";
-          pauseBtn.style.opacity = "0";
-        }
-        window.pauseGame();
-        return;
-      }
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
     }
 
     // Playing state drawing loops...
@@ -713,7 +702,6 @@ const Game10 = {
     this.drawGameOver(ctx);
     this._drawNoFingerPrompt(ctx);
   },
-
   /* ── Finger (throttled) ──────────────────────────────────── */
   updateFingerPosition(now) {
     if (now - this._lastFingerUpdateTime < this.FINGER_UPDATE_INTERVAL) return;
