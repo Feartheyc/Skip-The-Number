@@ -105,10 +105,10 @@ const Game10 = {
   /* ============================================================
      INIT
   ============================================================ */
+   /* ── INIT (only the relevant lines shown — merge into your existing init()) ── */
   init() {
     this._applyResize(window.innerWidth, window.innerHeight);
 
-    // ── NEW: Initialize Auto-Pause Tracking ──
     this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
     if (pauseBtn) {
@@ -118,7 +118,10 @@ const Game10 = {
 
     this.score = 0; this.running = true; this.lastTime = performance.now();
     this.hearts = 3; this.streak = 0; this.roundsCompleted = 0;
-    this.level = 1; this.numberRange = 10;
+    this.level = 1;
+    this._roundsInLevel = 0;
+    this._levelRoundTarget = this._pickLevelRoundTarget();
+    this.numberRange = this._getNumberRangeForLevel(this.level);
     this.mode1GameOver = false; this.blackHoleActive = false;
     this.bigBangActive = false; this.bigBangFlash = 0;
     this.particles = []; this.sparkBursts = []; this.floatNumbers = [];
@@ -136,7 +139,6 @@ const Game10 = {
 
     this.activateGameMode1();
 
-    // Tutorial reset
     this.gameState        = "tutorial";
     this._tutHoldProgress = 0;
     this._tutEnterAnim    = 0;
@@ -145,7 +147,6 @@ const Game10 = {
     this._tutNoFingerFrames = 0;
     this._initTutStars();
 
-    // Register listeners ONCE for the lifetime of the page
     if (!this._listenersAttached) {
       this._listenersAttached = true;
 
@@ -474,23 +475,27 @@ const Game10 = {
     if (l === 1) return "st"; if (l === 2) return "nd"; if (l === 3) return "rd";
     return "th";
   },
-  generateNumberWithSuffix(suffix) {
+   generateNumberWithSuffix(suffix, usedNumbers) {
+    usedNumbers = usedNumbers || new Set();
     let n, attempts = 0;
     do {
       n = Math.floor(Math.random() * this.numberRange) + 1;
       attempts++;
-      // Safety: if no valid number exists in range, return first match by brute force
       if (attempts > 200) {
+        // Brute-force scan for any valid, unused number
+        for (let i = 1; i <= this.numberRange; i++) {
+          if (this.getSuffix(i) === suffix && !usedNumbers.has(i)) return i;
+        }
+        // Fallback: allow reuse only if truly nothing else is available
         for (let i = 1; i <= this.numberRange; i++) {
           if (this.getSuffix(i) === suffix) return i;
         }
-        // Absolute fallback — expand search beyond range
         for (let i = 1; i <= 100; i++) {
-          if (this.getSuffix(i) === suffix) return i;
+          if (this.getSuffix(i) === suffix && !usedNumbers.has(i)) return i;
         }
         return 1;
       }
-    } while (this.getSuffix(n) !== suffix);
+    } while (this.getSuffix(n) !== suffix || usedNumbers.has(n));
     return n;
   },
 
@@ -503,6 +508,7 @@ const Game10 = {
     return count;
   },
 
+  /* ── Spawn numbers ───────────────────────────────────────── */
   /* ── Spawn numbers ───────────────────────────────────────── */
   spawnMode1Numbers() {
     this.mode1Numbers = [];
@@ -540,6 +546,9 @@ const Game10 = {
     const used = [];
     let correctSpawned = 0;
 
+    // ── NEW: track every number value used this round to prevent duplicates ──
+    const usedNumbers = new Set();
+
     for (let i = 0; i < count; i++) {
 
       let x, y;
@@ -569,15 +578,20 @@ const Game10 = {
 
       let num;
       if (correctSpawned < correctCount) {
-        num = this.generateNumberWithSuffix(this.mode1TargetSuffix);
+        num = this.generateNumberWithSuffix(this.mode1TargetSuffix, usedNumbers);
         correctSpawned++;
       } else {
         let distAttempts = 0;
         do {
           num = Math.floor(Math.random() * this.numberRange) + 1;
           distAttempts++;
-        } while (this.getSuffix(num) === this.mode1TargetSuffix && distAttempts < 200);
+          if (distAttempts > 300) break; // safety valve if range is too small to stay unique
+        } while (
+          (this.getSuffix(num) === this.mode1TargetSuffix || usedNumbers.has(num))
+        );
       }
+
+      usedNumbers.add(num);
 
       this.mode1Numbers.push({
         number: num,
@@ -595,7 +609,6 @@ const Game10 = {
       this.proximityGlow.push(0);
     }
   },
-
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
@@ -956,12 +969,39 @@ const Game10 = {
     const prog=1-lf;
     if(prog>0.08&&prog<0.88){const a=Math.sin(prog*Math.PI);ctx.save();ctx.globalAlpha=a;ctx.translate(this.CENTER_X,this.CENTER_Y-160*this.scale);ctx.scale(0.7+a*0.4,0.7+a*0.4);ctx.fillStyle=this.T.correct;ctx.font=`bold ${Math.round(56*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.T.correct;ctx.shadowBlur=20;ctx.fillText("⭐ Round Clear!",0,0);ctx.restore();}
   },
-  startNewRound(){
+   /* ── Round completion → level progression ───────────────── */
+  startNewRound() {
     this.roundsCompleted++;
-    if(this.roundsCompleted%3===0&&this.level<3){this.level++;this.numberRange=[10,20,30][this.level-1];this.showToast(`🎮 Level ${this.level}! Numbers get bigger!`,this.T.streakColor);}
-    const s=["st","nd","rd","th"];this.mode1TargetSuffix=s[Math.floor(Math.random()*4)];this.spawnMode1Numbers();
+    this._roundsInLevel = (this._roundsInLevel || 0) + 1;
+
+    if (this._levelRoundTarget === undefined) {
+      this._levelRoundTarget = this._pickLevelRoundTarget();
+    }
+
+    if (this._roundsInLevel >= this._levelRoundTarget) {
+      this.level++;
+      this._roundsInLevel = 0;
+      this._levelRoundTarget = this._pickLevelRoundTarget();
+      this.numberRange = this._getNumberRangeForLevel(this.level);
+      this.showToast(`🎮 Level ${this.level}! Numbers get bigger!`, this.T.streakColor);
+    }
+
+    const s = ["st", "nd", "rd", "th"];
+    this.mode1TargetSuffix = s[Math.floor(Math.random() * 4)];
+    this.spawnMode1Numbers();
   },
 
+  _getNumberRangeForLevel(level) {
+    // Level 1→10, 2→20, 3→30, 4→50, 5→70, 6→100, then +30 per level beyond that
+    const table = [10, 20, 30, 50, 70, 100];
+    if (level - 1 < table.length) return table[level - 1];
+    return 100 + (level - table.length) * 30;
+  },
+
+  _pickLevelRoundTarget() {
+    // Each level lasts a random 3–5 rounds
+    return 3 + Math.floor(Math.random() * 3);
+  },
   /* ── Number break ────────────────────────────────────────── */
   startNumberBreak(number){
     const px=this.mascot.x,py=this.mascot.y;this.mode1BreakActive=true;this.mode1BreakData={number,x:px,y:py,pieces:[],time:0};
