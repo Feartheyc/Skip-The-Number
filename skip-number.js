@@ -717,7 +717,7 @@ const Game1 = {
       tagline:"Like Mario coins — only collect every Nth one!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏱️",text:"You start with 300 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -735,7 +735,7 @@ const Game1 = {
       tagline:"Like Guitar Hero — hit the right notes in rhythm!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏱️",text:"You start with 300 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -754,7 +754,7 @@ const Game1 = {
       tagline:"Like Space Invaders — zap right ones before escape!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏱️",text:"You start with 300 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -770,7 +770,7 @@ const Game1 = {
       tagline:"Like Metroid — intercept numbers mid-flight!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏱️",text:"You start with 300 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -787,7 +787,7 @@ const Game1 = {
       tagline:"Like Galaga with 3 ships — pure chaos, total skill!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 180 seconds"},
+        {icon:"⏱️",text:"You start with 300 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -811,9 +811,7 @@ const Game1 = {
   /* ============================================================
       INIT
   ============================================================ */
-  /* ============================================================
-      INIT
-  ============================================================ */
+ 
   init(modeKey = "default") {
     const rect = document.getElementById("container").getBoundingClientRect();
     this._applyResize(rect.width, rect.height);
@@ -912,6 +910,28 @@ const Game1 = {
         clearTimeout(this._resizeTimer);
         this._resizeTimer = setTimeout(() => this._onResize(), 300);
       });
+
+      // ── Double Tap Interaction Listener ──
+      this._lastTapTime = 0;
+      window.addEventListener("touchstart", (e) => {
+        if (this.gameState !== "playing") return;
+        
+        const now = performance.now();
+        const timespan = now - this._lastTapTime;
+        
+        if (timespan > 0 && timespan < 300) {
+          e.preventDefault();
+          this._noHandDuration = 0;
+          
+          const pBtn = document.getElementById("pauseBtn");
+          if (pBtn) {
+            pBtn.style.display = "none";
+            pBtn.style.opacity = "0";
+          }
+          window.pauseGame();
+        }
+        this._lastTapTime = now;
+      }, { passive: false });
 
       window.addEventListener("keydown", (e) => {
         if (e.key === "1") {
@@ -1647,7 +1667,7 @@ _startPlaying() {
   },
 
   _resetRoundTransientState() {
-    this._noHandDuration = 0; // Clear idle tracking timer
+    this._noHandDuration = 0; 
     const pauseBtn = document.getElementById("pauseBtn");
     if (pauseBtn) {
       pauseBtn.style.display = "none";
@@ -2457,16 +2477,21 @@ _startPlaying() {
     ];
     this._drawOverlayLines(ctx, rows, box.cardX + 16, box.cardY + 82, box.cardW - 32, this.C.correct, box.isMob);
     if ((summary.assistTimeBonus || 0) > 0) {
-      ctx.fillStyle = "rgba(240,244,255,0.82)";
-      ctx.font = `${box.isMob ? 11 : 13}px 'Trebuchet MS', sans-serif`;
+      const bonusLines = [
+        `🎁 Bonus! A friendly clock fairy dropped +${summary.assistTimeBonus} extra seconds!`,
+        "You were on FIRE, so the game gave you a boost! 🔥⏰",
+      ];
+      ctx.fillStyle = "rgba(240,244,255,0.85)";
+      ctx.font = `bold ${box.isMob ? 12 : 14}px 'Trebuchet MS', sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(`Nice work - we added +${summary.assistTimeBonus} extra seconds so you could finish strong.`, box.cardX + box.cardW / 2, box.cardY + box.cardH - 88);
-      ctx.fillText("That kind of focus and dedication looks awesome.", box.cardX + box.cardW / 2, box.cardY + box.cardH - 70);
+      ctx.fillText(bonusLines[0], box.cardX + box.cardW / 2, box.cardY + box.cardH - 90);
+      ctx.font = `${box.isMob ? 11 : 13}px 'Trebuchet MS', sans-serif`;
+      ctx.fillStyle = "rgba(245,200,66,0.9)";
+      ctx.fillText(bonusLines[1], box.cardX + box.cardW / 2, box.cardY + box.cardH - 70);
     }
     this._drawHoldPrompt(ctx, "Tap or hold to open the next card", this.C.gold, box.cardY + box.cardH - 54, this.levelCongratsTapHold);
   },
-
   _drawLevelExplainScreen(ctx, fingers, dt) {
     this._drawBg(ctx);
     this._drawBgStars(ctx);
@@ -2582,13 +2607,11 @@ _startPlaying() {
      MAIN UPDATE
   ============================================================ */
   update(ctx, fingers, dt = 1/60) {
-    // Tutorial state
     if (this.gameState === "tutorial") {
       this._updateTutorial(ctx, fingers, dt);
       return;
     }
 
-    // Loading state — RingSpriteSystem overlay handles the visual
     if (this.gameState === "loading") {
       return;
     }
@@ -2613,37 +2636,12 @@ _startPlaying() {
       return;
     }
 
-    // ── Live Playing State (Hand Detection Logic) ──
-    if (this._noHandDuration === undefined) this._noHandDuration = 0;
+    // ── Live Playing State (Double Tap Active) ──
+    this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
-    
-    if (fingers.length > 0) {
-      this._noHandDuration = 0;
-      if (pauseBtn) {
-        pauseBtn.style.display = "none";
-        pauseBtn.style.opacity = "0";
-      }
-    } else {
-      this._noHandDuration += dt;
-
-      // 7 Seconds Flag: Reveal pause button safely
-      if (this._noHandDuration >= 7 && this._noHandDuration < 15) {
-        if (pauseBtn) {
-          pauseBtn.style.display = "block";
-          pauseBtn.style.opacity = "1";
-        }
-      }
-
-      // 15 Seconds Flag: Force Auto-Pause Menu Open
-      if (this._noHandDuration >= 15) {
-        this._noHandDuration = 0;
-        if (pauseBtn) {
-          pauseBtn.style.display = "none";
-          pauseBtn.style.opacity = "0";
-        }
-        window.pauseGame(); 
-        return;
-      }
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
     }
 
     this._drawBg(ctx);
@@ -3151,6 +3149,7 @@ _startPlaying() {
   },
 
   /* ── Hit text ────────────────────────────────────────────── */
+ /* ── Hit text ────────────────────────────────────────────── */
   drawHitText(ctx) {
     if (this.hitTextTimer<=0 && this.missQueue.length>0) {
       this.missQueue.sort((a,b)=>a-b);
@@ -3163,20 +3162,53 @@ _startPlaying() {
       if (this.lastHitType==="CORRECT") color=this.C.correct;
       else if (this.lastHitType==="WRONG") color=this.C.wrong;
       else if (this.lastHitType.includes("SKIPPED")) color=this.C.gold;
+
       ctx.save();
       ctx.globalAlpha=alpha;
-      ctx.fillStyle=color;
       ctx.font="bold 34px 'Trebuchet MS', sans-serif";
       ctx.textAlign="center";
       ctx.textBaseline="middle";
+
+      const tx = this.centerX;
+      const ty = this.centerY - 130;
+
+      if (this.lastHitType.includes("SKIPPED")) {
+        // ── Solid contrast banner (matches hint-change announcement style) ──
+        const tw = ctx.measureText(this.lastHitType).width;
+        const padX = 30, padY = 16;
+        const bw = tw + padX * 2, bh = 34 + padY * 2;
+        const bx = tx - bw / 2, by = ty - bh / 2, br = bh / 2;
+
+        ctx.beginPath();
+        ctx.moveTo(bx+br,by);
+        ctx.arcTo(bx+bw,by,bx+bw,by+bh,br);
+        ctx.arcTo(bx+bw,by+bh,bx,by+bh,br);
+        ctx.arcTo(bx,by+bh,bx,by,br);
+        ctx.arcTo(bx,by,bx+bw,by,br);
+        ctx.closePath();
+
+        // Deep navy solid fill — same family as your card/HUD backgrounds
+        ctx.fillStyle = "rgba(6,13,26,0.94)";
+        ctx.fill();
+
+        // Warm gold rim to tie into theme + separate from ring visually
+        ctx.strokeStyle = "rgba(245,200,66,0.65)";
+        ctx.lineWidth = 2;
+        ctx.shadowColor = this.C.gold;
+        ctx.shadowBlur = 14;
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+
+      // Render final bright text payload with neon bloom
+      ctx.fillStyle=color;
       ctx.shadowColor=color;
       ctx.shadowBlur=18;
-      ctx.fillText(this.lastHitType, this.centerX, this.centerY-130);
+      ctx.fillText(this.lastHitType, tx, ty);
       ctx.restore();
       this.hitTextTimer--;
     }
   },
-
   /* ── Mode activators ─────────────────────────────────────── */
   activatePatternMode() {
     this.mode="pattern";
