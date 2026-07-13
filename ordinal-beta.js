@@ -119,10 +119,10 @@ const Game9 = {
   /* ============================================================
      INIT
   ============================================================ */
-  init() {
+ init() {
     this._applyResize(window.innerWidth, window.innerHeight);
 
-    // ── NEW: Initialize Auto-Pause Tracking ──
+    // ── Fixed Tracking Property Initializer ──
     this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
     if (pauseBtn) {
@@ -189,6 +189,29 @@ const Game9 = {
         clearTimeout(this._resizeTimer);
         this._resizeTimer = setTimeout(() => this._onResize(), 300);
       });
+
+      // ── Unified Double Click / Double Tap Interaction Listener ──
+      this._lastTapTime = 0;
+      window.addEventListener("pointerdown", (e) => {
+        if (this.gameState !== "playing") return;
+        
+        const now = performance.now();
+        const timespan = now - this._lastTapTime;
+        
+        if (timespan > 0 && timespan < 300) {
+          e.preventDefault();
+          this._noHandDuration = 0;
+          
+          const pBtn = document.getElementById("pauseBtn");
+          if (pBtn) {
+            pBtn.style.display = "none";
+            pBtn.style.opacity = "0";
+          }
+          window.pauseGame();
+        }
+        this._lastTapTime = now;
+      });
+
       canvasElement.addEventListener("click", () => {
         if (this.gameOver && !this.collapseActive) this.retryGame();
       });
@@ -819,7 +842,7 @@ const Game9 = {
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
-  update(ctx, _fp, dtArg) {
+ update(ctx, _fp, dtArg) {
     if (!this.running) return;
     const delta = (dtArg > 0 && dtArg < 1) ? dtArg * 1000 : (dtArg > 0) ? Math.min(dtArg, 50) : 16;
 
@@ -831,39 +854,12 @@ const Game9 = {
       return;
     }
 
-    // ── Live Playing State (Hand Detection Logic) ──
-    if (this._noHandDuration === undefined) this._noHandDuration = 0;
+    // ── Live Playing State (Double Tap Active) ──
+    this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
-    const fingers = window.fingerPositions || [];
-    const dtSeconds = delta / 1000;
-
-    if (fingers.length > 0) {
-      this._noHandDuration = 0;
-      if (pauseBtn) {
-        pauseBtn.style.display = "none";
-        pauseBtn.style.opacity = "0";
-      }
-    } else {
-      this._noHandDuration += dtSeconds;
-
-      // 7 Seconds: Show pause button
-      if (this._noHandDuration >= 7 && this._noHandDuration < 15) {
-        if (pauseBtn) {
-          pauseBtn.style.display = "block";
-          pauseBtn.style.opacity = "1";
-        }
-      }
-
-      // 15 Seconds: Trigger Auto-Pause overlay window
-      if (this._noHandDuration >= 15) {
-        this._noHandDuration = 0;
-        if (pauseBtn) {
-          pauseBtn.style.display = "none";
-          pauseBtn.style.opacity = "0";
-        }
-        window.pauseGame();
-        return;
-      }
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
     }
 
     /* Playing background always drawn first */
@@ -1138,7 +1134,6 @@ const Game9 = {
     this.toast={text:"",timer:0,color:"#fff",y:0,alpha:0};
     this.setupDoors(); this.spawnNumber();
   },
-
   /* ── Draw number ─────────────────────────────────────────── */
   drawNumber(ctx) {
     if (this.numberPosition.picked) return;
