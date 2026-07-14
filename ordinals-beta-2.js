@@ -2511,7 +2511,8 @@ const Game11 = {
     const line2 = "to get the necessary ordinal suffix on the galaxy";
     const line3 = "(Remember to show your palm towards the camera)";
     const line4 = "Collect numbers with correct suffix to increase score and life duration";
-    const line5 = "Wrong answer will lead to decrease in score";
+    const line5 = "Score 500 points to complete the game";
+    const line6 = "Wrong answer will lead to decrease in score";
 
     ctx.fillText(line1, this.CENTER_X, boxY + 50 * this.scale);
     ctx.fillText(line2, this.CENTER_X, boxY + 100 * this.scale);
@@ -2522,8 +2523,13 @@ const Game11 = {
     ctx.fillStyle = "#34d399"; // greenish color 
     ctx.fillText(line4, this.CENTER_X, boxY + 220 * this.scale);
 
+    ctx.font = `bold ${36 * this.scale}px Arial`;
+    ctx.fillStyle = "#f59e0b"; // amber/orange color for high emphasis
+    ctx.fillText(line5, this.CENTER_X, boxY + 275 * this.scale);
+
+    ctx.font = `bold ${28 * this.scale}px Arial`;
     ctx.fillStyle = "#f87171"; // reddish color
-    ctx.fillText(line5, this.CENTER_X, boxY + 290 * this.scale);
+    ctx.fillText(line6, this.CENTER_X, boxY + 330 * this.scale);
 
     const btnW = 220 * this.scale;
     const btnH = 70 * this.scale;
