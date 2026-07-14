@@ -143,6 +143,8 @@ const Game11 = {
   mode1PortalTargetX: 0,
   mode1PortalTargetY: 0,
   mode1GameOver: false,
+  gameCompleted: false,
+  gameCompletedStartTime: 0,
 
   /* ===== MODE 1 SUCTION SYSTEM ===== */
   mode1SuctionActive: false,
@@ -250,49 +252,8 @@ const Game11 = {
     });
 
     const handleRestart = () => {
-      if (this.gameMode === 1 && this.mode1GameOver) {
-
-        // 1️⃣ Reset Score & Progress
-        this.score = 0;
-        this.mode1CorrectCollected = 0;
-        this.mode1GameOver = false;
-        this.level = 1;
-        this.nextLevelScore = 50;
-        this.stickers = [];
-        this.nextStickerScore = 30;
-        this.levelChangeActive = false;
-        this.levelChangeOkRect = null;
-        this.lastValidTargetSuffix = "st";
-
-        // 2️⃣ Clear Active Effects
-        this.sparkBursts = [];
-        this.floatingTexts = [];
-        this.confettiParticles = [];
-        this.shootingStars = [];
-        this.blackHoleSuctionParticles = [];
-
-        // 3️⃣ Reset Mascot
-        this.mascot.x = this.CENTER_X;
-        this.mascot.y = this.CENTER_Y + 100 * this.scale;
-        this.mascot.vx = 0;
-        this.mascot.vy = 0;
-        this.mascot.carryingNumber = false;
-        this.mascotState = "idle";
-        this._fingerSmoothX = null;
-        this._fingerSmoothY = null;
-        this._targetFingerX = null;
-        this._targetFingerY = null;
-        this.fingerX = null;
-        this.fingerY = null;
-
-        // 4️⃣ Reset Starfield (Randomize positions again)
-        this.initStarfield();
-
-        // 5️⃣ Re-activate Mode (Resets galaxy life, black hole, etc.)
-        this.activateGameMode1();
-
-        // 6️⃣ Reset Timer to prevent huge delta
-        this.lastTime = performance.now();
+      if (this.gameMode === 1 && (this.mode1GameOver || this.gameCompleted)) {
+        this.restartMode1Game();
       }
     };
 
@@ -307,6 +268,8 @@ const Game11 = {
         this.handleStartClick(e);
       } else if (this.levelChangeActive) {
         this.handleLevelChangeOkClick(e);
+      } else if (this.gameCompleted) {
+        this.handleGameCompletedClick(e);
       } else {
         handleRestart();
       }
@@ -328,6 +291,8 @@ const Game11 = {
           this.handleStartClick(touchPoint);
         } else if (this.levelChangeActive) {
           this.handleLevelChangeOkClick(touchPoint);
+        } else if (this.gameCompleted) {
+          this.handleGameCompletedClick(touchPoint);
         } else {
           handleRestart();
         }
@@ -762,6 +727,21 @@ const Game11 = {
     if (this.introPhase) {
       this.updateFingerPosition(performance.now());
       this.drawIntroPhase(ctx, delta);
+      return;
+    }
+
+    if (this.gameCompleted) {
+      this.updateFingerPosition(performance.now());
+      this.updatePortalAnimation(delta);
+      this.updateSparkBursts(delta);
+      this.updateFloatingTexts(delta);
+
+      this.drawMode1PortalPlayer(ctx);
+      this.drawSparkBursts(ctx);
+      this.drawFloatingTexts(ctx);
+      this.drawFingerImages(ctx);
+      this.drawGameCompleted(ctx);
+      this.drawScore(ctx);
       return;
     }
 
@@ -1771,6 +1751,100 @@ const Game11 = {
     this.mode1PortalTargetY = this.cssHeight - 120 * this.scale;
   },
 
+  triggerGameCompleted() {
+    if (this.gameCompleted) return;
+
+    this.gameCompleted = true;
+    this.gameCompletedStartTime = performance.now();
+    this.mode1RoundActive = false;
+    this.mode1SuctionActive = false;
+    this.levelChangeActive = false;
+    this.galaxyCollapsed = false;
+  },
+
+  handleGameCompletedClick(e) {
+    if (!this.gameCompleted) return;
+
+    const x = e.clientX;
+    const y = e.clientY;
+    const btnW = 220 * this.scale;
+    const btnH = 70 * this.scale;
+    const playX = this.CENTER_X - btnW / 2;
+    const playY = this.CENTER_Y + 40 * this.scale;
+    const exitX = this.CENTER_X - btnW / 2;
+    const exitY = this.CENTER_Y + 130 * this.scale;
+
+    if (x >= playX && x <= playX + btnW && y >= playY && y <= playY + btnH) {
+      this.restartMode1Game();
+      return;
+    }
+
+    if (x >= exitX && x <= exitX + btnW && y >= exitY && y <= exitY + btnH) {
+      window.goToMainMenu();
+    }
+  },
+
+  drawGameCompleted(ctx) {
+    if (!this.gameCompleted) return;
+
+    const time = performance.now();
+    ctx.save();
+    ctx.fillStyle = "rgba(5, 8, 20, 0.92)";
+    ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
+
+    const elapsed = time - (this.gameCompletedStartTime || time);
+    let popScale = Math.min(elapsed / 300, 1.0);
+    if (elapsed < 300) {
+      popScale += Math.sin((elapsed / 300) * Math.PI) * 0.08;
+    }
+
+    ctx.translate(this.CENTER_X, this.CENTER_Y - 70 * this.scale);
+    ctx.scale(popScale, popScale);
+
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#FACC15";
+    ctx.shadowColor = "#FACC15";
+    ctx.shadowBlur = 14;
+    ctx.font = this.fGameOver;
+    ctx.fillText("Mission Complete!", 0, 0);
+
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(this.CENTER_X, this.CENTER_Y + 5 * this.scale);
+    ctx.scale(popScale, popScale);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#E2E8F0";
+    ctx.shadowColor = "rgba(255,255,255,0.25)";
+    ctx.shadowBlur = 8;
+    ctx.font = `bold ${Math.round(32 * this.scale)}px Arial`;
+    ctx.fillText(`${Math.min(this.score, 500)}/500`, 0, 0);
+    ctx.restore();
+
+    const btnW = 280 * this.scale;
+    const btnH = 90 * this.scale;
+    const playX = this.CENTER_X - btnW / 2;
+    const playY = this.CENTER_Y + 90 * this.scale;
+
+    ctx.save();
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = `bold ${Math.round(28 * this.scale)}px Arial`;
+
+    ctx.fillStyle = "rgba(52, 211, 153, 0.22)";
+    ctx.strokeStyle = "rgba(52, 211, 153, 0.9)";
+    ctx.lineWidth = 2.5 * this.scale;
+    ctx.beginPath();
+    ctx.roundRect(playX, playY, btnW, btnH, 22 * this.scale);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = "#ECFDF5";
+    ctx.fillText("Play Again", this.CENTER_X, playY + btnH / 2);
+    ctx.restore();
+  },
+
   drawMode1GameOver(ctx) {
 
     if (!this.mode1GameOver) return;
@@ -1830,6 +1904,54 @@ const Game11 = {
     );
     ctx.restore();
   },
+  restartMode1Game() {
+    this.gameCompleted = false;
+    this.gameCompletedStartTime = 0;
+    this.score = 0;
+    this.mode1CorrectCollected = 0;
+    this.mode1GameOver = false;
+    this.mode1RoundActive = true;
+    this.mode1Confirming = false;
+    this.mode1SuctionActive = false;
+    this.mode1SuctionData = null;
+    this.level = 1;
+    this.nextLevelScore = 50;
+    this.stickers = [];
+    this.nextStickerScore = 30;
+    this.levelChangeActive = false;
+    this.levelChangeOkRect = null;
+    this.lastValidTargetSuffix = "st";
+    this.galaxyCollapsed = false;
+    this.blackHoleActive = false;
+    this.blackHoleDelayTimer = 0;
+    this.blackHoleRadius = 0;
+    this.blackHoleX = 0;
+    this.blackHoleY = 0;
+
+    this.sparkBursts = [];
+    this.floatingTexts = [];
+    this.confettiParticles = [];
+    this.shootingStars = [];
+    this.blackHoleSuctionParticles = [];
+
+    this.mascot.x = this.CENTER_X;
+    this.mascot.y = this.CENTER_Y + 100 * this.scale;
+    this.mascot.vx = 0;
+    this.mascot.vy = 0;
+    this.mascot.carryingNumber = false;
+    this.mascotState = "idle";
+    this._fingerSmoothX = null;
+    this._fingerSmoothY = null;
+    this._targetFingerX = null;
+    this._targetFingerY = null;
+    this.fingerX = null;
+    this.fingerY = null;
+
+    this.initStarfield();
+    this.activateGameMode1();
+    this.lastTime = performance.now();
+  },
+
   retryMode1() {
 
     this.mode1GameOver = false;
@@ -1924,6 +2046,19 @@ const Game11 = {
 
       this.score += 10;
       this.mode1CorrectCollected++;
+
+      if (this.score >= 500) {
+        this.spawnFloatingText(
+          this.mascot.x,
+          this.mascot.y - 120 * this.scale,
+          "Mission Complete!",
+          "#FACC15"
+        );
+        this.triggerGameCompleted();
+        this.mode1SuctionActive = false;
+        this.mode1SuctionData = null;
+        return;
+      }
 
       // ⭐ Add 5 seconds life on correct answer
       this.galaxyLife += 5000;
@@ -2262,9 +2397,9 @@ const Game11 = {
       this.mascot.x, this.mascot.y, 0,
       this.mascot.x, this.mascot.y, radius
     );
-    grad.addColorStop(0, `rgba(255, 30, 30, ${alpha})`);
-    grad.addColorStop(0.7, `rgba(255, 0, 0, ${alpha * 0.5})`);
-    grad.addColorStop(1, `rgba(255, 0, 0, 0)`);
+    grad.addColorStop(0, `rgba(166, 200, 255, ${alpha})`);
+    grad.addColorStop(0.7, `rgba(140, 140, 255, ${alpha * 0.45})`);
+    grad.addColorStop(1, `rgba(140, 140, 255, 0)`);
 
     ctx.beginPath();
     ctx.arc(this.mascot.x, this.mascot.y, radius, 0, Math.PI * 2);
