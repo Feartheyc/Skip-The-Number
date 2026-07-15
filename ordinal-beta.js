@@ -266,14 +266,25 @@ const Game9 = {
   /* ============================================================
      TUTORIAL DRAW
   ============================================================ */
+  /* ============================================================
+     TUTORIAL — main draw (Page-Based System to Prevent Overflow)
+  ============================================================ */
+  /* ============================================================
+     TUTORIAL — main draw (Page-Based System to Prevent Overflow)
+  ============================================================ */
   _updateTutorial(ctx, fingers, dt) {
-    this._tutEnterAnim = Math.min(1, this._tutEnterAnim + dt * 2);
-    this._tutOrbT     += dt;
-    this._tutPulseT   += dt * 1.8;
-    const eA   = t => 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 3);
-    const alpha = eA(this._tutEnterAnim);
+    this._tutEnterAnim  = Math.min(1, this._tutEnterAnim + dt * 2);
+    this._tutOrbT      += dt;
+    this._tutPulseT    += dt * 1.8;
+
+    if (this._tutPage === undefined) {
+      this._tutPage = 1;
+    }
+
+    const alpha  = 1 - Math.pow(1 - Math.max(0, Math.min(1, this._tutEnterAnim)), 3);
     const W = this.cssWidth, H = this.cssHeight;
     const cx = this.CENTER_X, cy = this.CENTER_Y;
+    const tColor = "#a78bfa";
 
     /* Dreamy gradient background */
     const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -283,6 +294,7 @@ const Game9 = {
     ctx.globalAlpha = alpha;
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, W, H);
+    
     const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, W * 0.6);
     glow.addColorStop(0, "rgba(255,255,255,0.14)");
     glow.addColorStop(1, "rgba(255,255,255,0)");
@@ -299,7 +311,6 @@ const Game9 = {
     }
     ctx.globalAlpha = alpha;
 
-    const tColor = "#a78bfa";
     const isMob  = W < 540;
     const cardW  = Math.min(W - 32, isMob ? 360 : 700);
     const cardH  = Math.min(H - 60, isMob ? 580 : 540);
@@ -312,7 +323,7 @@ const Game9 = {
       return isNaN(r) ? "160,120,252" : `${r},${g2},${b}`;
     };
 
-    /* Card */
+    /* Card Box Frame */
     ctx.shadowColor = tColor; ctx.shadowBlur = 28;
     ctx.fillStyle = "rgba(30,10,55,0.92)";
     ctx.beginPath(); ctx.roundRect(cardX, cardY, cardW, cardH, cR); ctx.fill();
@@ -321,17 +332,18 @@ const Game9 = {
     ctx.fillStyle = `rgba(${hr(tColor)},0.16)`;
     ctx.beginPath(); ctx.roundRect(cardX, cardY, cardW, 56, [cR, cR, 0, 0]); ctx.fill();
 
-    /* Header — Fredoka, no Comic Sans */
+    /* Header Panel */
     ctx.font = `bold ${isMob ? 22 : 28}px 'Fredoka', sans-serif`;
     ctx.fillStyle = tColor; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.shadowColor = tColor; ctx.shadowBlur = 14;
     ctx.fillText("🏠  ORDINAL EXPRESS", cx, cardY + 28);
     ctx.shadowBlur = 0;
-    ctx.font = `${isMob ? 13 : 15}px 'Fredoka', sans-serif`;
-    ctx.fillStyle = "rgba(255,255,255,0.72)";
-    ctx.fillText("Carry the number to the right ordinal door!", cx, cardY +65 );
+    
+    ctx.font = `${isMob ? 12 : 14}px 'Fredoka', sans-serif`;
+    ctx.fillStyle = "rgba(255,255,255,0.68)";
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Gameplay & Scoring' : 'Parameters & Dynamics'}`, cx, cardY + 65);
 
-    /* Visual box */
+    /* Left Side Mini-Diagram Visual Sandbox Box */
     const visX = cardX + 12, visY = cardY + 76;
     const visW = isMob ? cardW - 24 : cardW * 0.42;
     const visH = isMob ? 140 : cardH - 200;
@@ -340,33 +352,60 @@ const Game9 = {
     ctx.strokeStyle = `rgba(${hr(tColor)},0.14)`; ctx.lineWidth = 1; ctx.stroke();
     this._drawTutVisual(ctx, visX, visY, visW, visH, this._tutOrbT);
 
-    /* Rules — Fredoka */
-    const rules = [
-      { icon:"👆", text:"Your index finger controls the mascot" },
-      { icon:"✨", text:"Move mascot onto the glowing number to pick it up" },
-      { icon:"🚪", text:"Carry it to the correct ordinal door (st/nd/rd/th)" },
-      { icon:"❤️", text:"Wrong door costs a heart — 3 hearts total" },
-      { icon:"🔥", text:"Streak correct deliveries for bonus score!" },
-    ];
+    /* Right Side Content Arrays (Pagination Grid - Scrubbed & Resized) */
+    const contentRows = [];
+    if (this._tutPage === 1) {
+      contentRows.push(
+        { isHeader: true,  text: "🎮 Gameplay" },
+        { icon: "👆", text: "Your index finger controls the mascot" },
+        { icon: "✨", text: "Move mascot onto the glowing number to pick it up" },
+        { icon: "🚪", text: "Carry it to the correct ordinal door (st/nd/rd/th)" },
+        { isHeader: true,  text: "⭐ Scoring Rules" },
+        { icon: "❤️", text: "Wrong door costs a heart — 3 hearts total" },
+        { icon: "🔥", text: "Streak correct deliveries for bonus score!" }
+      );
+    } else {
+      contentRows.push(
+        { isHeader: true,  text: "⏱️ Health Metrics" },
+        { icon: "⏱️", text: "You begin with 3 total structural hearts" },
+        { icon: "⏳", text: "Delivering to an incorrect door drains 1 heart" },
+        { isHeader: true,  text: "⚙️ Dynamic Scales" },
+        { icon: "🔢", text: "Numbers shift range matching round difficulty" },
+        { icon: "🎯", text: "Ordinal mappings follow standard suffix rules" }
+      );
+    }
+
     const rulesX = isMob ? cardX + 12 : cardX + visW + 24;
     const rulesY = isMob ? visY + visH + 10 : cardY + 76;
     const rulesW = isMob ? cardW - 24 : cardW - visW - 36;
-    const rowH   = isMob ? 34 : 42;
-    for (let i = 0; i < rules.length; i++) {
+    const dynamicRowH = isMob ? (this._tutPage === 1 ? 30 : 34) : (this._tutPage === 1 ? 36 : 42);
+
+    for (let i = 0; i < contentRows.length; i++) {
+      const item = contentRows[i];
+      const currentY = rulesY + (i * dynamicRowH);
       const prog = Math.max(0, Math.min(1, (this._tutEnterAnim - i * 0.08) / 0.6));
       ctx.globalAlpha = alpha * (1 - Math.pow(1 - prog, 3));
-      ctx.fillStyle = i % 2 === 0 ? "rgba(40,10,80,0.55)" : "rgba(25,5,50,0.4)";
-      ctx.beginPath(); ctx.roundRect(rulesX, rulesY + i * rowH, rulesW, rowH - 4, 8); ctx.fill();
-      ctx.font = `${isMob ? 16 : 18}px 'Fredoka', sans-serif`;
-      ctx.fillStyle = "#ffffff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      ctx.fillText(rules[i].icon, rulesX + 10, rulesY + i * rowH + rowH / 2 - 2);
-      ctx.font = `${isMob ? 12 : 14}px 'Fredoka', sans-serif`;
-      ctx.fillStyle = "rgba(255,255,255,0.88)";
-      ctx.fillText(rules[i].text, rulesX + 36, rulesY + i * rowH + rowH / 2 - 2);
+
+      if (item.isHeader) {
+        ctx.font = `bold ${isMob ? 13 : 15}px 'Fredoka', sans-serif`;
+        ctx.fillStyle = tColor; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(item.text, rulesX + 4, currentY + dynamicRowH / 2);
+      } else {
+        ctx.fillStyle = i % 2 === 0 ? "rgba(40,10,80,0.55)" : "rgba(25,5,50,0.4)";
+        ctx.beginPath(); ctx.roundRect(rulesX, currentY, rulesW, dynamicRowH - 4, 8); ctx.fill();
+        
+        ctx.font = `${isMob ? 16 : 18}px 'Fredoka', sans-serif`;
+        ctx.fillStyle = "#ffffff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(item.icon, rulesX + 10, currentY + dynamicRowH / 2 - 2);
+        
+        ctx.font = `${isMob ? 11.5 : 13.5}px 'Fredoka', sans-serif`;
+        ctx.fillStyle = "rgba(255,255,255,0.88)";
+        ctx.fillText(item.text, rulesX + 36, currentY + dynamicRowH / 2 - 2);
+      }
     }
     ctx.globalAlpha = alpha;
 
-    /* Hold section */
+    /* Interactive Hold Segment */
     const holdY = cardY + cardH - (isMob ? 82 : 86);
     ctx.strokeStyle = "rgba(253,224,71,0.22)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(cardX + 20, holdY - 6); ctx.lineTo(cardX + cardW - 20, holdY - 6); ctx.stroke();
@@ -374,7 +413,18 @@ const Game9 = {
     const hasFing = fingers.length > 0;
     if (hasFing) {
       this._tutHoldProgress = Math.min(1, this._tutHoldProgress + dt / this.HOLD_SEC);
-      if (this._tutHoldProgress >= 1) { ctx.globalAlpha = 1; this._startPlaying(); return; }
+      if (this._tutHoldProgress >= 1) {
+        if (this._tutPage === 1) {
+          this._tutPage = 2;
+          this._tutHoldProgress = 0;
+          this._tutEnterAnim = 0.3;
+        } else {
+          this._tutPage = 1;
+          ctx.globalAlpha = 1;
+          this._startPlaying();
+          return;
+        }
+      }
     } else {
       this._tutHoldProgress = Math.max(0, this._tutHoldProgress - dt * 0.5);
     }
@@ -387,16 +437,20 @@ const Game9 = {
       ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = blink ? 12 : 0;
       ctx.fillText("☝ Raise your finger to the camera!", cx, holdY + 18);
       ctx.shadowBlur = 0;
+      
       ctx.font = `${isMob ? 12 : 13}px 'Fredoka', sans-serif`;
       ctx.fillStyle = "rgba(253,224,71,0.65)";
-      ctx.fillText("Hold still for 3 seconds to start", cx, holdY + 40);
+      const promptStr = this._tutPage === 1 ? "Hold still for 3 seconds to view Page 2" : "Hold still for 3 seconds to start";
+      ctx.fillText(promptStr, cx, holdY + 40);
     } else {
       const pct = Math.round(this._tutHoldProgress * 100);
       ctx.font = `bold ${isMob ? 14 : 16}px 'Fredoka', sans-serif`;
       ctx.fillStyle = "#a78bfa"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.shadowColor = "#a78bfa"; ctx.shadowBlur = 10;
-      ctx.fillText(`Hold still... ${pct}%`, cx, holdY + 16);
+      const actionStr = this._tutPage === 1 ? `Loading Page 2... ${pct}%` : `Hold still... ${pct}%`;
+      ctx.fillText(actionStr, cx, holdY + 16);
       ctx.shadowBlur = 0;
+      
       const barW = cardW * 0.6, barH = 8, barX = cx - barW / 2, barY = holdY + 34;
       ctx.fillStyle = "rgba(40,10,80,0.8)";
       ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, 4); ctx.fill();
@@ -405,7 +459,7 @@ const Game9 = {
       ctx.fill(); ctx.shadowBlur = 0;
     }
 
-    /* Finger dot */
+    /* Reticle Pass */
     if (hasFing) {
       const fx = fingers[0].x, fy = fingers[0].y;
       ctx.beginPath(); ctx.arc(fx, fy, 38, 0, Math.PI * 2);
@@ -813,9 +867,16 @@ const Game9 = {
     }
   },
 
+  /* ============================================================
+     PREDICTABLE SCORE MATRIX
+     Replaces the random pool with a streak-based payout system.
+  ============================================================ */
   _rollScore() {
-    const pool = [10,10,10,10,10,20,20,20,20,30,30,30,40,40,50,50,60,70,80,90,100];
-    return pool[Math.floor(Math.random() * pool.length)];
+    // Base award is 10 points for a normal match
+    if (this.streak < 3)  return 10;
+    if (this.streak < 5)  return 20; // Minor streak tier
+    if (this.streak < 10) return 30; // On Fire tier
+    return 50;                       // Ultimate tier (10+ streak)
   },
 
   /* ── Toast ───────────────────────────────────────────────── */
@@ -986,19 +1047,23 @@ const Game9 = {
     }
   },
 
-  confirmSelection(index) {
+ confirmSelection(index) {
     const door = this.doors[index];
     if (door.suffix === this.correctSuffix) {
-      const points = this._rollScore();
-      this.score  += points;
-      this.streak++;
+      this.streak++; // Increment streak first to calculate tier cleanly
       if (this.streak > this.bestStreak) this.bestStreak = this.streak;
       this.streakPulse = 1;
+
+      const points = this._rollScore();
+      this.score  += points;
       this.mascotState = "happy";
       this.spawnSparkBurst(door.x, door.y);
       this.checkLevelUp();
-      const msg = this.streak >= 5 ? "🔥 ON FIRE!"
-                : this.streak >= 3 ? "⭐ Great streak!"
+
+      // Custom message string matching the score matrix tiers
+      const msg = this.streak >= 10 ? "🔥 UNSTOPPABLE!"
+                : this.streak >= 5  ? "⭐ On Fire!"
+                : this.streak >= 3  ? "✨ Good Streak!"
                 : "✅ Correct!";
       this.showToast(`${msg} +${points}`, "#34d399");
     } else {
@@ -1020,7 +1085,7 @@ const Game9 = {
   drawHUD(ctx) {
     const s = this.scale, W = this.cssWidth;
 
-    /* Score badge */
+    /* Score badge container */
     const sw=175*s, sh=54*s, sx=18*s, sy=16*s;
     ctx.fillStyle = "rgba(30,58,138,0.85)";
     this._rrect(ctx, sx, sy, sw, sh, 18*s); ctx.fill();
@@ -1029,7 +1094,7 @@ const Game9 = {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(`⭐ ${this.score}`, sx + sw/2, sy + sh/2);
 
-    /* Level badge */
+    /* Level badge container */
     const lw=150*s, lh=42*s, lx=W/2-lw/2, ly=16*s;
     ctx.fillStyle = "rgba(30,58,138,0.85)";
     this._rrect(ctx, lx, ly, lw, lh, 14*s); ctx.fill();
@@ -1038,7 +1103,7 @@ const Game9 = {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(`Level ${this.level}`, lx + lw/2, ly + lh/2);
 
-    /* Hearts */
+    /* Hearts tracking layout */
     const hSz=32*s, hGap=8*s, totalHW=this.maxHearts*(hSz+hGap)-hGap;
     const hx0=W-18*s-totalHW, hy0=18*s;
     const shk = this.heartShakeTime > 0 ? Math.sin(this.heartShakeTime * 0.055) * 5 * s : 0;
@@ -1050,19 +1115,25 @@ const Game9 = {
     }
     ctx.globalAlpha = 1;
 
-    /* Streak */
+    /* ── STREAK ANCHORED UNDER SCORE BADGE ── */
     if (this.streak >= 2) {
-      const ps = 1 + this.streakPulse * 0.28;
-      ctx.save(); ctx.translate(W/2, 88*s); ctx.scale(ps, ps);
+      const ps = 1 + this.streakPulse * 0.15;
+      ctx.save();
+      
+      // Positions the badge frame clean and left-aligned below the score capsule
+      const streakY = sy + sh + 12*s; 
+      ctx.translate(sx + sw/2, streakY); 
+      ctx.scale(ps, ps);
+      
       ctx.globalAlpha = 0.9 + this.streakPulse * 0.1;
       ctx.fillStyle = "#fbbf24";
-      ctx.font = `bold ${Math.round(22*s)}px 'Fredoka', sans-serif`;
+      ctx.font = `bold ${Math.round(18*s)}px 'Fredoka', sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 10;
+      ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 8;
       ctx.fillText(`🔥 ${this.streak} in a row!`, 0, 0);
-      ctx.shadowBlur = 0; ctx.restore();
+      ctx.shadowBlur = 0; 
+      ctx.restore();
     }
-
     /* Progress bar */
     const barW=260*s, barH=16*s, bottomPad=40*s;
     const bx=W/2-barW/2, by=this.cssHeight-bottomPad-barH;
