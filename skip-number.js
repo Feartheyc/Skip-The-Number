@@ -812,7 +812,7 @@ const Game1 = {
       INIT
   ============================================================ */
  
-  init(modeKey = "default") {
+   init(modeKey = "default") {
     const rect = document.getElementById("container").getBoundingClientRect();
     this._applyResize(rect.width, rect.height);
 
@@ -873,7 +873,10 @@ const Game1 = {
     this.torusAngle = 0;
     this._spriteFrame = 0;
 
-    this.mode = "default";
+    // ── FIXED: use the actual chosen mode (not a hardcoded "default")
+    //    so _buildRoundPlan() below generates the correct type of plan
+    //    (pattern skip/collect vs. plain skip amount) right from the start. ──
+    this.mode = modeKey || "default";
     this.skipAmount = this.getRandomSkip();
     this.gameTitle = "COLLECT MULTIPLES OF "+ this.skipAmount;
     this.noteSpeed = this.speedCap;
@@ -894,6 +897,9 @@ const Game1 = {
     this._tutPulseT = 0;
     this._tutNoFingerFrames = 0;
     this._syncDifficultyScalars();
+
+    // ── FIXED: this plan is now generated ONCE, using the correct mode,
+    //    and will be reused verbatim when the round actually starts. ──
     this.nextRoundPlan = this._buildRoundPlan();
 
     this._initTutStars();
@@ -985,7 +991,7 @@ const Game1 = {
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
   },
 
-  /* ── Mode switching ─────────────────────────────────────── */
+   /* ── Mode switching ─────────────────────────────────────── */
   _setMode(modeKey) {
     if (this.gameState === "tutorial") {
       this._pendingMode = modeKey;
@@ -993,6 +999,11 @@ const Game1 = {
       this._tutEnterAnim = 0;
       this._tutOrbT = 0;
       this._tutPulseT = 0;
+
+      // ── FIXED: switching modes mid-tutorial must regenerate the plan
+      //    for the NEW mode, so the preview text stays accurate. ──
+      this.mode = modeKey || "default";
+      this.nextRoundPlan = this._buildRoundPlan();
     } else {
       switch (modeKey) {
         case "pattern": this.activatePatternMode(); break;
@@ -1010,6 +1021,11 @@ const Game1 = {
       this._tutEnterAnim = 0;
       this._tutOrbT = 0;
       this._tutPulseT = 0;
+
+      // ── FIXED: same reasoning as _setMode — regenerate the preview
+      //    plan whenever the pending mode changes before play starts. ──
+      this.mode = this._pendingMode;
+      this.nextRoundPlan = this._buildRoundPlan();
     }
   },
 
@@ -1063,7 +1079,6 @@ _startPlaying() {
     this._tutOrbT      += dt;
     this._tutPulseT    += dt * 1.8;
 
-    // Initialize tutorial page tracking if it doesn't exist
     if (this._tutPage === undefined) {
       this._tutPage = 1;
     }
@@ -1073,6 +1088,14 @@ _startPlaying() {
     const pal = this.C;
     const td  = this._TMODES[this._pendingMode] || this._TMODES.default;
     const tColor = td.color;
+    const visualKey = td.visual;
+
+    // ── FIXED: pull the actual numbers that WILL be used when play starts,
+    //    straight from the plan generated for this pending mode. This is
+    //    the single source of truth shared with _resetSessionFlow(). ──
+    const previewPlan    = this.nextRoundPlan || this._buildRoundPlan();
+    const previewSkip     = previewPlan.skip;
+    const previewCollect  = previewPlan.collect;
 
     // Background
     const bg = ctx.createRadialGradient(this.centerX, this.centerY * 0.6, 0, this.centerX, H * 0.5, Math.max(W, H) * 0.75);
@@ -1094,7 +1117,6 @@ _startPlaying() {
     }
     ctx.globalAlpha = alpha;
 
-    // Card dimensions
     const isMob = W < 540;
     const cardW = Math.min(W - 32, isMob ? 360 : 700);
     const cardH = Math.min(H - 60, isMob ? 580 : 540);
@@ -1124,7 +1146,6 @@ _startPlaying() {
     ctx.roundRect(cardX, cardY, cardW, 56, [cR, cR, 0, 0]);
     ctx.fill();
 
-    // Header
     ctx.font = `bold ${isMob?22:28}px 'Trebuchet MS', sans-serif`;
     ctx.fillStyle = tColor;
     ctx.textAlign = "center";
@@ -1138,7 +1159,6 @@ _startPlaying() {
     ctx.fillStyle = "rgba(240,244,255,0.68)";
     ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Gameplay & Scoring' : 'Time & Speed Parameters'}`, this.centerX, cardY + 65);
 
-    // Visual Box (Always on left/top)
     const visX = cardX + 12, visY = cardY + 82;
     const visW = isMob ? cardW - 24 : cardW * 0.42;
     const visH = isMob ? 130 : cardH - 200;
@@ -1151,16 +1171,80 @@ _startPlaying() {
     ctx.stroke();
     this._drawTutVisual(ctx, td.visual, visX, visY, visW, visH, this._tutOrbT, tColor);
 
-    // Dynamic Page Content Building
+    // ── Mode-specific gameplay descriptions (Page 1) — now driven by previewPlan ──
+    const gameplayByMode = {
+      skip: [
+        { icon: "🎯", text: "Numbers fly from the ring toward the center." },
+        { icon: "✅", text: `Collect multiples of ${previewSkip}.` },
+        { icon: "💍", text: "Tap only when a number is touching the ring." },
+        { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+      ],
+      pattern: [
+        { icon: "🎶", text: "Numbers cycle: skip a set, then collect a set." },
+        { icon: "🧠", text: `Skip ${previewSkip}, Collect ${previewCollect} — then repeat.` },
+        { icon: "💍", text: "Tap only when a number is touching the ring." },
+        { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+      ],
+      cannon: [
+        { icon: "💥", text: "The cannon fires numbers straight across the screen." },
+        { icon: "✅", text: `Touch correct multiples of ${previewSkip} before they fly off.` },
+        { icon: "🚀", text: "Numbers travel in one direction until they escape." },
+        { icon: "🛡️", text: "Safe Zone: Right by the cannon is safe! No tapping here. ⭕" },
+      ],
+      orb: [
+        { icon: "🌀", text: "A spinning orb launches numbers outward." },
+        { icon: "✅", text: `Catch correct multiples of ${previewSkip} as they fly past.` },
+        { icon: "💜", text: "The orb turns to aim — watch closely." },
+        { icon: "🛡️", text: "Safe Zone: Right by the orb is safe! No tapping here. ⭕" },
+      ],
+      triple: [
+        { icon: "🔴", text: "THREE cannons fire in random order." },
+        { icon: "👀", text: "A gold glow shows which cannon fires next." },
+        { icon: "✅", text: `Intercept correct multiples of ${previewSkip} from any direction.` },
+        { icon: "🛡️", text: "Safe Zone: Right by the cannons is safe! No tapping here. ⭕" },
+      ],
+    };
+
+    // ── Mode-specific dynamics descriptions (Page 2) ──
+    const dynamicsByMode = {
+      skip: [
+        { icon: "🧠", text: "Numbers auto-reset back to 1 after reaching 100." },
+        { icon: "📉", text: "Wrong touches slow down incoming numbers." },
+        { icon: "📈", text: "Success streaks ramp speed back up." },
+        { icon: "✨", text: "A glow means the number is inside the ring and collectible!" },
+      ],
+      pattern: [
+        { icon: "🧠", text: "Numbers auto-reset back to 1 after reaching 100." },
+        { icon: "📉", text: "Wrong touches slow down incoming numbers." },
+        { icon: "📈", text: "Success streaks ramp speed back up." },
+        { icon: "✨", text: "A glow means the number is inside the ring and collectible!" },
+      ],
+      cannon: [
+        { icon: "🧠", text: "Numbers auto-reset back to 1 after reaching 100." },
+        { icon: "📉", text: "Wrong touches slow down the cannon's fire speed." },
+        { icon: "📈", text: "Success streaks ramp speed back up." },
+        { icon: "🧠", text: "No visual hints here — use your math skills!" },
+      ],
+      orb: [
+        { icon: "🧠", text: "Numbers auto-reset back to 1 after reaching 100." },
+        { icon: "📉", text: "Wrong touches slow down the orb's launch speed." },
+        { icon: "📈", text: "Success streaks ramp speed back up." },
+        { icon: "🧠", text: "No visual hints here — use your math skills!" },
+      ],
+      triple: [
+        { icon: "🧠", text: "Numbers auto-reset back to 1 after reaching 100." },
+        { icon: "📉", text: "Wrong touches slow down all three cannons." },
+        { icon: "📈", text: "Success streaks ramp speed back up." },
+        { icon: "🧠", text: "No visual hints here — use your math skills!" },
+      ],
+    };
+
     const contentRows = [];
     if (this._tutPage === 1) {
       contentRows.push(
         { isHeader: true,  text: "🎮 Gameplay" },
         { icon: "☝️", text: "Your index finger is the green dot." },
-        { icon: "🎯", text: "Numbers fly from ring toward center." },
-        { icon: "✅", text: `Collect multiples of ${this.skipAmount}.` },
-        { icon: "💍", text: "Tap only when touching the outer ring." },
-        { icon: "🛡️", text: "Safe Zone: Center ring is safe! No tapping here. ⭕" },
+        ...(gameplayByMode[visualKey] || gameplayByMode.skip),
         { isHeader: true,  text: "⭐ Scoring" },
         { icon: "✅", text: "Correct touch = +10 points + streak +1" },
         { icon: "❌", text: "Wrong touch = −5 points + streak reset" },
@@ -1170,24 +1254,18 @@ _startPlaying() {
     } else {
       contentRows.push(
         { isHeader: true,  text: "⏱️ Time Metrics" },
-        { icon: "⏱️", text: "You begin with a clean 180 seconds." },
+        { icon: "⏱️", text: "You begin with a clean 300 seconds." },
         { icon: "⏳", text: "The countdown bar depletes continuously." },
-        { icon: "➕", text: "Completing a round adds +20 seconds." },
-        { icon: "🚀", text: "Leveling up instantly restores time to 180s." },
+        { icon: "➕", text: "Completing a round adds bonus time." },
+        { icon: "🚀", text: "Leveling up grants a big time bonus." },
         { isHeader: true,  text: "⚙️ Dynamic Scaling" },
-        { icon: "🧠", text: "Numbers auto-reset back to 1 after reaching 100." },
-        { icon: "📉", text: "Striking wrong choices forces fly speed drops." },
-        { icon: "📈", text: "Success streaks steadily ramp speed back up." },
-        {icon:"✨",text:"A GLOW means the number is in the ring and collectible! "},
+        ...(dynamicsByMode[visualKey] || dynamicsByMode.skip)
       );
     }
 
-    // Rules Layout Coordinates Engine
     const rulesX = isMob ? cardX + 12 : cardX + visW + 24;
     const rulesY = isMob ? visY + visH + 10 : cardY + 82;
     const rulesW = isMob ? cardW - 24 : cardW - visW - 36;
-    
-    // Auto-calculate tight row heights to completely eliminate structural boundary collision
     const dynamicRowH = isMob ? (this._tutPage === 1 ? 26 : 30) : (this._tutPage === 1 ? 32 : 36);
 
     for (let i = 0; i < contentRows.length; i++) {
@@ -1219,7 +1297,6 @@ _startPlaying() {
       }
     }
 
-    // Hold & Action Navigation Footer System
     const holdY = cardY + cardH - (isMob ? 82 : 86);
     ctx.strokeStyle = `rgba(${hr(tColor)},0.15)`;
     ctx.lineWidth = 1;
@@ -1232,13 +1309,12 @@ _startPlaying() {
     if (hasFing) {
       this._tutHoldProgress = Math.min(1, this._tutHoldProgress + dt / this.HOLD_SEC);
       if (this._tutHoldProgress >= 1) {
-        // Multi-page redirection engine link
         if (this._tutPage === 1) {
           this._tutPage = 2;
-          this._tutHoldProgress = 0; // Flash reset progress bar for next page confirmation
-          this._tutEnterAnim = 0.3;  // Quick re-fade effect layout anchor
+          this._tutHoldProgress = 0;
+          this._tutEnterAnim = 0.3;
         } else {
-          this._tutPage = 1; // Sanitize page value state back to baseline for standard gameplay init loops
+          this._tutPage = 1;
           ctx.globalAlpha = 1;
           this._startPlaying();
           return;
@@ -1291,7 +1367,6 @@ _startPlaying() {
       ctx.shadowBlur = 0;
     }
 
-    // Finger Calibration Dot System Tracking Overlay
     if (hasFing) {
       const fx = fingers[0].x, fy = fingers[0].y;
       const FING_R = 28;
@@ -1742,7 +1817,15 @@ _startPlaying() {
     this.hintState = "full";
     this.noiseTime = 0;
     this.overlayData = null;
-    this.nextRoundPlan = this._buildRoundPlan();
+
+    // ── FIXED: reuse the plan already generated & shown during the
+    //    tutorial instead of rolling a brand-new random one here.
+    //    Only build a fresh plan if none exists yet, or if it was
+    //    built for a different mode (safety fallback). ──
+    if (!this.nextRoundPlan || this.nextRoundPlan.mode !== this.mode) {
+      this.nextRoundPlan = this._buildRoundPlan();
+    }
+
     this.currentRoundPlan = null;
     this._syncDifficultyScalars();
     this.noteSpeed = this.speedCap;
@@ -2939,8 +3022,9 @@ _startPlaying() {
     const distFromCenter = Math.hypot(note.x - this.centerX, note.y - this.centerY);
     const isInsideRingZone = (distFromCenter - r) <= (this.currentOuterRadius + 15);
     
-    // ── CHANGED: Glow applies strictly based on POSITION, completely neutral to math rules ──
-    const shouldGlow = isInsideRingZone && !note.spawnProtected;
+    // ── Glow is ONLY allowed in skip ("default") and pattern modes ──
+    const glowEligibleMode = (this.mode === "default" || this.mode === "pattern");
+    const shouldGlow = glowEligibleMode && isInsideRingZone && !note.spawnProtected;
 
     ctx.save();
     
@@ -3152,64 +3236,68 @@ _startPlaying() {
   /* ── Hit text ────────────────────────────────────────────── */
  /* ── Hit text ────────────────────────────────────────────── */
   drawHitText(ctx) {
-    if (this.hitTextTimer<=0 && this.missQueue.length>0) {
-      this.missQueue.sort((a,b)=>a-b);
-      this.lastHitType = "YOU SKIPPED NUMBER " + this.missQueue.shift();
-      this.hitTextTimer=40; this._penalizeSpeed();
+  // ── FIXED: if a miss just landed in the queue while a CORRECT/WRONG
+  //    banner is still showing, cut that banner short so the miss text
+  //    shows up immediately instead of waiting out the remaining timer. ──
+  if (this.missQueue.length > 0 && this.hitTextTimer > 0 &&
+      (this.lastHitType === "CORRECT" || this.lastHitType === "WRONG")) {
+    this.hitTextTimer = 0;
+  }
+
+  if (this.hitTextTimer<=0 && this.missQueue.length>0) {
+    this.missQueue.sort((a,b)=>a-b);
+    this.lastHitType = "YOU SKIPPED NUMBER " + this.missQueue.shift();
+    this.hitTextTimer=40; this._penalizeSpeed();
+  }
+  if (this.hitTextTimer>0) {
+    const alpha=Math.sin((this.hitTextTimer/40)*Math.PI);
+    let color="#ffffff";
+    if (this.lastHitType==="CORRECT") color=this.C.correct;
+    else if (this.lastHitType==="WRONG") color=this.C.wrong;
+    else if (this.lastHitType.includes("SKIPPED")) color=this.C.gold;
+
+    ctx.save();
+    ctx.globalAlpha=alpha;
+    ctx.font="bold 34px 'Trebuchet MS', sans-serif";
+    ctx.textAlign="center";
+    ctx.textBaseline="middle";
+
+    const tx = this.centerX;
+    const ty = this.centerY - 130;
+
+    if (this.lastHitType.includes("SKIPPED")) {
+      const tw = ctx.measureText(this.lastHitType).width;
+      const padX = 30, padY = 16;
+      const bw = tw + padX * 2, bh = 34 + padY * 2;
+      const bx = tx - bw / 2, by = ty - bh / 2, br = bh / 2;
+
+      ctx.beginPath();
+      ctx.moveTo(bx+br,by);
+      ctx.arcTo(bx+bw,by,bx+bw,by+bh,br);
+      ctx.arcTo(bx+bw,by+bh,bx,by+bh,br);
+      ctx.arcTo(bx,by+bh,bx,by,br);
+      ctx.arcTo(bx,by,bx+bw,by,br);
+      ctx.closePath();
+
+      ctx.fillStyle = "rgba(6,13,26,0.94)";
+      ctx.fill();
+
+      ctx.strokeStyle = "rgba(245,200,66,0.65)";
+      ctx.lineWidth = 2;
+      ctx.shadowColor = this.C.gold;
+      ctx.shadowBlur = 14;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
     }
-    if (this.hitTextTimer>0) {
-      const alpha=Math.sin((this.hitTextTimer/40)*Math.PI);
-      let color="#ffffff";
-      if (this.lastHitType==="CORRECT") color=this.C.correct;
-      else if (this.lastHitType==="WRONG") color=this.C.wrong;
-      else if (this.lastHitType.includes("SKIPPED")) color=this.C.gold;
 
-      ctx.save();
-      ctx.globalAlpha=alpha;
-      ctx.font="bold 34px 'Trebuchet MS', sans-serif";
-      ctx.textAlign="center";
-      ctx.textBaseline="middle";
-
-      const tx = this.centerX;
-      const ty = this.centerY - 130;
-
-      if (this.lastHitType.includes("SKIPPED")) {
-        // ── Solid contrast banner (matches hint-change announcement style) ──
-        const tw = ctx.measureText(this.lastHitType).width;
-        const padX = 30, padY = 16;
-        const bw = tw + padX * 2, bh = 34 + padY * 2;
-        const bx = tx - bw / 2, by = ty - bh / 2, br = bh / 2;
-
-        ctx.beginPath();
-        ctx.moveTo(bx+br,by);
-        ctx.arcTo(bx+bw,by,bx+bw,by+bh,br);
-        ctx.arcTo(bx+bw,by+bh,bx,by+bh,br);
-        ctx.arcTo(bx,by+bh,bx,by,br);
-        ctx.arcTo(bx,by,bx+bw,by,br);
-        ctx.closePath();
-
-        // Deep navy solid fill — same family as your card/HUD backgrounds
-        ctx.fillStyle = "rgba(6,13,26,0.94)";
-        ctx.fill();
-
-        // Warm gold rim to tie into theme + separate from ring visually
-        ctx.strokeStyle = "rgba(245,200,66,0.65)";
-        ctx.lineWidth = 2;
-        ctx.shadowColor = this.C.gold;
-        ctx.shadowBlur = 14;
-        ctx.stroke();
-        ctx.shadowBlur = 0;
-      }
-
-      // Render final bright text payload with neon bloom
-      ctx.fillStyle=color;
-      ctx.shadowColor=color;
-      ctx.shadowBlur=18;
-      ctx.fillText(this.lastHitType, tx, ty);
-      ctx.restore();
-      this.hitTextTimer--;
-    }
-  },
+    ctx.fillStyle=color;
+    ctx.shadowColor=color;
+    ctx.shadowBlur=18;
+    ctx.fillText(this.lastHitType, tx, ty);
+    ctx.restore();
+    this.hitTextTimer--;
+  }
+},
   /* ── Mode activators ─────────────────────────────────────── */
   activatePatternMode() {
     this.mode="pattern";
@@ -3254,30 +3342,37 @@ activateTripleCannonMode() {
   },
 
   updateCannonNotes(ctx, dt) {
-    for (let i=this.notes.length-1; i>=0; i--) {
-      const note=this.notes[i];
-      note.x+=note.vx*dt; note.y+=note.vy*dt;
-      this.updateLauncherProtection(note); this._drawNoteCircle(ctx,note);
-      const m=120;
-      const off=note.x<-m||note.x>this.centerX*2+m||note.y<-m||note.y>this.centerY*2+m;
-      if (off) {
-        if (this.shouldCollectCannon(note.value)) {
-          this.roundMissedCorrect++;
-          this.totalMissedCorrect++;
-          this.missedCorrectStreak++;
-          this.wrongTouchStreak = 0;
-          if (this.missedCorrectStreak > this.roundMissStreakPeak) this.roundMissStreakPeak = this.missedCorrectStreak;
-          this.score-=10; this.combo=0; this.multiplier=1;
-          this.missQueue.push(note.value); this._penalizeSpeed();
-          this._adjustSkill(-(1.2 + Math.min(2, this.missedCorrectStreak * 0.22)));
-          this.createExplosion(note.x,note.y,"#e8a06d");
-        } else {
-          this.missedCorrectStreak = 0;
-        }
-        this.notes.splice(i,1);
+  for (let i=this.notes.length-1; i>=0; i--) {
+    const note=this.notes[i];
+    note.x+=note.vx*dt; note.y+=note.vy*dt;
+    this.updateLauncherProtection(note); this._drawNoteCircle(ctx,note);
+
+    // ── FIXED: was `const m = 120`, causing a visible delay between
+    //    the note leaving the canvas and the miss/hit-text registering.
+    //    Now the note is only considered "off" once it's fully past
+    //    the edge (its own radius), so the miss fires basically the
+    //    instant it disappears visually. ──
+    const m = note.radius;
+    const off=note.x<-m||note.x>this.centerX*2+m||note.y<-m||note.y>this.centerY*2+m;
+
+    if (off) {
+      if (this.shouldCollectCannon(note.value)) {
+        this.roundMissedCorrect++;
+        this.totalMissedCorrect++;
+        this.missedCorrectStreak++;
+        this.wrongTouchStreak = 0;
+        if (this.missedCorrectStreak > this.roundMissStreakPeak) this.roundMissStreakPeak = this.missedCorrectStreak;
+        this.score-=10; this.combo=0; this.multiplier=1;
+        this.missQueue.push(note.value); this._penalizeSpeed();
+        this._adjustSkill(-(1.2 + Math.min(2, this.missedCorrectStreak * 0.22)));
+        this.createExplosion(note.x,note.y,"#e8a06d");
+      } else {
+        this.missedCorrectStreak = 0;
       }
+      this.notes.splice(i,1);
     }
-  },
+  }
+},
 
   drawCannon(ctx) {
     const size=this.baseOuterRadius*0.35;
