@@ -252,24 +252,33 @@ const Game10 = {
   /* ============================================================
      TUTORIAL DRAW
   ============================================================ */
+  /* ============================================================
+     TUTORIAL DRAW (Page-Based Structure & Clear Boundaries)
+  ============================================================ */
   _updateTutorial(ctx, fingers, dt) {
     this._tutEnterAnim = Math.min(1, this._tutEnterAnim + dt * 2);
     this._tutOrbT     += dt;
     this._tutPulseT   += dt * 1.8;
+
+    if (this._tutPage === undefined) {
+      this._tutPage = 1;
+    }
+
     const eA    = t => 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 3);
     const alpha = eA(this._tutEnterAnim);
     const W = this.cssWidth, H = this.cssHeight;
     const cx = this.CENTER_X, cy = this.CENTER_Y;
     const T = this.T;
 
-    // ── Background (matches game exactly)
+    /* Background matching game environment */
     const bg = ctx.createLinearGradient(0, 0, 0, H);
     bg.addColorStop(0, T.bg1); bg.addColorStop(0.5, T.bg2); bg.addColorStop(1, T.bg3);
     ctx.globalAlpha = alpha; ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    
     const ag = ctx.createRadialGradient(cx, cy * 0.7, 0, cx, cy * 0.7, W * 0.55);
     ag.addColorStop(0, "rgba(124,58,237,0.12)"); ag.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = ag; ctx.fillRect(0, 0, W, H);
-    // Stars
+
     for (const s of this._tutStars) {
       s.tw += s.ts;
       ctx.globalAlpha = alpha * Math.max(0, s.a + Math.sin(s.tw) * 0.12);
@@ -286,7 +295,7 @@ const Game10 = {
     const cR     = 20;
     const hr = s => { const h=(s||"").replace("#",""); const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16); return isNaN(r)?"124,58,237":`${r},${g},${b}`; };
 
-    // Card
+    /* Card Frame structure */
     ctx.shadowColor = tColor; ctx.shadowBlur = 28;
     ctx.fillStyle = "rgba(18,12,46,0.96)";
     ctx.beginPath(); ctx.roundRect(cardX, cardY, cardW, cardH, cR); ctx.fill(); ctx.shadowBlur = 0;
@@ -294,16 +303,17 @@ const Game10 = {
     ctx.fillStyle = `rgba(${hr(tColor)},0.16)`;
     ctx.beginPath(); ctx.roundRect(cardX, cardY, cardW, 56, [cR, cR, 0, 0]); ctx.fill();
 
-    // Header
+    /* Header text rendering */
     ctx.font = `bold ${isMob ? 22 : 28}px 'Fredoka', 'Trebuchet MS', sans-serif`;
     ctx.fillStyle = "#a78bfa"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.shadowColor = "#a78bfa"; ctx.shadowBlur = 14;
     ctx.fillText("🌌  GALAXY COLLECTOR", cx, cardY + 28); ctx.shadowBlur = 0;
+    
     ctx.font = `${isMob ? 12 : 14}px 'Fredoka', 'Trebuchet MS', sans-serif`;
     ctx.fillStyle = "rgba(226,232,240,0.68)";
-    ctx.fillText("Like Pac-Man in space — BE the portal and swallow matching numbers!", cx, cardY + 65);
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Core Mechanics & Target UI' : 'Time Metrics & Risk Parameters'}`, cx, cardY + 65);
 
-    // Visual box
+    /* Left Side Mini-Diagram Box Frame */
     const visX = cardX + 12, visY = cardY + 76;
     const visW = isMob ? cardW - 24 : cardW * 0.42;
     const visH = isMob ? 140 : cardH - 200;
@@ -312,33 +322,60 @@ const Game10 = {
     ctx.strokeStyle = `rgba(${hr(tColor)},0.14)`; ctx.lineWidth = 1; ctx.stroke();
     this._drawTutVisual(ctx, visX, visY, visW, visH, this._tutOrbT);
 
-    // Rules
-    const rules = [
-      { icon: "👆", text: "Your index finger IS the portal on screen" },
-      { icon: "🌌", text: "Move the portal to absorb floating numbers" },
-      { icon: "✅", text: "Collect ONLY numbers with the suffix shown on portal" },
-      { icon: "❌", text: "Wrong number = lost heart + black hole collapses!" },
-      { icon: "⭐", text: "Collect all correct numbers to trigger a Big Bang!" },
-    ];
+    /* Split Pagination Rows Matrix */
+    const contentRows = [];
+    if (this._tutPage === 1) {
+      contentRows.push(
+        { isHeader: true,  text: "🎮 Gameplay" },
+        { icon: "👆", text: "Your index finger controls the portal" },
+        { icon: "🌌", text: "Move portal around to absorb numbers" },
+        { icon: "✅", text: "Swallow numbers matching portal suffix" },
+        { isHeader: true,  text: "⭐ Score Parameters" },
+        { icon: "✨", text: "Correct match grants +10 score instantly" },
+        { icon: "🔥", text: "Consecutive matches multiply total scores" }
+      );
+    } else {
+      contentRows.push(
+        { isHeader: true,  text: "⏱️ Round Vital Metrics" },
+        { icon: "❤️", text: "You begin with 3 full structural hearts" },
+        { icon: "⏳", text: "absorbing incorrect numbers drops 1 heart" },
+        { isHeader: true,  text: "⚙️ Cosmic Dynamic Scales" },
+        { icon: "❌", text: "Errors drop points and collapse black holes" },
+        { icon: "🌟", text: "Clearing all targets triggers a Big Bang" }
+      );
+    }
+
     const rulesX = isMob ? cardX + 12 : cardX + visW + 24;
     const rulesY = isMob ? visY + visH + 10 : cardY + 76;
     const rulesW = isMob ? cardW - 24 : cardW - visW - 36;
-    const rowH   = isMob ? 34 : 42;
-    for (let i = 0; i < rules.length; i++) {
+    const dynamicRowH = isMob ? (this._tutPage === 1 ? 30 : 34) : (this._tutPage === 1 ? 36 : 42);
+
+    for (let i = 0; i < contentRows.length; i++) {
+      const item = contentRows[i];
+      const currentY = rulesY + (i * dynamicRowH);
       const prog = Math.max(0, Math.min(1, (this._tutEnterAnim - i * 0.08) / 0.6));
       ctx.globalAlpha = alpha * (1 - Math.pow(1 - prog, 3));
-      ctx.fillStyle = i % 2 === 0 ? "rgba(18,10,50,0.55)" : "rgba(10,6,30,0.4)";
-      ctx.beginPath(); ctx.roundRect(rulesX, rulesY + i * rowH, rulesW, rowH - 4, 8); ctx.fill();
-      ctx.font = `${isMob ? 15 : 17}px 'Fredoka', 'Trebuchet MS', sans-serif`;
-      ctx.fillStyle = T.textPrimary; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      ctx.fillText(rules[i].icon, rulesX + 10, rulesY + i * rowH + rowH / 2 - 2);
-      ctx.font = `${isMob ? 11 : 13}px 'Fredoka', 'Trebuchet MS', sans-serif`;
-      ctx.fillStyle = `rgba(226,232,240,0.85)`;
-      ctx.fillText(rules[i].text, rulesX + 36, rulesY + i * rowH + rowH / 2 - 2);
+
+      if (item.isHeader) {
+        ctx.font = `bold ${isMob ? 13 : 15}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+        ctx.fillStyle = "#a78bfa"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(item.text, rulesX + 4, currentY + dynamicRowH / 2);
+      } else {
+        ctx.fillStyle = i % 2 === 0 ? "rgba(18,10,50,0.55)" : "rgba(10,6,30,0.4)";
+        ctx.beginPath(); ctx.roundRect(rulesX, currentY, rulesW, dynamicRowH - 4, 8); ctx.fill();
+        
+        ctx.font = `${isMob ? 15 : 17}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+        ctx.fillStyle = T.textPrimary; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(item.icon, rulesX + 10, currentY + dynamicRowH / 2 - 2);
+        
+        ctx.font = `${isMob ? 11.5 : 13.5}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+        ctx.fillStyle = `rgba(226,232,240,0.85)`;
+        ctx.fillText(item.text, rulesX + 36, currentY + dynamicRowH / 2 - 2);
+      }
     }
     ctx.globalAlpha = alpha;
 
-    // Hold section
+    /* Interactive Progress Divider and Hold Validation */
     const holdY = cardY + cardH - (isMob ? 82 : 86);
     ctx.strokeStyle = `rgba(${hr(tColor)},0.18)`; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(cardX + 20, holdY - 6); ctx.lineTo(cardX + cardW - 20, holdY - 6); ctx.stroke();
@@ -346,7 +383,18 @@ const Game10 = {
     const hasFing = fingers.length > 0;
     if (hasFing) {
       this._tutHoldProgress = Math.min(1, this._tutHoldProgress + dt / this.HOLD_SEC);
-      if (this._tutHoldProgress >= 1) { ctx.globalAlpha = 1; this._startPlaying(); return; }
+      if (this._tutHoldProgress >= 1) {
+        if (this._tutPage === 1) {
+          this._tutPage = 2;
+          this._tutHoldProgress = 0;
+          this._tutEnterAnim = 0.3;
+        } else {
+          this._tutPage = 1;
+          ctx.globalAlpha = 1;
+          this._startPlaying();
+          return;
+        }
+      }
     } else {
       this._tutHoldProgress = Math.max(0, this._tutHoldProgress - dt * 0.5);
     }
@@ -360,13 +408,16 @@ const Game10 = {
       ctx.fillText("☝ Raise your index finger to the camera!", cx, holdY + 18); ctx.shadowBlur = 0;
       ctx.font = `${isMob ? 11 : 13}px 'Fredoka', 'Trebuchet MS', sans-serif`;
       ctx.fillStyle = "rgba(167,139,250,0.65)";
-      ctx.fillText("Hold still for 3 seconds to start playing", cx, holdY + 40);
+      const promptStr = this._tutPage === 1 ? "Hold still for 3 seconds to view Page 2" : "Hold still for 3 seconds to launch";
+      ctx.fillText(promptStr, cx, holdY + 40);
     } else {
       const pct = Math.round(this._tutHoldProgress * 100);
       ctx.font = `bold ${isMob ? 13 : 15}px 'Fredoka', 'Trebuchet MS', sans-serif`;
       ctx.fillStyle = "#a78bfa"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.shadowColor = "#a78bfa"; ctx.shadowBlur = 10;
-      ctx.fillText(`Hold still... ${pct}%`, cx, holdY + 16); ctx.shadowBlur = 0;
+      const actionStr = this._tutPage === 1 ? `Loading Page 2... ${pct}%` : `Hold still... ${pct}%`;
+      ctx.fillText(actionStr, cx, holdY + 16); ctx.shadowBlur = 0;
+      
       const barW = cardW * 0.6, barH = 8, barX = cx - barW / 2, barY = holdY + 34;
       ctx.fillStyle = "rgba(18,10,50,0.8)";
       ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, 4); ctx.fill();
@@ -374,7 +425,7 @@ const Game10 = {
       ctx.beginPath(); ctx.roundRect(barX, barY, barW * this._tutHoldProgress, barH, 4); ctx.fill(); ctx.shadowBlur = 0;
     }
 
-    // Finger dot
+    /* Reticle Pass */
     if (hasFing) {
       const fx = fingers[0].x, fy = fingers[0].y;
       ctx.beginPath(); ctx.arc(fx, fy, 38, 0, Math.PI * 2);
