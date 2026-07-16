@@ -723,8 +723,9 @@ const Game1 = {
         {icon:"➕",text:"Finish a round = +20 seconds"},
         {icon:"🎯",text:"Numbers fly in from the ring toward center"},
         {icon:"✅",text:"Touch ONLY multiples (e.g. 3, 6, 9 for Skip 3)"},
-        {icon:"✨",text:"A NEUTRAL GLOW means the number is inside the ring and collectible!"}, // ── NEW RULE ──
-        {icon:"💍",text:"Only tap when a number is touching the ring"},
+        {icon:"✨",text:"A NEUTRAL GLOW means the number is inside the ring and collectible!"}, 
+        // ── UPDATED TEXT ──
+        {icon:"💍",text:"Tap numbers inside the ring before they escape!"},
         {icon:"⚠️",text:"Miss a good number = score goes down"},
         {icon:"❌",text:"Wrong touch = lose points + your streak breaks + speed drops"},
         {icon:"🔥",text:"5-combo streaks multiply your score!"},
@@ -742,8 +743,9 @@ const Game1 = {
         {icon:"🎶",text:"Numbers appear in a repeating skip-collect cycle"},
         {icon:"⏭️",text:"SKIP a set, then COLLECT a set — repeat"},
         {icon:"🧠",text:"E.g. Skip 2, Collect 3 → ✗✗✓✓✓ then repeat"},
-        {icon:"✨",text:"A NEUTRAL GLOW means the number is inside the ring and collectible! "}, // ── NEW RULE ──
-        {icon:"💍",text:"Only tap when a number is on the ring"},
+        {icon:"✨",text:"A NEUTRAL GLOW means the number is inside the ring and collectible! "}, 
+        // ── UPDATED TEXT ──
+        {icon:"💍",text:"Tap numbers inside the ring before they escape!"},
         {icon:"⚠️",text:"Miss a good number = score goes down"},
         {icon:"❌",text:"Wrong touch = lose points + your streak breaks + speed drops"},
         {icon:"🔥",text:"5-combo streaks multiply your score!"},
@@ -1176,13 +1178,13 @@ _startPlaying() {
       skip: [
         { icon: "🎯", text: "Numbers fly from the ring toward the center." },
         { icon: "✅", text: `Collect multiples of ${previewSkip}.` },
-        { icon: "💍", text: "Tap only when a number is touching the ring." },
+        { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
         { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
       ],
       pattern: [
         { icon: "🎶", text: "Numbers cycle: skip a set, then collect a set." },
         { icon: "🧠", text: `Skip ${previewSkip}, Collect ${previewCollect} — then repeat.` },
-        { icon: "💍", text: "Tap only when a number is touching the ring." },
+        { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
         { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
       ],
       cannon: [
@@ -1912,14 +1914,13 @@ _startPlaying() {
       nextRound = currentRound + 1;
     }
 
-    // --- Performance Skill-Based Timer Allocator ---
+    // --- Bonus time ---
     let dynamicBonusTime = 0;
     if (canLevelUp) {
       dynamicBonusTime = 250; // Flat 250 seconds award on level ups
     } else {
-      // Normal round bonuses scale dynamically from +10s up to +35s based on accuracy math
-      const skillFactor = Math.max(0, Math.min(1, roundSkillDelta / 64));
-      dynamicBonusTime = Math.round(10 + (skillFactor * 25));
+      // FIXED: flat +20s per completed round, matching the tutorial's stated rule
+      dynamicBonusTime = this.roundEndBonus; // 20
     }
 
     const summary = {
@@ -1931,6 +1932,8 @@ _startPlaying() {
       progressBefore,
       progressAfter: this.skillPoints,
       progressPercent: this._computeProgressPercent(false),
+      // FIXED: snapshot of time remaining BEFORE bonus is applied — this is what
+      // the statistics screen should display as "Time left"
       timeBeforeBonus: Math.max(0, Math.ceil(this.timeRemaining)),
       bonusTime: dynamicBonusTime,
       totalScore: this.score,
@@ -1964,7 +1967,9 @@ _startPlaying() {
     this.multiplier = 1;
     this.lastHitType = "";
 
-    // Apply the newly calculated rewards safely to our structural parameters
+    // Apply the bonus to the LIVE timer only now — this is what Round 2 (or the
+    // next level) will actually start with. The overlay itself must keep using
+    // summary.timeBeforeBonus / summary.bonusTime instead of this.timeRemaining.
     this.timeRemaining = Math.max(0, this.timeRemaining + dynamicBonusTime);
 
     this.assistTimeBonus = 0;
@@ -2523,8 +2528,10 @@ _startPlaying() {
     const box = this._drawOverlayCard(ctx, title, subtitle, this.C.gold, 500);
     const rows = [
       { label: "Next round", value: summary.nextRoundTitle || (this.currentRoundPlan ? this.currentRoundPlan.title : "Round ready") },
-      { label: "Time left", value: `${Math.ceil(this.timeRemaining)}s` },
-      { label: "Bonus time", value: `+${summary.bonusTime || this.roundEndBonus}s` },
+      // FIXED: use the pre-bonus snapshot instead of the live timer (which
+      // already has the bonus added by the time this screen renders)
+      { label: "Time left", value: `${summary.timeBeforeBonus != null ? summary.timeBeforeBonus : Math.ceil(this.timeRemaining)}s` },
+      { label: "Bonus time", value: `+${summary.bonusTime != null ? summary.bonusTime : this.roundEndBonus}s` },
       { label: "Score", value: `${this.score}` },
       { label: "Best combo", value: `${this.bestCombo}` },
       { label: "Next level", value: `${summary.progressPercent || this._computeProgressPercent(false)}% ready` },
