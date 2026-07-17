@@ -9,6 +9,7 @@
    • Game-over hearts=0: dreamy portal collapse (pastel vortex +
      sparkle implosion) — different from Game10's black hole
    • Loading screen preserved
+   • Tutorial Page 2 now shows the streak bonus points table
 ============================================================ */
 
 const Game9 = {
@@ -137,7 +138,7 @@ const Game9 = {
     this.correctThisLevel = 0;
     this.numberRange      = 10;
     this.streak           = 0;
-    this.bestStreak       = 0;
+    this.bestStreak        = 0;
     this.streakPulse      = 0;
     this.heartShakeTime   = 0;
     this.levelUpBurst     = null;
@@ -341,7 +342,7 @@ const Game9 = {
     
     ctx.font = `${isMob ? 12 : 14}px 'Fredoka', sans-serif`;
     ctx.fillStyle = "rgba(255,255,255,0.68)";
-    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Gameplay & Scoring' : 'Parameters & Dynamics'}`, cx, cardY + 65);
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Gameplay & Scoring' : 'Hearts & Streak Bonus'}`, cx, cardY + 65);
 
     /* Left Side Mini-Diagram Visual Sandbox Box */
     const visX = cardX + 12, visY = cardY + 76;
@@ -369,16 +370,18 @@ const Game9 = {
         { isHeader: true,  text: "⏱️ Health Metrics" },
         { icon: "⏱️", text: "You begin with 3 total structural hearts" },
         { icon: "⏳", text: "Delivering to an incorrect door drains 1 heart" },
-        { isHeader: true,  text: "⚙️ Dynamic Scales" },
-        { icon: "🔢", text: "Numbers shift range matching round difficulty" },
-        { icon: "🎯", text: "Ordinal mappings follow standard suffix rules" }
+        { isHeader: true,  text: "🔥 Streak Bonus Points" },
+        { icon: "✅", text: "0-2 in a row = +10 points" },
+        { icon: "✨", text: "3-4 in a row = +20 points" },
+        { icon: "⭐", text: "5-9 in a row = +30 points" },
+        { icon: "🔥", text: "10+ in a row = +50 points!" }
       );
     }
 
     const rulesX = isMob ? cardX + 12 : cardX + visW + 24;
     const rulesY = isMob ? visY + visH + 10 : cardY + 76;
     const rulesW = isMob ? cardW - 24 : cardW - visW - 36;
-    const dynamicRowH = isMob ? (this._tutPage === 1 ? 30 : 34) : (this._tutPage === 1 ? 36 : 42);
+    const dynamicRowH = isMob ? (this._tutPage === 1 ? 30 : 27) : (this._tutPage === 1 ? 36 : 33);
 
     for (let i = 0; i < contentRows.length; i++) {
       const item = contentRows[i];
@@ -398,7 +401,7 @@ const Game9 = {
         ctx.fillStyle = "#ffffff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
         ctx.fillText(item.icon, rulesX + 10, currentY + dynamicRowH / 2 - 2);
         
-        ctx.font = `${isMob ? 11.5 : 13.5}px 'Fredoka', sans-serif`;
+        ctx.font = `${isMob ? 11.5 : 13}px 'Fredoka', sans-serif`;
         ctx.fillStyle = "rgba(255,255,255,0.88)";
         ctx.fillText(item.text, rulesX + 36, currentY + dynamicRowH / 2 - 2);
       }
