@@ -1876,14 +1876,29 @@ _startPlaying() {
     this.nextRoundPlan = this._buildRoundPlan();
   },
 
+ /* ============================================================
+     UPDATED CORE GAMEPLAY & ROUND SYSTEM FUNCTIONS
+  ============================================================ */
+
   _beginRound() {
     this.gameState = "playing";
     this.roundNumber = this.nextRoundNumber || 1;
     this.nextRoundNumber = this.roundNumber + 1;
-    if (!this.nextRoundPlan) this.nextRoundPlan = this._buildRoundPlan();
+    
+    // Ensure we have a valid plan generated from the tutorial or previous round breakdown
+    if (!this.nextRoundPlan) {
+      this.nextRoundPlan = this._buildRoundPlan();
+    }
+    
+    // 1. Apply the plan to the active round state parameters FIRST
     this._applyRoundPlan(this.nextRoundPlan);
-    this._prepareNextRoundPlan();
+    
+    // 2. Clear out the staging slot so it doesn't cross contaminate overlay reads
+    this.nextRoundPlan = null;
+    
+    // 3. Reset all dynamic arrays, streaks, and hit counters safely
     this._resetRoundTransientState();
+    
     this.spawnInterval = this._getSpawnIntervalForLevel();
     this._restartSpawnTimer();
   },
@@ -1914,14 +1929,12 @@ _startPlaying() {
       nextRound = currentRound + 1;
     }
 
-    // --- Bonus time ---
-    let dynamicBonusTime = 0;
-    if (canLevelUp) {
-      dynamicBonusTime = 250; // Flat 250 seconds award on level ups
-    } else {
-      // FIXED: flat +20s per completed round, matching the tutorial's stated rule
-      dynamicBonusTime = this.roundEndBonus; // 20
-    }
+    let dynamicBonusTime = canLevelUp ? 250 : this.roundEndBonus;
+
+    // --- CRITICAL FIX: Generate the upcoming plan parameters HERE ---
+    // This creates the absolute single source of truth for the upcoming round
+    // before the overlays read and present the data card metrics.
+    this.nextRoundPlan = this._buildRoundPlan();
 
     const summary = {
       roundNumber: currentRound,
@@ -1932,8 +1945,6 @@ _startPlaying() {
       progressBefore,
       progressAfter: this.skillPoints,
       progressPercent: this._computeProgressPercent(false),
-      // FIXED: snapshot of time remaining BEFORE bonus is applied — this is what
-      // the statistics screen should display as "Time left"
       timeBeforeBonus: Math.max(0, Math.ceil(this.timeRemaining)),
       bonusTime: dynamicBonusTime,
       totalScore: this.score,
@@ -1942,8 +1953,9 @@ _startPlaying() {
       totalWrong: this.totalWrongTouches,
       totalMissed: this.totalMissedCorrect,
       assistTimeBonus: this.assistTimeBonus,
-      nextRoundLabel: this.nextRoundPlan ? this.nextRoundPlan.label : "",
-      nextRoundTitle: this.nextRoundPlan ? this.nextRoundPlan.title : "",
+      nextRoundLabel: this.nextRoundPlan.label,
+      nextRoundTitle: this.nextRoundPlan.title,
+      nextRoundMode: this.nextRoundPlan.mode,
       difficultyLabel: this._difficultyLabelForLevel(nextLevel),
       qualified: canLevelUp,
     };
@@ -1967,11 +1979,7 @@ _startPlaying() {
     this.multiplier = 1;
     this.lastHitType = "";
 
-    // Apply the bonus to the LIVE timer only now — this is what Round 2 (or the
-    // next level) will actually start with. The overlay itself must keep using
-    // summary.timeBeforeBonus / summary.bonusTime instead of this.timeRemaining.
     this.timeRemaining = Math.max(0, this.timeRemaining + dynamicBonusTime);
-
     this.assistTimeBonus = 0;
     this.assistAppliedThisRound = false;
 
@@ -1993,8 +2001,6 @@ _startPlaying() {
       this.nextRoundNumber = nextRound;
       this.gameState = "roundBreak";
     }
-
-    this._prepareNextRoundPlan();
   },
 
   _enterGameOver() {
@@ -2490,20 +2496,28 @@ _startPlaying() {
   },
 
   _startNextRoundFromOverlay() {
-    // If we are breaking into a brand new level, maintain the reset roundNumber (1)
     if (this.gameState === "levelExplain") {
-      this.nextRoundNumber = this.roundNumber; // Set next to 1 so _beginRound() initializes at Round 1
+      this.nextRoundNumber = this.roundNumber; 
     } else {
       this.roundNumber = this.nextRoundNumber || (this.roundNumber + 1);
     }
+    
+    // Safeguard plan generation parameters in case of anomalies
+    if (!this.nextRoundPlan) {
+      this.nextRoundPlan = this._buildRoundPlan();
+    }
+    
     this._beginRound();
   },
-
 
   _restartSessionFromGameOver() {
     this._resetSessionFlow(this._pendingMode || this.mode || "default");
     this._beginRound();
   },
+
+  /* ============================================================
+     UPDATED OVERLAY DRAWING & UI FEEDBACK FUNCTIONS
+  ============================================================ */
 
   _drawRoundBreakScreen(ctx, fingers, dt) {
     this._drawBg(ctx);
@@ -2526,10 +2540,12 @@ _startPlaying() {
     const title = `Round ${summary.roundNumber || this.roundNumber} complete!`;
     const subtitle = `Round ${summary.nextRoundNumber || (this.roundNumber + 1)} starts at 1`;
     const box = this._drawOverlayCard(ctx, title, subtitle, this.C.gold, 500);
+    
+    // --- CRITICAL FIX: Forces UI to look strictly at upcoming summary plan metadata ---
+    const targetTitle = summary.nextRoundTitle || (this.nextRoundPlan ? this.nextRoundPlan.title : "Get Ready!");
+
     const rows = [
-      { label: "Next round", value: summary.nextRoundTitle || (this.currentRoundPlan ? this.currentRoundPlan.title : "Round ready") },
-      // FIXED: use the pre-bonus snapshot instead of the live timer (which
-      // already has the bonus added by the time this screen renders)
+      { label: "Next round", value: targetTitle },
       { label: "Time left", value: `${summary.timeBeforeBonus != null ? summary.timeBeforeBonus : Math.ceil(this.timeRemaining)}s` },
       { label: "Bonus time", value: `+${summary.bonusTime != null ? summary.bonusTime : this.roundEndBonus}s` },
       { label: "Score", value: `${this.score}` },
@@ -2601,7 +2617,7 @@ _startPlaying() {
       this.overlayHoldProgress = Math.max(0, this.overlayHoldProgress - dt * 0.45);
     }
 
-    const box = this._drawOverlayCard(ctx, `Level ${summary.levelAfter || this.level}`, `Round ${summary.nextRoundNumber || (this.roundNumber + 1)} Ready!`, this.C.accent, 540);
+    const box = this._drawOverlayCard(ctx, `Level ${summary.levelAfter || this.level}`, `Round ${summary.nextRoundNumber || 1} Ready!`, this.C.accent, 540);
     const visX = box.cardX + 16, visY = box.cardY + 84;
     const visW = box.isMob ? box.cardW - 32 : Math.floor(box.cardW * 0.42);
     const visH = box.isMob ? 130 : 260;
@@ -2612,16 +2628,18 @@ _startPlaying() {
     ctx.strokeStyle = `rgba(${box.hr(this.C.accent)},0.14)`;
     ctx.lineWidth = 1;
     ctx.stroke();
+    
     this._tutOrbT += dt;
-    const _rawMode = (this.currentRoundPlan && this.currentRoundPlan.mode) || this.mode || this._pendingMode || "default";
-    const _visMode = _rawMode === "default" ? "skip" : _rawMode;
-    this._drawTutVisual(ctx, _visMode, visX, visY, visW, visH, this._tutOrbT, this.C.accent);
+    
+    // --- CRITICAL FIX: Pull visual modes directly from the pre-generated summary plan values ---
+    const targetMode = summary.nextRoundMode || (this.nextRoundPlan ? this.nextRoundPlan.mode : this.mode);
+    const visMode = targetMode === "default" ? "skip" : targetMode;
+    this._drawTutVisual(ctx, visMode, visX, visY, visW, visH, this._tutOrbT, this.C.accent);
 
     const rulesX = box.isMob ? box.cardX + 16 : box.cardX + visW + 24;
     const rulesY = box.isMob ? visY + visH + 12 : box.cardY + 84;
     const rulesW = box.isMob ? box.cardW - 32 : box.cardW - visW - 40;
     
-    // Simplified, kid-friendly rows that prevent layout overflow
     const rows = [
       { label: "What's New",       value: "Speed up! 🚀" },
       { label: "Game Speed",      value: "Numbers fly faster now!" },
