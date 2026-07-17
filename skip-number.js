@@ -807,6 +807,9 @@ const Game1 = {
   FINGER_UPDATE_INTERVAL: 22,
 
 
+  /* ── Spawn timing state (replaces setInterval) ─────────────── */
+_spawnAccumulator: 0,
+
   /* ============================================================
      INIT
   ============================================================ */
@@ -1904,12 +1907,12 @@ _startPlaying() {
   },
 
   _queueRoundEnd() {
-    if (this.roundWrapPending || this.gameState !== "playing") return;
-    this.roundWrapPending = true;
-    this.roundWrapDelay = 0.85;
-    if (this.spawnTimer) clearInterval(this.spawnTimer);
-  },
-
+  if (this.roundWrapPending || this.gameState !== "playing") return;
+  this.roundWrapPending = true;
+  this.roundWrapDelay = 0.85;
+  // spawn timer no longer exists — spawning stops automatically because
+  // _updateSpawning() checks roundWrapPending
+},
  _resolveRoundEnd() {
     if (this.gameState !== "playing") return;
     const roundSkillDelta = this._computeRoundSkillDelta();
@@ -2004,49 +2007,62 @@ _startPlaying() {
   },
 
   _enterGameOver() {
-    if (this.gameState === "gameOver") return;
-    this.gameState = "gameOver";
-    this.gameOverFade = 0;
-    this.overlayData = {
-      totalScore: this.score,
-      maxCombo: this.bestCombo,
-      totalWrong: this.totalWrongTouches,
-      totalMissed: this.totalMissedCorrect,
-      progressPercent: this._computeProgressPercent(true),
-      level: this.level,
-      roundNumber: this.roundNumber,
-    };
-    this.roundWrapPending = false;
-    this.roundWrapDelay = 0;
-    this.overlayHoldProgress = 0;
-    this.levelCongratsTapHold = 0;
-    this.gameOverFade = 0;
-    this.notes = [];
-    this.popEffects = [];
-    this.explosions = [];
-    this.missQueue = [];
-    this.pendingShot = null;
-    this.previewCannons = [];
-    this.previewTimer = 0;
-    this.isCharging = false;
-    this.charge = 0;
-    this.chargeParticles = [];
-    if (this.spawnTimer) clearInterval(this.spawnTimer);
-  },
-
+  if (this.gameState === "gameOver") return;
+  this.gameState = "gameOver";
+  this.gameOverFade = 0;
+  this.overlayData = { /* ...unchanged... */ };
+  this.roundWrapPending = false;
+  this.roundWrapDelay = 0;
+  this.overlayHoldProgress = 0;
+  this.levelCongratsTapHold = 0;
+  this.gameOverFade = 0;
+  this.notes = [];
+  this.popEffects = [];
+  this.explosions = [];
+  this.missQueue = [];
+  this.pendingShot = null;
+  this.previewCannons = [];
+  this.previewTimer = 0;
+  this.isCharging = false;
+  this.charge = 0;
+  this.chargeParticles = [];
+  // spawn timer no longer exists — nothing to clear
+},
   /* ============================================================
      SPAWN TIMER
   ============================================================ */
-  _restartSpawnTimer() {
-    if (this.spawnTimer) clearInterval(this.spawnTimer);
-    this.spawnTimer = setInterval(() => {
-      if (this.gameState !== "playing") return;
-      if      (this.mode === "cannon") this.spawnCannonNote();
-      else if (this.mode === "orb")    this.spawnOrbNote();
-      else if (this.mode === "triple") this.spawnTripleNote();
-      else                             this.spawnNote();
-    }, this.spawnInterval);
-  },
+  /**
+ * Called once per round-start / mode-switch to reset spawn timing.
+ * No longer creates a setInterval — spawning is now driven by the
+ * same dt clock as movement and the countdown timer, so it can't
+ * drift or burst independently of everything else.
+ */
+_restartSpawnTimer() {
+  this._spawnAccumulator = 0;
+},
+
+
+/**
+ * Frame-synced replacement for the old setInterval spawn loop.
+ * Called every update() tick with the (clamped) dt.
+ * guard caps catch-up spawns per frame so a big dt spike (e.g. app
+ * resuming from background) can't dump a pile of notes at once —
+ * this is what was causing the "6 numbers spawn instantly" bug.
+ */
+_updateSpawning(dt) {
+  if (this.gameState !== "playing" || this.roundWrapPending) return;
+  this._spawnAccumulator += dt * 1000; // ms, matches this.spawnInterval's units
+
+  let guard = 0;
+  while (this._spawnAccumulator >= this.spawnInterval && guard < 2) {
+    this._spawnAccumulator -= this.spawnInterval;
+    guard++;
+    if      (this.mode === "cannon") this.spawnCannonNote();
+    else if (this.mode === "orb")    this.spawnOrbNote();
+    else if (this.mode === "triple") this.spawnTripleNote();
+    else                             this.spawnNote();
+  }
+},
 
   /* ============================================================
      ADAPTIVE SPEED
@@ -2716,103 +2732,94 @@ _startPlaying() {
      MAIN UPDATE
   ============================================================ */
   update(ctx, fingers, dt = 1/60) {
-    if (this.gameState === "tutorial") {
-      this._updateTutorial(ctx, fingers, dt);
-      return;
-    }
+  // Clamp runaway dt spikes from tab/app backgrounding, camera-permission
+  // dialogs, or device stutters. Without this, a 3-5s dt spike can yank
+  // timeRemaining down in one frame or fling notes across huge distances.
+  dt = Math.min(dt, 1 / 20);
 
-    if (this.gameState === "loading") {
-      return;
-    }
+  if (this.gameState === "tutorial") {
+    this._updateTutorial(ctx, fingers, dt);
+    return;
+  }
 
-    if (this.gameState === "roundBreak") {
-      this._drawRoundBreakScreen(ctx, fingers, dt);
-      return;
-    }
+  if (this.gameState === "loading") return;
 
-    if (this.gameState === "levelCongrats") {
-      this._drawLevelCongratsScreen(ctx, fingers, dt);
-      return;
-    }
+  if (this.gameState === "roundBreak")     { this._drawRoundBreakScreen(ctx, fingers, dt); return; }
+  if (this.gameState === "levelCongrats")  { this._drawLevelCongratsScreen(ctx, fingers, dt); return; }
+  if (this.gameState === "levelExplain")   { this._drawLevelExplainScreen(ctx, fingers, dt); return; }
+  if (this.gameState === "gameOver")       { this._drawGameOverScreen(ctx, fingers, dt); return; }
 
-    if (this.gameState === "levelExplain") {
-      this._drawLevelExplainScreen(ctx, fingers, dt);
-      return;
-    }
+  // ── Live Playing State (Double Tap Active) ──
+  this._noHandDuration = 0;
+  const pauseBtn = document.getElementById("pauseBtn");
+  if (pauseBtn) {
+    pauseBtn.style.display = "none";
+    pauseBtn.style.opacity = "0";
+  }
 
-    if (this.gameState === "gameOver") {
-      this._drawGameOverScreen(ctx, fingers, dt);
-      return;
-    }
+  this._drawBg(ctx);
+  this._drawBgStars(ctx);
+  this._updateLevelUp(dt);
+  this.noiseTime += dt * 1.8;
+  this._driftSpeed(dt);
+  const assistDrain = this._computeProgressPercent(false) >= 72 ? 0.55 : 1;
+  this.timeRemaining = Math.max(0, this.timeRemaining - (dt * assistDrain));
+  this._maybeGrantAssistTime();
+  if (this.timeRemaining <= 0) {
+    this._enterGameOver();
+    this._drawGameOverScreen(ctx, fingers, dt);
+    return;
+  }
 
-    // ── Live Playing State (Double Tap Active) ──
-    this._noHandDuration = 0;
-    const pauseBtn = document.getElementById("pauseBtn");
-    if (pauseBtn) {
-      pauseBtn.style.display = "none";
-      pauseBtn.style.opacity = "0";
-    }
-
+  if (this.roundWrapPending) {
     this._drawBg(ctx);
     this._drawBgStars(ctx);
-    this._updateLevelUp(dt);
-    this.noiseTime += dt * 1.8;
-    this._driftSpeed(dt);
-    const assistDrain = this._computeProgressPercent(false) >= 72 ? 0.55 : 1;
-    this.timeRemaining = Math.max(0, this.timeRemaining - (dt * assistDrain));
-    this._maybeGrantAssistTime();
-    if (this.timeRemaining <= 0) {
-      this._enterGameOver();
-      this._drawGameOverScreen(ctx, fingers, dt);
+    this.roundWrapDelay -= dt;
+    if (this.roundWrapDelay <= 0) {
+      this._resolveRoundEnd();
       return;
     }
+    return;
+  }
 
-    if (this.roundWrapPending) {
-      this._drawBg(ctx);
-      this._drawBgStars(ctx);
-      this.roundWrapDelay -= dt;
-      if (this.roundWrapDelay <= 0) {
-        this._resolveRoundEnd();
-        return;
-      }
-      return;
+  // ── NEW: dt-synced spawning replaces the old setInterval ──
+  this._updateSpawning(dt);
+
+  const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
+  if (!isLauncher) this.drawRings(ctx, dt);
+
+  if      (this.mode === "cannon") { this.updateCannonNotes(ctx, dt); this.drawCannon(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
+  else if (this.mode === "orb")    { this.updateCannonNotes(ctx, dt); this.drawOrbLauncher(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
+  else if (this.mode === "triple") { this.updateCannonNotes(ctx, dt); this.drawTripleCannons(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); }
+  else                             { this.drawNotes(ctx, dt); }
+
+  if (this.mode === "triple" && this.previewTimer > 0) {
+    this.previewTimer -= dt;
+    if (this.previewTimer <= 0) this.executeTripleShot();
+  }
+
+  this.drawPopEffects(ctx);
+
+  fingers.forEach(finger => {
+    this.drawFinger(ctx, finger.x, finger.y);
+  });
+
+  const now = performance.now();
+  if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
+    this._lastFingerUpdateTime = now;
+    for (let i = 0; i < fingers.length; i++) {
+      const finger = fingers[i];
+      if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
+      else            this.checkCollision(finger.x, finger.y);
     }
+  }
 
-    const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
-    if (!isLauncher) this.drawRings(ctx, dt);
-
-    if      (this.mode === "cannon") { this.updateCannonNotes(ctx, dt); this.drawCannon(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
-    else if (this.mode === "orb")    { this.updateCannonNotes(ctx, dt); this.drawOrbLauncher(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
-    else if (this.mode === "triple") { this.updateCannonNotes(ctx, dt); this.drawTripleCannons(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); }
-    else                             { this.drawNotes(ctx, dt); }
-
-    if (this.mode === "triple" && this.previewTimer > 0) {
-      this.previewTimer -= dt;
-      if (this.previewTimer <= 0) this.executeTripleShot();
-    }
-
-    this.drawPopEffects(ctx);
-
-    fingers.forEach(finger => {
-      this.drawFinger(ctx, finger.x, finger.y);
-    });
-
-    const now = performance.now();
-    if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
-      this._lastFingerUpdateTime = now;
-      for (let i = 0; i < fingers.length; i++) {
-        const finger = fingers[i];
-        if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
-        else            this.checkCollision(finger.x, finger.y);
-      }
-    }
-
-    this._drawHUD(ctx, isLauncher);
-    this._drawLevelUpBurst(ctx);
-    this._drawHintChangeAnnouncement(ctx, dt);
-    this.drawHitText(ctx);
-    this._drawNoFingerPrompt(ctx, dt);
-  },
+  this._drawHUD(ctx, isLauncher);
+  this._drawLevelUpBurst(ctx);
+  this._drawHintChangeAnnouncement(ctx, dt);
+  this.drawHitText(ctx);
+  this._drawNoFingerPrompt(ctx, dt);
+},
 
   /* ── Finger ─────────────────────────────────────────────── */
   drawFinger(ctx, x, y) {
@@ -2988,53 +2995,177 @@ _startPlaying() {
     });
   },
   drawNotes(ctx, dt) {
-    // Ensure the protection ring circle is drawn on screen for Skip and Pattern modes too
-    const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
-    if (!isLauncher) {
-      this.drawLauncherZone(ctx);
-    }
+  const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
+  if (!isLauncher) {
+    this.drawLauncherZone(ctx);
+  }
 
-    for (let i = this.notes.length - 1; i >= 0; i--) {
-      const note = this.notes[i];
-      const dx = this.centerX - note.x, dy = this.centerY - note.y;
-      const len = Math.sqrt(dx*dx + dy*dy);
-      const step = Math.min(this.noteSpeed * dt, len);
-      note.x += (dx/len)*step; note.y += (dy/len)*step;
-      
-      this._drawNoteCircle(ctx, note);
-      
-      // Update entry into the central no-hit protection boundary ring area
-      if (len <= this.launcherSafeRadius) {
-        note.spawnProtected = true; // Flips state flag to active no-hit confirmation
+  for (let i = this.notes.length - 1; i >= 0; i--) {
+    const note = this.notes[i];
+
+    // ── Note is mid-despawn animation: animate + splice when done ──
+    if (note.despawning) {
+      note.despawnT += dt;
+
+      // Particles are created lazily on the FIRST despawn-draw frame,
+      // not on the trigger frame (which already does scoring/streak/
+      // skill math). Keeps the heavy "note hit center" frame light.
+      if (!note._despawnParticles) {
+        note._despawnParticles = [];
+        const count = note.despawnWasCorrect ? 9 : 4;
+        for (let p = 0; p < count; p++) {
+          const a = (p / count) * Math.PI * 2 + Math.random() * 0.6;
+          const v = (note.despawnWasCorrect ? 100 : 55) + Math.random() * 60;
+          note._despawnParticles.push({
+            x: this.centerX, y: this.centerY,
+            vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+            life: 1
+          });
+        }
       }
 
-      if (len <= step + 1) {
-        if (this.shouldCollect(note.value)) {
-          this.roundMissedCorrect++;
-          this.totalMissedCorrect++;
-          this.missedCorrectStreak++;
-          this.wrongTouchStreak = 0;
-          if (this.missedCorrectStreak > this.roundMissStreakPeak) this.roundMissStreakPeak = this.missedCorrectStreak;
-          this.score -= 10;
-          this.combo = 0;
-          this.multiplier = 1;
-          this._adjustSkill(-(1.2 + Math.min(2, this.missedCorrectStreak * 0.22)));
-          this.missQueue.push(note.value);
-        } else {
-          this.missedCorrectStreak = 0;
-        }
+      this._drawDespawnEffect(ctx, note, dt);
 
-        if (note.value === this.maxNumber) {
-          this.roundWrapPending = true;
-          this.roundWrapDelay = 1.0; 
-          if (this.spawnTimer) clearInterval(this.spawnTimer);
-        }
-
+      if (note.despawnT >= note.despawnDuration) {
         this.notes.splice(i, 1);
       }
+      continue;
     }
-  },
 
+    const dx = this.centerX - note.x, dy = this.centerY - note.y;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const step = Math.min(this.noteSpeed * dt, len);
+    note.x += (dx/len)*step; note.y += (dy/len)*step;
+
+    // Update entry into the central no-hit protection boundary ring area
+    if (len <= this.launcherSafeRadius) {
+      note.spawnProtected = true;
+    }
+
+    const reachedCenter = len <= step + 1;
+
+    if (reachedCenter) {
+      const wasCorrect = this.shouldCollect(note.value);
+
+      if (wasCorrect) {
+        this.roundMissedCorrect++;
+        this.totalMissedCorrect++;
+        this.missedCorrectStreak++;
+        this.wrongTouchStreak = 0;
+        if (this.missedCorrectStreak > this.roundMissStreakPeak) this.roundMissStreakPeak = this.missedCorrectStreak;
+        this.score -= 10;
+        this.combo = 0;
+        this.multiplier = 1;
+        this._adjustSkill(-(1.2 + Math.min(2, this.missedCorrectStreak * 0.22)));
+        this.missQueue.push(note.value);
+      } else {
+        this.missedCorrectStreak = 0;
+      }
+
+      if (note.value === this.maxNumber) {
+        this.roundWrapPending = true;
+        this.roundWrapDelay = 1.0;
+        if (this.spawnTimer) clearInterval(this.spawnTimer);
+      }
+
+      // ── Hand off to despawn animation instead of an instant splice.
+      //    Particle creation is deferred to next frame (see above) so
+      //    this trigger frame stays cheap. ──
+      note.x = this.centerX;
+      note.y = this.centerY;
+      note.despawning = true;
+      note.despawnT = 0;
+      note.despawnDuration = wasCorrect ? 0.34 : 0.22;
+      note.despawnWasCorrect = wasCorrect;
+      note._despawnParticles = null;
+      continue;
+    }
+
+    this._drawNoteCircle(ctx, note);
+  }
+},
+
+/**
+ * Collapse animation played when a note reaches the center unhit —
+ * replaces an instant splice() with a shrinking core, an outward
+ * shockwave ring, and a few spark particles.
+ *
+ * Deliberately avoids ctx.shadowBlur (expensive, especially combined
+ * with "lighter" composite mode — was the cause of the ~10ms hitch).
+ * Glow is done via radial gradients instead, which are much cheaper
+ * for the canvas rasterizer.
+ *
+ * wasCorrect drives color: red/gold "ouch" burst for missed correct
+ * numbers, a cooler blue/neutral fizzle for numbers that didn't need
+ * collecting.
+ */
+_drawDespawnEffect(ctx, note, dt) {
+  const t = Math.min(1, note.despawnT / note.despawnDuration);
+  const ease = 1 - Math.pow(1 - t, 3); // ease-out cubic
+  const r = note.radius;
+  const wasCorrect = note.despawnWasCorrect;
+  const cx = this.centerX, cy = this.centerY;
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+
+  // Outward shockwave ring
+  const waveR = r * (1 + ease * 2.4);
+  const waveAlpha = (1 - ease) * (wasCorrect ? 0.55 : 0.3);
+  if (waveAlpha > 0.01) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, waveR, 0, Math.PI * 2);
+    ctx.strokeStyle = wasCorrect
+      ? `rgba(232,124,109,${waveAlpha})`
+      : `rgba(142,202,230,${waveAlpha})`;
+    ctx.lineWidth = 2.5 * (1 - ease) + 0.6;
+    ctx.stroke();
+  }
+
+  // Shrinking, fading core — glow via gradient, NOT shadowBlur
+  const coreR = Math.max(0, r * (1 - ease));
+  if (coreR > 0.5) {
+    const glowR = coreR * 2.2;
+    const hot = wasCorrect ? "232,124,109" : "142,202,230";
+    const grd = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR);
+    grd.addColorStop(0,   `rgba(${hot},${0.9 * (1 - ease)})`);
+    grd.addColorStop(0.5, `rgba(${hot},${0.35 * (1 - ease)})`);
+    grd.addColorStop(1,   `rgba(${hot},0)`);
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(cx, cy, glowR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Spark particles (created lazily by drawNotes on the first despawn frame)
+  if (note._despawnParticles) {
+    ctx.fillStyle = wasCorrect ? "#f5c842" : "#c8dff0";
+    for (const p of note._despawnParticles) {
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.life -= dt / note.despawnDuration;
+      if (p.life <= 0) continue;
+      ctx.globalAlpha = Math.max(0, p.life) * 0.85;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  // Number fades out with the core (readable, not jarring)
+  if (t < 0.55) {
+    ctx.globalAlpha = 1 - (t / 0.55);
+    ctx.fillStyle = this.C.noteText;
+    ctx.font = `bold ${Math.round(r * 0.72)}px 'Trebuchet MS', sans-serif`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(note.value, cx, cy);
+    ctx.globalAlpha = 1;
+  }
+
+  ctx.restore();
+},
  _drawNoteCircle(ctx, note) {
     const r   = note.radius;
     const isC = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple")
@@ -3142,64 +3273,65 @@ _startPlaying() {
   shouldCollectCannon(number) { return number % this.skipAmount === 0; },
 
  checkCollision(fingerX, fingerY) {
-    for (let index = this.notes.length - 1; index >= 0; index--) {
-      const note = this.notes[index];
-      
-      // GUARD: If a number is 100% inside our protection zone, it becomes a no-hit zone
-      if (note.spawnProtected) continue;
+  for (let index = this.notes.length - 1; index >= 0; index--) {
+    const note = this.notes[index];
 
-      const dx = fingerX - note.x, dy = fingerY - note.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      
-      const dfc = Math.sqrt((note.x - this.centerX)**2 + (note.y - this.centerY)**2);
-      
-      // Optimized Condition: Valid collection anywhere INSIDE or ON the outer boundary ring radius limit
-      const validCaptureArea = dfc - note.radius <= this.currentOuterRadius;
+    // GUARD: skip notes inside the protection zone AND notes already
+    // mid-despawn-animation (they're no longer live targets).
+    if (note.spawnProtected || note.despawning) continue;
 
-      if (dist < note.radius + 20 && validCaptureArea) {
-        if (this.shouldCollect(note.value)) {
-          this.roundCorrectTouches++;
-          this.totalCorrectTouches++;
-          this.wrongTouchStreak = 0;
-          this.missedCorrectStreak = 0;
-          this.combo++;
-          if (this.combo > this.bestCombo) this.bestCombo = this.combo;
-          if (this.combo > this.roundMaxCombo) this.roundMaxCombo = this.combo;
-          if (this.combo % 5 === 0) {
-            this.multiplier++;
-            this._gainXP(1);
-          }
-          this.score += 10 * this.multiplier; 
-          this.lastHitType = "CORRECT";
-          this._gainXP(1); 
-          this._recoverSpeed();
-          if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x, y:note.y, life:0, color:this.C.correct});
-        } else {
-          this.roundWrongTouches++;
-          this.totalWrongTouches++;
-          this.wrongTouchStreak++;
-          this.missedCorrectStreak = 0;
-          if (this.wrongTouchStreak > this.roundWrongStreakPeak) this.roundWrongStreakPeak = this.wrongTouchStreak;
-          this.combo = 0; 
-          this.multiplier = 1; 
-          this.score -= 5; 
-          this.lastHitType = "WRONG";
-          this._adjustSkill(-(1 + Math.min(2, this.wrongTouchStreak * 0.18)));
-          this._penalizeSpeed();
-          if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x, y:note.y, life:0, color:this.C.wrong});
+    const dx = fingerX - note.x, dy = fingerY - note.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+
+    const dfc = Math.sqrt((note.x - this.centerX)**2 + (note.y - this.centerY)**2);
+
+    // Optimized Condition: Valid collection anywhere INSIDE or ON the outer boundary ring radius limit
+    const validCaptureArea = dfc - note.radius <= this.currentOuterRadius;
+
+    if (dist < note.radius + 20 && validCaptureArea) {
+      if (this.shouldCollect(note.value)) {
+        this.roundCorrectTouches++;
+        this.totalCorrectTouches++;
+        this.wrongTouchStreak = 0;
+        this.missedCorrectStreak = 0;
+        this.combo++;
+        if (this.combo > this.bestCombo) this.bestCombo = this.combo;
+        if (this.combo > this.roundMaxCombo) this.roundMaxCombo = this.combo;
+        if (this.combo % 5 === 0) {
+          this.multiplier++;
+          this._gainXP(1);
         }
-        
-        if (note.value === this.maxNumber) {
-          this.roundWrapPending = true;
-          this.roundWrapDelay = 1.0; 
-          if (this.spawnTimer) clearInterval(this.spawnTimer);
-        }
-
-        this.hitTextTimer = 30; 
-        this.notes.splice(index, 1);
+        this.score += 10 * this.multiplier;
+        this.lastHitType = "CORRECT";
+        this._gainXP(1);
+        this._recoverSpeed();
+        if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x, y:note.y, life:0, color:this.C.correct});
+      } else {
+        this.roundWrongTouches++;
+        this.totalWrongTouches++;
+        this.wrongTouchStreak++;
+        this.missedCorrectStreak = 0;
+        if (this.wrongTouchStreak > this.roundWrongStreakPeak) this.roundWrongStreakPeak = this.wrongTouchStreak;
+        this.combo = 0;
+        this.multiplier = 1;
+        this.score -= 5;
+        this.lastHitType = "WRONG";
+        this._adjustSkill(-(1 + Math.min(2, this.wrongTouchStreak * 0.18)));
+        this._penalizeSpeed();
+        if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x, y:note.y, life:0, color:this.C.wrong});
       }
+
+      if (note.value === this.maxNumber) {
+        this.roundWrapPending = true;
+        this.roundWrapDelay = 1.0;
+        if (this.spawnTimer) clearInterval(this.spawnTimer);
+      }
+
+      this.hitTextTimer = 30;
+      this.notes.splice(index, 1);
     }
-  },
+  }
+},
 
   checkCannonCollision(fingerX, fingerY) {
     for (let i = this.notes.length-1; i >= 0; i--) {
@@ -3351,20 +3483,32 @@ activateTripleCannonMode() {
     this.noteSpeed = this.speedCap;
   },
 
+
+  /**
+ * Returns the max simultaneous notes allowed for the current mode.
+ * Cannon/orb/triple stay capped at 5 (tighter, since launcher modes
+ * already feel busier with cannon/orb visuals + explosions on screen).
+ * Skip/pattern keep the original maxNotesOnScreen (6).
+ */
+_getMaxNotesForMode() {
+  const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
+  return isLauncher ? 5 : this.maxNotesOnScreen;
+},
+
   /* ── Cannon ──────────────────────────────────────────────── */
   spawnCannonNote() {
-    if (this.notes.length >= this.maxNotesOnScreen) return;
-    if (this.pendingShot || this.roundWrapPending || this.gameState !== "playing") return;
-    const angle=Math.random()*Math.PI*2;
-    const num=this.currentNumber++;
-    if (this.currentNumber>this.maxNumber) {
-      this.currentNumber=1;
-      this._queueRoundEnd();
-    }
-    this.pendingShot={angle,speed:this.noteSpeed,value:num,id:num};
-    this.cannonTargetAngle=angle+Math.PI/2;
-    this.startCharging();
-  },
+  if (this.notes.length >= this._getMaxNotesForMode()) return;
+  if (this.pendingShot || this.roundWrapPending || this.gameState !== "playing") return;
+  const angle=Math.random()*Math.PI*2;
+  const num=this.currentNumber++;
+  if (this.currentNumber>this.maxNumber) {
+    this.currentNumber=1;
+    this._queueRoundEnd();
+  }
+  this.pendingShot={angle,speed:this.noteSpeed,value:num,id:num};
+  this.cannonTargetAngle=angle+Math.PI/2;
+  this.startCharging();
+},
 
   updateCannonNotes(ctx, dt) {
   for (let i=this.notes.length-1; i>=0; i--) {
@@ -3449,21 +3593,21 @@ activateTripleCannonMode() {
 
   /* ── Orb ─────────────────────────────────────────────────── */
   spawnOrbNote() {
-    if (this.notes.length >= this.maxNotesOnScreen) return;
-    if (this.roundWrapPending || this.gameState !== "playing") return;
-    const angle=Math.random()*Math.PI*2;
-    this.orbTargetAngle=angle+Math.PI/2;
-    const num=this.currentNumber++;
-    if (this.currentNumber>this.maxNumber) {
-      this.currentNumber=1;
-      this._queueRoundEnd();
-    }
-    const speed=this.noteSpeed;
-    setTimeout(()=>{
-      if (this.gameState !== "playing" || this.roundWrapPending) return;
-      this.notes.push({x:this.centerX,y:this.centerY,radius:this.baseOuterRadius*0.12,value:num,id:num,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,spawnProtected:true});
-    },120);
-  },
+  if (this.notes.length >= this._getMaxNotesForMode()) return;
+  if (this.roundWrapPending || this.gameState !== "playing") return;
+  const angle=Math.random()*Math.PI*2;
+  this.orbTargetAngle=angle+Math.PI/2;
+  const num=this.currentNumber++;
+  if (this.currentNumber>this.maxNumber) {
+    this.currentNumber=1;
+    this._queueRoundEnd();
+  }
+  const speed=this.noteSpeed;
+  setTimeout(()=>{
+    if (this.gameState !== "playing" || this.roundWrapPending) return;
+    this.notes.push({x:this.centerX,y:this.centerY,radius:this.baseOuterRadius*0.12,value:num,id:num,vx:Math.cos(angle)*speed,vy:Math.sin(angle)*speed,spawnProtected:true});
+  },120);
+},
 
   drawOrbLauncher(ctx) {
     const sz=this.baseOuterRadius*0.6;
@@ -3493,27 +3637,26 @@ activateTripleCannonMode() {
   },
 
   /* ── Triple cannon ───────────────────────────────────────── */
-  spawnTripleNote() {
-    // GUARD: Initialize if missing
-    if (!this.tripleCannons || this.tripleCannons.length === 0) {
-        this.tripleCannons = [
-            { offset: 0 },
-            { offset: (Math.PI * 2) / 3 },
-            { offset: (Math.PI * 4) / 3 }
-        ];
-        this.tripleCount = 3;
-    }
-    
-    if (this.notes.length >= this.maxNotesOnScreen) return;
-    if (this.roundWrapPending || this.gameState !== "playing") return;
-    if (this.previewTimer > 0 || (this.previewCannons && this.previewCannons.length > 0)) return;
-    
-    const angle = Math.random() * Math.PI * 2;
-    this.tripleTargetAngle = angle + Math.PI / 2;
-    this.pendingShot = { angle, speed: this.noteSpeed };
-    this.startCharging();
-},
-  drawTripleCannons(ctx, dt) {
+spawnTripleNote() {
+  // GUARD: Initialize if missing
+  if (!this.tripleCannons || this.tripleCannons.length === 0) {
+      this.tripleCannons = [
+          { offset: 0 },
+          { offset: (Math.PI * 2) / 3 },
+          { offset: (Math.PI * 4) / 3 }
+      ];
+      this.tripleCount = 3;
+  }
+
+  if (this.notes.length >= this._getMaxNotesForMode()) return;
+  if (this.roundWrapPending || this.gameState !== "playing") return;
+  if (this.previewTimer > 0 || (this.previewCannons && this.previewCannons.length > 0)) return;
+
+  const angle = Math.random() * Math.PI * 2;
+  this.tripleTargetAngle = angle + Math.PI / 2;
+  this.pendingShot = { angle, speed: this.noteSpeed };
+  this.startCharging();
+},  drawTripleCannons(ctx, dt) {
     if (!this.tripleCannons || this.tripleCannons.length === 0) {
         this.tripleCannons = [
             { offset: 0 },
