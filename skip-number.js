@@ -810,14 +810,20 @@ const Game1 = {
   /* ── Spawn timing state (replaces setInterval) ─────────────── */
 _spawnAccumulator: 0,
 
-  /* ============================================================
-     INIT
-  ============================================================ */
+
+/* ── Sprite state ───────────────────────────────────────── */
+  _spriteFrame: 0,   // accumulates at dt*60 per game tick
+  showSkillDebug: false, // UI Debug flag for rendering tracking values
+
+
   /* ============================================================
       INIT
   ============================================================ */
  
-   init(modeKey = "default") {
+   /* ============================================================
+      INIT
+  ============================================================ */
+  init(modeKey = "default") {
     const rect = document.getElementById("container").getBoundingClientRect();
     this._applyResize(rect.width, rect.height);
 
@@ -843,7 +849,7 @@ _spawnAccumulator: 0,
     this.currentNumber = 1;
     this.xp = 0;
     this.level = 1;
-    this.levelThreshold = this._getLevelThreshold(this.level);
+    this.levelThreshold = this._getCumulativeThreshold(this.level); // was _getLevelThreshold
     this.tier = 0;
     this.levelUpActive = false;
     this.xpPopFlash = 0;
@@ -877,6 +883,7 @@ _spawnAccumulator: 0,
     this.overlayData = null;
     this.torusAngle = 0;
     this._spriteFrame = 0;
+    this.showSkillDebug = false; // Reset debug toggles across hard reboots
 
     // ── FIXED: use the actual chosen mode (not a hardcoded "default")
     //    so _buildRoundPlan() below generates the correct type of plan
@@ -968,7 +975,13 @@ _spawnAccumulator: 0,
           return;
         }
 
-        if (e.key === "3") this._setMode("orb");
+        // ── KEY 3 Toggles Interactive UI Skill Point Overlay Debug Display ──
+        if (e.key === "3") {
+          this.showSkillDebug = !this.showSkillDebug;
+          return;
+        }
+        
+        if (e.key === "5") this._setMode("orb");
         if (e.key === "4") this._setMode("triple");
       });
     }
@@ -1665,50 +1678,89 @@ _startPlaying() {
   },
 
   _getLevelThreshold(level = this.level) {
-    // Standard baseline scaled up 2.5x higher
-    return Math.round((90 + Math.max(0, level - 1) * 18) * 2.5);
-  },
+  // Tuned against the REAL live-accumulation ceiling (~35-40/round),
+  // since skillPoints is now purely fed by _gainXP() during play
+  // (1 point per correct hit + 1 bonus per 5-combo).
+  const table = {
+    1: 22,   // easy — well under half a round of correct hits
+    2: 32,   // a bit harder — needs a solid, mostly-clean round
+    3: 38,   // barely — needs a near-max round
+    4: 40,   // extremely barely — needs an essentially perfect round
+    5: 65,   // realistically needs 2 rounds
+  };
+  if (table[level]) return table[level];
+  // Level 6+: keep raising the bar ~1.5-2 rounds worth per level
+  return Math.round(65 + (level - 5) * 30);
+},
+
+// ── NEW: per-level delta (points needed to go from level-1 → level) ──
+_getLevelThresholdDelta(level) {
+  const table = {
+    1: 22,
+    2: 32,
+    3: 38,
+    4: 40,
+    5: 65,
+  };
+  if (table[level]) return table[level];
+  // Level 6+: keep raising the bar ~1.5-2 rounds worth per level
+  return Math.round(65 + (level - 5) * 30);
+},
+
+_getCumulativeThreshold(level) {
+  let total = 0;
+  for (let l = 1; l <= level; l++) {
+    total += this._getLevelThresholdDelta(l);
+  }
+  return total;
+},
 
   _difficultyLabelForLevel(level = this.level) {
-    return `Speed Level up! Dynamic speed cap shifted up.`;
-  },
+  return `Speed Level up! Dynamic speed cap shifted up.`;
+},
+
+
   _syncTierForLevel() {
-    for (let t = this.tierThresholds.length - 1; t >= 0; t--) {
-      if (this.level >= this.tierThresholds[t]) {
-        this.tier = Math.max(this.tier, t);
-        break;
-      }
+  for (let t = this.tierThresholds.length - 1; t >= 0; t--) {
+    if (this.level >= this.tierThresholds[t]) {
+      this.tier = Math.max(this.tier, t);
+      break;
     }
-  },
+  }
+},
 
   _getSpawnIntervalForLevel() {
-    const baseMap = { default: 1800, pattern: 2800, cannon: 1800, orb: 1800, triple: 1800 };
-    const minMap  = { default: 900,  pattern: 1400, cannon: 900,  orb: 900,  triple: 900 };
-    const base = baseMap[this.mode] || 1800;
-    const min  = minMap[this.mode] || 900;
-    const drop = (this.level - 1) * (this.mode === "pattern" ? 90 : 80);
-    return Math.max(min, base - drop);
-  },
+  const baseMap = { default: 1800, pattern: 2800, cannon: 1800, orb: 1800, triple: 1800 };
+  const minMap  = { default: 900,  pattern: 1400, cannon: 900,  orb: 900,  triple: 900 };
+  const base = baseMap[this.mode] || 1800;
+  const min  = minMap[this.mode] || 900;
+  const drop = (this.level - 1) * (this.mode === "pattern" ? 90 : 80);
+  return Math.max(min, base - drop);
+},
 
   _syncDifficultyScalars() {
-    // Ramps speed baseline significantly higher on each successive level up
-    const speedMultiplier = 1 + Math.min(1.9, Math.max(0, this.level - 1) * 0.22); 
-    this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier;
-    this.speedMin = this.speedCap * 0.15;
-    
-    // Protection zone size calculation: 2.5x the size of the flying numbers
-    const noteRadius = this.baseOuterRadius * 0.12;
-    this.launcherSafeRadius = noteRadius * 2.5; 
-    
-    this.levelThreshold = this._getLevelThreshold(this.level);
-    this.xpToNext = this.levelThreshold;
-    this.xp = this.skillPoints;
-    if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
-  },
+  // Ramps speed baseline significantly higher on each successive level up
+  const speedMultiplier = 1 + Math.min(1.9, Math.max(0, this.level - 1) * 0.22); 
+  this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier;
+  this.speedMin = this.speedCap * 0.15;
+  
+  // Protection zone size calculation: 2.5x the size of the flying numbers
+  const noteRadius = this.baseOuterRadius * 0.12;
+  this.launcherSafeRadius = noteRadius * 2.5; 
+  
+  // ── FIXED: cumulative threshold instead of per-level absolute.
+  //    xp mirrors the real running skillPoints total — no forced reset,
+  //    since progress is continuous across level-ups now. ──
+  this.levelThreshold = this._getCumulativeThreshold(this.level);
+  this.xpToNext = this.levelThreshold;
+  this.xp = this.skillPoints;
+  if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
+},
+
 
   _buildRoundPlan() {
     if (this.mode === "pattern") {
-      const skip = Math.floor(Math.random() * 4) + 1;
+      const skip = this.getRandomSkip();
       const collect = Math.floor(Math.random() * 4) + 1;
       return {
         mode: "pattern",
@@ -1800,6 +1852,7 @@ _startPlaying() {
 
 
   _resetSessionFlow(modeKey) {
+    this.recentSkips = []; // Clear history on new session
     this.mode = modeKey || "default";
     this.roundNumber = 1;
     this.nextRoundNumber = 1;
@@ -1811,7 +1864,7 @@ _startPlaying() {
     this.totalWrongTouches = 0;
     this.totalMissedCorrect = 0;
     this.level = 1;
-    this.levelThreshold = this._getLevelThreshold(this.level);
+    this.levelThreshold = this._getCumulativeThreshold(this.level);
     this.xp = 0;
     this.xpToNext = this.levelThreshold;
     this.tier = 0;
@@ -1823,10 +1876,6 @@ _startPlaying() {
     this.noiseTime = 0;
     this.overlayData = null;
 
-    // ── FIXED: reuse the plan already generated & shown during the
-    //    tutorial instead of rolling a brand-new random one here.
-    //    Only build a fresh plan if none exists yet, or if it was
-    //    built for a different mode (safety fallback). ──
     if (!this.nextRoundPlan || this.nextRoundPlan.mode !== this.mode) {
       this.nextRoundPlan = this._buildRoundPlan();
     }
@@ -1838,42 +1887,51 @@ _startPlaying() {
     this.assistAppliedThisRound = false;
   },
 
-  _adjustSkill(amount) {
-    this.skillPoints = Math.max(0, Math.min(this.levelThreshold, this.skillPoints + amount));
-    this.xp = this.skillPoints;
-    this.xpToNext = this.levelThreshold;
-    if (amount > 0) this.xpPopFlash = Math.min(1, this.xpPopFlash + 0.3);
-  },
+  // ── FIXED: only floor-clamp at 0. Do NOT ceiling-clamp at levelThreshold —
+//    that was causing correct hits to silently stop registering once the
+//    player hit the cap mid-round, while mistakes could still subtract
+//    from that capped value (one-directional-feeling progress). The real
+//    level-up decision happens in _resolveRoundEnd() via the >= check. ──
+_adjustSkill(amount) {
+  this.skillPoints = Math.max(0, this.skillPoints + amount);
+  this.xp = this.skillPoints;
+  this.xpToNext = this.levelThreshold;
+  if (amount > 0) this.xpPopFlash = Math.min(1, this.xpPopFlash + 0.3);
+},
 
   _computeRoundSkillDelta() {
-    const attempts = this.roundCorrectTouches + this.roundWrongTouches + this.roundMissedCorrect;
-    if (attempts <= 0) return 0;
+  const attempts = this.roundCorrectTouches + this.roundWrongTouches + this.roundMissedCorrect;
+  if (attempts <= 0) return 0;
 
-    const accuracy = this.roundCorrectTouches / attempts;
-    const comboNorm = Math.min(1, this.roundMaxCombo / (8 + this.level * 2));
-    const scoreEarned = Math.max(0, this.score - this.roundScoreStart);
-    const scoreNorm = Math.min(1, scoreEarned / (attempts * 10 + 1));
-    const penalty = Math.min(14, this.roundWrongStreakPeak * 1.2 + this.roundMissStreakPeak * 1.45);
+  const accuracy = this.roundCorrectTouches / attempts;
+  const comboNorm = Math.min(1, this.roundMaxCombo / (8 + this.level * 2));
+  const scoreEarned = Math.max(0, this.score - this.roundScoreStart);
+  const scoreNorm = Math.min(1, scoreEarned / (attempts * 10 + 1));
+  const penalty = Math.min(14, this.roundWrongStreakPeak * 1.2 + this.roundMissStreakPeak * 1.45);
 
-    return Math.round((accuracy * 34) + (comboNorm * 18) + (scoreNorm * 12) - penalty);
-  },
+  return Math.round((accuracy * 34) + (comboNorm * 18) + (scoreNorm * 12) - penalty);
+},
 
-  _computeProgressPercent(useLiveRound = false) {
-    const liveBonus = useLiveRound ? this._computeRoundSkillDelta() : 0;
-    const points = Math.max(0, Math.min(this.levelThreshold, this.skillPoints + liveBonus));
-    return Math.round((points / this.levelThreshold) * 100);
-  },
+ // ── FIXED: cap displayed percent at 100 even though skillPoints can
+//    technically sit anywhere relative to the ever-rising cumulative
+//    target — avoids visual overflow past a "full" bar. ──
+_computeProgressPercent(useLiveRound = false) {
+  const liveBonus = useLiveRound ? this._computeRoundSkillDelta() : 0;
+  const points = Math.max(0, this.skillPoints + liveBonus);
+  return Math.min(100, Math.round((points / this.levelThreshold) * 100));
+},
+
 
   _maybeGrantAssistTime() {
-    if (this.assistAppliedThisRound || this.gameState !== "playing" || this.roundWrapPending) return 0;
-    const progress = this._computeProgressPercent(false);
-    if (progress < 72 || this.timeRemaining > 42) return 0;
-    const bonus = 2 + Math.floor(Math.random() * 4);
-    this.timeRemaining += bonus;
-    this.assistTimeBonus += bonus;
-    this.assistAppliedThisRound = true;
-    return bonus;
-  },
+  if (this.assistAppliedThisRound || this.gameState !== "playing" || this.roundWrapPending) return 0;
+  const progress = this._computeProgressPercent(false);
+  if (progress < 72 || this.timeRemaining > 42) return 0;
+  const bonus = 2 + Math.floor(Math.random() * 4);
+  this.timeRemaining += bonus;
+  this.assistTimeBonus += bonus;
+  this.assistAppliedThisRound = true;
+  return bonus;
+},
 
   _prepareNextRoundPlan() {
     this.nextRoundPlan = this._buildRoundPlan();
@@ -1915,9 +1973,13 @@ _startPlaying() {
 },
  _resolveRoundEnd() {
     if (this.gameState !== "playing") return;
+
+    // roundSkillDelta is kept ONLY for the overlay summary text —
+    // it is NOT added to skillPoints. skillPoints is now purely fed
+    // by live _gainXP() calls during play and never gets a second
+    // add-on at round-end (that was the double-counting bug).
     const roundSkillDelta = this._computeRoundSkillDelta();
     const progressBefore = this.skillPoints;
-    this._adjustSkill(roundSkillDelta);
 
     const qualified = this.skillPoints >= this.levelThreshold;
     const canLevelUp = qualified && this.level < this.maxLevel;
@@ -1934,9 +1996,6 @@ _startPlaying() {
 
     let dynamicBonusTime = canLevelUp ? 250 : this.roundEndBonus;
 
-    // --- CRITICAL FIX: Generate the upcoming plan parameters HERE ---
-    // This creates the absolute single source of truth for the upcoming round
-    // before the overlays read and present the data card metrics.
     this.nextRoundPlan = this._buildRoundPlan();
 
     const summary = {
@@ -1990,10 +2049,17 @@ _startPlaying() {
       this.level = nextLevel;
       this.roundNumber = nextRound;
       this.nextRoundNumber = nextRound + 1;
-      this.skillPoints = 0;
-      this.xp = 0;
-      this.levelThreshold = this._getLevelThreshold(this.level);
+
+      // ── FIXED: skillPoints is NO LONGER reset on level-up.
+      //    It keeps climbing continuously — only the target
+      //    (levelThreshold) rises, by summing in the new level's
+      //    delta on top of the cumulative total.
+      //    e.g. level1 threshold=22, player reaches 33 → levels up,
+      //    skillPoints stays 33, level2 delta=36 → new threshold=58.
+      this.levelThreshold = this._getCumulativeThreshold(this.level);
+      this.xp = this.skillPoints;
       this.xpToNext = this.levelThreshold;
+
       this._syncDifficultyScalars();
       this._syncTierForLevel();
       this._updateHintState();
@@ -2272,7 +2338,11 @@ _updateSpawning(dt) {
   },
 
   _drawXPRing(ctx, cx, cy, radius) {
-    const fill = this.level >= this.maxLevel ? 1 : this.xp / this.xpToNext;
+    // ── FIXED: clamp fill at 1 — xp (skillPoints) can now legitimately
+    //    equal or momentarily approach xpToNext without ever being
+    //    force-reset, so guard against any float overshoot drawing
+    //    past a full circle. ──
+    const fill = this.level >= this.maxLevel ? 1 : Math.min(1, this.xp / this.xpToNext);
     const tc   = this.tierColors[this.tier];
     const start = -Math.PI / 2;
     ctx.beginPath();
@@ -2316,7 +2386,7 @@ _updateSpawning(dt) {
     ctx.stroke();
   },
 
-  _drawHUD(ctx, isLauncher) {
+ _drawHUD(ctx, isLauncher) {
     const W = this.centerX * 2, H = this.centerY * 2;
     const f = "bold 20px 'Trebuchet MS', sans-serif";
     if (isLauncher) {
@@ -2337,10 +2407,20 @@ _updateSpawning(dt) {
       ctx.textAlign = "center";
       ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
       ctx.fillText(this.gameTitle, W/2, 25);
+      
       ctx.textAlign = "right";
       ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
       ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
-      ctx.fillText("x"+this.combo+" combo", W-16, 25);
+      
+      if (this.showSkillDebug) {
+        // Shift baseline slightly upwards to make clean visual space for fractional text
+        ctx.fillText("x"+this.combo+" combo", W-16, 18);
+        ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
+        ctx.fillStyle = this.tierColors[this.tier];
+        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-16, 36);
+      } else {
+        ctx.fillText("x"+this.combo+" combo", W-16, 25);
+      }
     } else {
       this._pill(ctx, 14, 14, 155, 42);
       ctx.font = f;
@@ -2348,10 +2428,22 @@ _updateSpawning(dt) {
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       ctx.fillText("⭐ "+this.score, 28, 35);
-      this._pill(ctx, W-174, 14, 160, 42);
+      
+      // Dynamic scaling panel framework adjustments based on UI diagnostics layout switches
+      const pillHeight = this.showSkillDebug ? 56 : 42;
+      this._pill(ctx, W-174, 14, 160, pillHeight);
       ctx.textAlign = "right";
       ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
-      ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, 35);
+      
+      if (this.showSkillDebug) {
+        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, 30);
+        ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
+        ctx.fillStyle = this.tierColors[this.tier];
+        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-28, 50);
+      } else {
+        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, 35);
+      }
+      
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillStyle = this.C.gold;
@@ -2659,7 +2751,7 @@ _updateSpawning(dt) {
     const rows = [
       { label: "What's New",       value: "Speed up! 🚀" },
       { label: "Game Speed",      value: "Numbers fly faster now!" },
-      { label: "Color Hints",     value: "Hidden! Use your math brain 🧠" },
+      { label: "Combo Streak", value: "Hit 5 in a row for multipliers! 🔥" },
       { label: "Where to Tap",    value: "Inside the big gold ring! ⭕" },
     ];
     
@@ -3882,39 +3974,79 @@ spawnTripleNote() {
   },
 
   /* ── Utility ─────────────────────────────────────────────── */
+ recentSkips: [], // Tracks recently used target numbers
+
+
+ _getSkipPoolForLevel(level = this.level) {
+    if (level <= 5) {
+      return [2, 3, 4, 5];
+    } else if (level <= 10) {
+      return [4, 5, 6, 7, 8];
+    } else if (level <= 15) {
+      return [6, 7, 8, 9, 10, 11];
+    } else {
+      // Scales dynamically for Level 16+: drops lower numbers and adds higher ones
+      const tierIndex = Math.floor((level - 1) / 5); // 3 for Lv 16-20, 4 for Lv 21-25, etc.
+      const minNum = 2 + (tierIndex * 2);
+      const maxNum = minNum + 5;
+      
+      const pool = [];
+      for (let n = minNum; n <= maxNum; n++) {
+        pool.push(n);
+      }
+      return pool;
+    }
+  },
+
+
   getRandomSkip() {
-    const w=[2,2,2,2,3,3,3,3,3,3,4,4,4,5,5];
-    return w[Math.floor(Math.random()*w.length)];
+    const basePool = this._getSkipPoolForLevel(this.level || 1);
+    
+    // Filter out numbers used in the last 2 rounds
+    const available = basePool.filter(num => !this.recentSkips.includes(num));
+    
+    // Fallback to full pool if filtering eliminates all options (e.g., small pool)
+    const pool = available.length > 0 ? available : basePool;
+    const selected = pool[Math.floor(Math.random() * pool.length)];
+
+    // Store in history and retain only the last 2 entries
+    this.recentSkips.push(selected);
+    if (this.recentSkips.length > 2) {
+      this.recentSkips.shift();
+    }
+
+    return selected;
   },
 
   fullReset() {
-    this.notes=[];
-    this.popEffects=[];
-    this.explosions=[];
-    this.missQueue=[];
-    this.currentNumber=1;
-    this.score=0;
-    this.combo=0;
-    this.multiplier=1;
-    this.xp=0;
-    this.level=1;
-    this.xpToNext=8;
-    this.tier=0;
-    this.noteSpeed=this.speedCap;
-    this.hintState="full";
-    this.noiseTime=0;
-    this.spawnInterval=1800;
-    this.pendingShot=null;
-    this.previewCannons=[];
-    this.previewTimer=0;
-    this.isCharging=false;
-    this.charge=0;
-    this.chargeParticles=[];
-    this.torusAngle=0;
-    this.pulseTime=0;
-    this._spriteFrame=0;
-    this.skipAmount=this.getRandomSkip();
-    this.gameTitle="SKIP "+this.skipAmount;
+    this.recentSkips = []; // Clear history on full reset
+    this.notes = [];
+    this.popEffects = [];
+    this.explosions = [];
+    this.missQueue = [];
+    this.currentNumber = 1;
+    this.score = 0;
+    this.combo = 0;
+    this.multiplier = 1;
+    this.xp = 0;
+    this.level = 1;
+    this.xpToNext = 8;
+    this.tier = 0;
+    this.noteSpeed = this.speedCap;
+    this.hintState = "full";
+    this.noiseTime = 0;
+    this.spawnInterval = 1800;
+    this.pendingShot = null;
+    this.previewCannons = [];
+    this.previewTimer = 0;
+    this.isCharging = false;
+    this.charge = 0;
+    this.chargeParticles = [];
+    this.torusAngle = 0;
+    this.pulseTime = 0;
+    this._spriteFrame = 0;
+    this.skipAmount = this.getRandomSkip();
+    this.gameTitle = "SKIP " + this.skipAmount;
     this._restartSpawnTimer();
   },
 
