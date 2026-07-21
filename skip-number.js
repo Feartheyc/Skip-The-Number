@@ -2136,10 +2136,12 @@ _updateSpawning(dt) {
   _penalizeSpeed() { this.noteSpeed = Math.max(this.speedMin, this.noteSpeed - this.speedCap * this.speedPenaltyStep); },
   _recoverSpeed()  { this.noteSpeed = Math.min(this.speedCap, this.noteSpeed + this.speedCap * this.speedRecoveryStep); },
   _driftSpeed(dt) {
-    if (this.noteSpeed < this.speedCap) {
-      this.noteSpeed = Math.min(this.speedCap, this.noteSpeed + (this.speedCap - this.noteSpeed) * this.speedDriftRate * dt * 60);
-    }
-  },
+  const fingers = window.fingerPositions || [];
+  if (fingers.length === 0) return; // don't recover speed while hand is absent
+  if (this.noteSpeed < this.speedCap) {
+    this.noteSpeed = Math.min(this.speedCap, this.noteSpeed + (this.speedCap - this.noteSpeed) * this.speedDriftRate * dt * 60);
+  }
+},
 
   /* ============================================================
      BACKGROUND
