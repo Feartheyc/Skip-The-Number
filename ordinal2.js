@@ -444,6 +444,7 @@ const Game10 = {
   },
 
   /* ── Tutorial visual: portal with scattered number cards ── */
+
   _drawTutVisual(ctx, px, py, pw, ph, t) {
     ctx.save(); ctx.translate(px, py);
     const mx = pw / 2, my = ph / 2;
@@ -453,6 +454,7 @@ const Game10 = {
     const bg = ctx.createRadialGradient(mx, my, 0, mx, my, Math.min(pw, ph) * 0.6);
     bg.addColorStop(0, "rgba(124,58,237,0.18)"); bg.addColorStop(1, "rgba(10,14,39,0)");
     ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(mx, my, Math.min(pw, ph) * 0.6, 0, Math.PI * 2); ctx.fill();
+    
     // Mini stars
     ctx.fillStyle = "rgba(255,255,255,0.55)";
     for (let i = 0; i < 20; i++) {
@@ -502,13 +504,18 @@ const Game10 = {
       ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("1", lx, ly);
     }
 
-    // Finger legend
-    ctx.beginPath(); ctx.arc(mx - 46, bobY, 8, 0, Math.PI * 2); ctx.fillStyle = "rgba(124,58,237,0.35)"; ctx.fill();
-    ctx.beginPath(); ctx.arc(mx - 46, bobY, 4, 0, Math.PI * 2); ctx.fillStyle = "#c4b5fd"; ctx.fill();
-    ctx.fillStyle = "rgba(167,139,250,0.75)"; ctx.font = "11px 'Fredoka', cursive";
-    ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("= controls the portal", mx - 36, bobY);
+    // ── Original Position Kept Intact Inside the Box ──
     ctx.font = "10px 'Fredoka', cursive"; ctx.fillStyle = "rgba(167,139,250,0.8)";
     ctx.textAlign = "center"; ctx.fillText("Swallow only numbers ending in ST!", mx, ph - 8);
+
+    // ── UPDATED: Finger Legend Positioned Below Box (Same as Triple Cannon mode) ──
+    const legendY = ph + 10;
+
+    ctx.beginPath(); ctx.arc(mx - 46, legendY, 8, 0, Math.PI * 2); ctx.fillStyle = "rgba(124,58,237,0.35)"; ctx.fill();
+    ctx.beginPath(); ctx.arc(mx - 46, legendY, 4, 0, Math.PI * 2); ctx.fillStyle = "#c4b5fd"; ctx.fill();
+    ctx.fillStyle = "rgba(167,139,250,0.75)"; ctx.font = "11px 'Fredoka', cursive";
+    ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("= controls the portal", mx - 36, legendY);
+
     ctx.restore();
   },
 
@@ -945,7 +952,7 @@ const Game10 = {
       this.mode1Numbers.splice(s.index,1);this.proximityGlow.splice(s.index,1);
       this.showToast(this.getPositiveFeedback(),this.T.correct);this.spawnCorrectParticles(this.mascot.x,this.mascot.y);
     } else {
-      this.score=Math.max(0,this.score-3);this.streak=0;this.hearts=Math.max(0,this.hearts-1);
+      this.score=Math.max(0,this.score-5);this.streak=0;this.hearts=Math.max(0,this.hearts-1);
       this.heartShakeTime=520;this.mascotState="confused";
       this.spawnHintFloater(n.number,n.x,n.y);this.showToast(this.getWrongFeedback(n.number),this.T.wrong);
       this.spawnWrongParticles(this.mascot.x,this.mascot.y);
