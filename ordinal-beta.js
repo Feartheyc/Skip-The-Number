@@ -117,6 +117,12 @@ const Game9 = {
   assetsToLoad: 0,
   assetsLoaded: 0,
 
+
+  _levelPingActive: false,
+  _levelPingTime: 0,
+  _levelPingDuration: 500,
+
+
   /* ============================================================
      INIT
   ============================================================ */
@@ -154,6 +160,9 @@ const Game9 = {
     this._fingerSmoothY   = null;
     this._targetFingerX   = null;
     this._targetFingerY   = null;
+    this._levelPingActive   = false;
+this._levelPingTime     = 0;
+this._levelPingDuration = 500;
 
     /* Reset asset counters on each init so re-play works */
     this.loading        = true;
@@ -626,128 +635,265 @@ const Game9 = {
   },
 
   /* ============================================================
-     LEVEL UP — star-burst ring instead of orange flash
-  ============================================================ */
-  checkLevelUp() {
-    this.correctThisLevel++;
-    this.correctAnswers++;
-    if (this.correctThisLevel >= this.answersPerLevel) {
-      this.correctThisLevel = 0;
-      this.level++;
-      const ranges = [10, 20, 30, 50, 100];
-      this.numberRange = ranges[Math.min(this.level - 1, ranges.length - 1)];
-      this._triggerLevelUpBurst();
-      this.showToast(`🎉 Level ${this.level}! Numbers up to ${this.numberRange}!`, "#a78bfa");
-    }
-  },
+   LEVEL UP SYSTEM (Fixed duplicate method conflict)
+============================================================ */
+checkLevelUp() {
+  this.correctThisLevel++;
+  this.correctAnswers++;
+  if (this.correctThisLevel >= this.answersPerLevel) {
+    this.correctThisLevel = 0;
+    this.level++;
+    const ranges = [10, 20, 30, 50, 100];
+    this.numberRange = ranges[Math.min(this.level - 1, ranges.length - 1)];
+    this._triggerLevelUpBurst();
+    this.showToast(`🎉 Level ${this.level}! Numbers up to ${this.numberRange}!`, "#a78bfa");
+  }
+},
 
-  _triggerLevelUpBurst() {
-    const cols = ["#fbbf24","#a78bfa","#f472b6","#60a5fa","#34d399","#ffffff"];
-    const particles = [];
-    for (let i = 0; i < 36; i++) {
-      const a = (Math.PI * 2 / 36) * i;
-      const v = 140 + Math.random() * 160;
-      particles.push({
-        x: this.CENTER_X, y: this.CENTER_Y,
-        vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-        r: 4 + Math.random() * 5,
-        color: cols[i % cols.length],
-        life: 1,
-        spin: Math.random() * 6 - 3,
-        isStar: Math.random() < 0.5,
-      });
-    }
-    /* Extra inner ring of smaller stars */
-    for (let i = 0; i < 18; i++) {
-      const a = (Math.PI * 2 / 18) * i + Math.PI / 18;
-      const v = 60 + Math.random() * 60;
-      particles.push({
-        x: this.CENTER_X, y: this.CENTER_Y,
-        vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-        r: 2 + Math.random() * 3,
-        color: "#ffffff",
-        life: 1, spin: 0, isStar: false,
-      });
-    }
-    this.levelUpBurst = { time: 0, duration: this.levelUpDuration, particles };
-  },
 
-  _updateLevelUpBurst(delta) {
-    if (!this.levelUpBurst) return;
-    this.levelUpBurst.time += delta;
-    const dt_s = delta / 1000;
+// _triggerLevelUpBurst() {
+//   this._levelPingActive   = true;
+//   this._levelPingTime     = 0;
+//   this._levelPingDuration = 1300;
+
+//   // Confetti particles streaming top-down
+//   const cols = ["#f472b6", "#60a5fa", "#fbbf24", "#34d399", "#c4b5fd"];
+//   const particles = [];
+//   for (let i = 0; i < 40; i++) {
+//     particles.push({
+//       x: Math.random() * this.cssWidth,
+//       y: -20 - Math.random() * 100,
+//       vx: (Math.random() - 0.5) * 120,
+//       vy: 180 + Math.random() * 200,
+//       w: 8 + Math.random() * 6,
+//       h: 12 + Math.random() * 8,
+//       color: cols[i % cols.length],
+//       rot: Math.random() * Math.PI,
+//       vRot: (Math.random() - 0.5) * 0.3
+//     });
+//   }
+//   this.levelUpBurst = { time: 0, duration: 1300, particles };
+// },
+
+// _updateLevelUpBurst(delta) {
+//   if (this._levelPingActive) {
+//     this._levelPingTime += delta;
+//     if (this._levelPingTime >= this._levelPingDuration) {
+//       this._levelPingActive = false;
+//     }
+//   }
+//   if (!this.levelUpBurst) return;
+//   this.levelUpBurst.time += delta;
+//   const dt_s = delta / 1000;
+
+//   for (const p of this.levelUpBurst.particles) {
+//     p.x += p.vx * dt_s;
+//     p.y += p.vy * dt_s;
+//     p.rot += p.vRot;
+//   }
+// },
+
+// _drawLevelUpBurst(ctx) {
+//   if (!this._levelPingActive) return;
+
+//   const W = this.cssWidth, H = this.cssHeight, s = this.scale;
+//   const prog = this._levelPingTime / this._levelPingDuration;
+
+//   ctx.save();
+
+//   /* 1. Rain Confetti */
+//   if (this.levelUpBurst) {
+//     for (const p of this.levelUpBurst.particles) {
+//       ctx.save();
+//       ctx.translate(p.x, p.y);
+//       ctx.rotate(p.rot);
+//       ctx.fillStyle = p.color;
+//       ctx.fillRect(-p.w / 2, -p.h / 2, p.w * s, p.h * s);
+//       ctx.restore();
+//     }
+//   }
+
+//   /* 2. Elastic Slam-Down Stamp Banner */
+//   let dropY, scaleY = 1;
+//   if (prog < 0.25) {
+//     const t = prog / 0.25;
+//     dropY = (1 - Math.cos(t * Math.PI)) * 0.5 * (this.CENTER_Y) - 200; // Bounce down
+//   } else if (prog < 0.35) {
+//     const t = (prog - 0.25) / 0.1;
+//     scaleY = 1 - Math.sin(t * Math.PI) * 0.25; // Squash on impact
+//     dropY = this.CENTER_Y - 40 * s;
+//   } else if (prog > 0.85) {
+//     const t = (prog - 0.85) / 0.15;
+//     dropY = (this.CENTER_Y - 40 * s) - (t * t) * 300; // Launch upward out
+//   } else {
+//     dropY = this.CENTER_Y - 40 * s;
+//   }
+
+//   ctx.translate(W / 2, dropY);
+//   ctx.scale(1, scaleY);
+
+//   // Angled Angled Banner Box
+//   ctx.rotate(-0.04); // Slight playful tilt
+//   ctx.fillStyle = "#fbbf24";
+//   ctx.shadowColor = "#f59e0b"; ctx.shadowBlur = 20;
+  
+//   const bw = 460 * s, bh = 110 * s;
+//   this._rrect(ctx, -bw / 2, -bh / 2, bw, bh, 18 * s);
+//   ctx.fill(); ctx.shadowBlur = 0;
+
+//   // Inner Dark Plate
+//   ctx.fillStyle = "#1e1b4b";
+//   this._rrect(ctx, -bw / 2 + 6 * s, -bh / 2 + 6 * s, bw - 12 * s, bh - 12 * s, 14 * s);
+//   ctx.fill();
+
+//   // Text Elements
+//   ctx.textAlign = "center"; ctx.textBaseline = "middle";
+//   ctx.font = `black ${Math.round(40 * s)}px 'Fredoka', sans-serif`;
+//   ctx.fillStyle = "#fbbf24";
+//   ctx.fillText(`STAGE ${this.level} CLEARED!`, 0, -14 * s);
+
+//   ctx.font = `bold ${Math.round(20 * s)}px 'Fredoka', sans-serif`;
+//   ctx.fillStyle = "#ffffff";
+//   ctx.fillText(`NEW RANGE · UP TO ${this.numberRange}`, 0, 24 * s);
+
+//   ctx.restore();
+// },
+
+
+_triggerLevelUpBurst() {
+  this._levelPingActive   = true;
+  this._levelPingTime     = 0;
+  this._levelPingDuration = 1200;
+
+  // Explosive starburst particles + shockwave ring
+  const cols = ["#fbbf24", "#34d399", "#a78bfa", "#ffffff", "#f472b6"];
+  const particles = [];
+  for (let i = 0; i < 28; i++) {
+    const a = (Math.PI * 2 / 28) * i + Math.random() * 0.2;
+    const v = 180 + Math.random() * 220;
+    particles.push({
+      x: this.mascot.x, y: this.mascot.y,
+      vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+      r: 3 + Math.random() * 5,
+      color: cols[i % cols.length],
+      life: 1,
+      rot: Math.random() * Math.PI,
+      vRot: (Math.random() - 0.5) * 0.2
+    });
+  }
+  this.levelUpBurst = { time: 0, duration: 1200, particles, shockwaveR: 0 };
+},
+
+_updateLevelUpBurst(delta) {
+  if (this._levelPingActive) {
+    this._levelPingTime += delta;
+    if (this._levelPingTime >= this._levelPingDuration) {
+      this._levelPingActive = false;
+    }
+  }
+  if (!this.levelUpBurst) return;
+  this.levelUpBurst.time += delta;
+  const dt_s = delta / 1000;
+
+  // Expand shockwave
+  this.levelUpBurst.shockwaveR += 800 * dt_s;
+
+  for (const p of this.levelUpBurst.particles) {
+    p.x  += p.vx * dt_s;
+    p.y  += p.vy * dt_s;
+    p.vx *= Math.pow(0.92, delta / 16);
+    p.vy *= Math.pow(0.92, delta / 16);
+    p.rot += p.vRot;
+    p.life -= dt_s * 1.1;
+  }
+  this.levelUpBurst.particles = this.levelUpBurst.particles.filter(p => p.life > 0);
+  if (this.levelUpBurst.time >= this.levelUpBurst.duration) this.levelUpBurst = null;
+},
+
+_drawLevelUpBurst(ctx) {
+  if (!this._levelPingActive) return;
+
+  const W = this.cssWidth, H = this.cssHeight, s = this.scale;
+  const prog = this._levelPingTime / this._levelPingDuration;
+
+  ctx.save();
+
+  /* 1. Dramatic Dark Overlay with Flash Peak */
+  const flashAlpha = prog < 0.1 ? (prog / 0.1) * 0.4 : Math.max(0, (1 - prog) * 0.65);
+  ctx.fillStyle = `rgba(15, 7, 32, ${flashAlpha})`;
+  ctx.fillRect(0, 0, W, H);
+
+  /* 2. Expanding Shockwave Ring from Mascot */
+  if (this.levelUpBurst && this.levelUpBurst.shockwaveR > 0) {
+    const swAlpha = Math.max(0, 1 - prog * 1.2);
+    ctx.beginPath();
+    ctx.arc(this.mascot.x, this.mascot.y, this.levelUpBurst.shockwaveR * s, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(251, 191, 36, ${swAlpha})`;
+    ctx.lineWidth = 12 * s * swAlpha;
+    ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 24;
+    ctx.stroke(); ctx.shadowBlur = 0;
+  }
+
+  /* 3. Particle Starburst Puff */
+  if (this.levelUpBurst) {
     for (const p of this.levelUpBurst.particles) {
-      p.x  += p.vx * dt_s;
-      p.y  += p.vy * dt_s;
-      p.vx *= Math.pow(0.96, delta / 16);
-      p.vy *= Math.pow(0.96, delta / 16);
-      p.vy += 80 * dt_s;           /* gentle gravity */
-      p.life -= dt_s * 0.9;
-    }
-    this.levelUpBurst.particles = this.levelUpBurst.particles.filter(p => p.life > 0);
-    if (this.levelUpBurst.time >= this.levelUpBurst.duration) this.levelUpBurst = null;
-  },
-
-  _drawLevelUpBurst(ctx) {
-    if (!this.levelUpBurst) return;
-    const prog = this.levelUpBurst.time / this.levelUpBurst.duration;
-
-    /* Radial ring wave */
-    const ringR = prog * 280 * this.scale;
-    const ringA = Math.max(0, (1 - prog * 1.8));
-    if (ringA > 0) {
-      ctx.beginPath();
-      ctx.arc(this.CENTER_X, this.CENTER_Y, ringR, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(251,191,36,${ringA * 0.6})`;
-      ctx.lineWidth   = 6 * (1 - prog);
-      ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 20 * ringA;
-      ctx.stroke(); ctx.shadowBlur = 0;
-    }
-
-    /* Particles */
-    for (const p of this.levelUpBurst.particles) {
-      ctx.globalAlpha = Math.max(0, p.life) * 0.95;
-      ctx.fillStyle   = p.color;
-      ctx.shadowColor = p.color; ctx.shadowBlur = 10;
-      if (p.isStar) {
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.spin * this.levelUpBurst.time * 0.001);
-        ctx.beginPath();
-        for (let i = 0; i < 10; i++) {
-          const a  = (Math.PI / 5) * i - Math.PI / 2;
-          const rr = i % 2 === 0 ? p.r : p.r * 0.4;
-          i === 0 ? ctx.moveTo(Math.cos(a)*rr, Math.sin(a)*rr)
-                  : ctx.lineTo(Math.cos(a)*rr, Math.sin(a)*rr);
-        }
-        ctx.closePath(); ctx.fill();
-        ctx.restore();
-      } else {
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
-      }
-    }
-    ctx.shadowBlur  = 0;
-    ctx.globalAlpha = 1;
-
-    /* "LEVEL UP!" text */
-    if (prog > 0.05 && prog < 0.75) {
-      const alpha = Math.sin((prog / 0.75) * Math.PI);
       ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(this.CENTER_X, this.CENTER_Y - 120 * this.scale);
-      ctx.scale(0.85 + alpha * 0.2, 0.85 + alpha * 0.2);
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = `bold ${Math.round(52 * this.scale)}px 'Fredoka', sans-serif`;
-      ctx.fillStyle   = "#fbbf24";
-      ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 30;
-      ctx.fillText("LEVEL " + this.level + "!", 0, 0);
-      ctx.font = `bold ${Math.round(26 * this.scale)}px 'Fredoka', sans-serif`;
-      ctx.fillStyle   = "#c4b5fd";
-      ctx.shadowColor = "#c4b5fd"; ctx.shadowBlur = 16;
-      ctx.fillText("Numbers up to " + this.numberRange, 0, 52 * this.scale);
+      ctx.globalAlpha = Math.max(0, p.life);
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot);
+      ctx.fillStyle   = p.color;
+      ctx.shadowColor = p.color; ctx.shadowBlur = 12;
+      
+      // Draw 4-point sparkle star
+      ctx.beginPath();
+      for (let i = 0; i < 4; i++) {
+        ctx.lineTo(Math.cos((i * Math.PI) / 2) * p.r * s * 2, Math.sin((i * Math.PI) / 2) * p.r * s * 2);
+        ctx.lineTo(Math.cos((i * Math.PI) / 2 + Math.PI / 4) * p.r * s * 0.6, Math.sin((i * Math.PI) / 2 + Math.PI / 4) * p.r * s * 0.6);
+      }
+      ctx.closePath();
+      ctx.fill();
       ctx.restore();
     }
-  },
+  }
+
+  /* 4. Giant Springy Typography Badge */
+  // Scale Bounce Envelope
+  let scale;
+  if (prog < 0.2) scale = (prog / 0.2) * 1.25; // overshoot
+  else if (prog < 0.35) scale = 1.25 - ((prog - 0.2) / 0.15) * 0.25; // settle to 1.0
+  else if (prog > 0.8) scale = 1.0 - ((prog - 0.8) / 0.2); // scale down out
+  else scale = 1.0;
+
+  ctx.translate(W / 2, this.CENTER_Y - 40 * s);
+  ctx.scale(scale, scale);
+
+  // Outer Glowing Badge Glass Box
+  ctx.fillStyle = "rgba(24, 9, 48, 0.94)";
+  ctx.strokeStyle = "#fbbf24";
+  ctx.lineWidth = 4 * s;
+  ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 32;
+  
+  const bw = 480 * s, bh = 140 * s;
+  this._rrect(ctx, -bw / 2, -bh / 2, bw, bh, 24 * s);
+  ctx.fill(); ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Header Title
+  ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.font = `bold ${Math.round(42 * s)}px 'Fredoka', sans-serif`;
+  ctx.fillStyle = "#fbbf24";
+  ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 18;
+  ctx.fillText("🌟 LEVEL UP!", 0, -20 * s);
+  ctx.shadowBlur = 0;
+
+  // Level Subtext
+  ctx.font = `bold ${Math.round(22 * s)}px 'Fredoka', sans-serif`;
+  ctx.fillStyle = "#34d399";
+  ctx.fillText(`LEVEL ${this.level} · RANGE: 1–${this.numberRange}`, 0, 25 * s);
+
+  ctx.restore();
+},
+
 
   /* ============================================================
      PORTAL COLLAPSE (game over — hearts = 0)
@@ -1084,7 +1230,7 @@ const Game9 = {
     setTimeout(() => { this.mascotState = "idle"; this.spawnNumber(); }, 1200);
   },
 
-  /* ── HUD — Fredoka throughout ────────────────────────────── */
+   /* ── HUD — Fredoka throughout ────────────────────────────── */
   drawHUD(ctx) {
     const s = this.scale, W = this.cssWidth;
 
@@ -1097,14 +1243,27 @@ const Game9 = {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(`⭐ ${this.score}`, sx + sw/2, sy + sh/2);
 
-    /* Level badge container */
+    /* Level badge container — small pulse+glow ping on level-up */
     const lw=150*s, lh=42*s, lx=W/2-lw/2, ly=16*s;
+    const pinging = this._levelPingActive;
+    const pingT   = pinging ? this._levelPingTime / this._levelPingDuration : 1;
+    const badgeScale = pinging ? 1 + Math.sin(pingT * Math.PI) * 0.18 : 1;
+
+    ctx.save();
+    ctx.translate(lx + lw/2, ly + lh/2);
+    ctx.scale(badgeScale, badgeScale);
     ctx.fillStyle = "rgba(30,58,138,0.85)";
-    this._rrect(ctx, lx, ly, lw, lh, 14*s); ctx.fill();
+    if (pinging) {
+      ctx.shadowColor = "#a78bfa";
+      ctx.shadowBlur  = 16 * (1 - pingT);
+    }
+    this._rrect(ctx, -lw/2, -lh/2, lw, lh, 14*s); ctx.fill();
+    ctx.shadowBlur = 0;
     ctx.fillStyle = "#a78bfa";
     ctx.font = `bold ${Math.round(20*s)}px 'Fredoka', sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(`Level ${this.level}`, lx + lw/2, ly + lh/2);
+    ctx.fillText(`Level ${this.level}`, 0, 0);
+    ctx.restore();
 
     /* Hearts tracking layout */
     const hSz=32*s, hGap=8*s, totalHW=this.maxHearts*(hSz+hGap)-hGap;
@@ -1122,19 +1281,18 @@ const Game9 = {
     if (this.streak >= 2) {
       const ps = 1 + this.streakPulse * 0.15;
       ctx.save();
-      
-      // Positions the badge frame clean and left-aligned below the score capsule
-      const streakY = sy + sh + 12*s; 
-      ctx.translate(sx + sw/2, streakY); 
+
+      const streakY = sy + sh + 12*s;
+      ctx.translate(sx + sw/2, streakY);
       ctx.scale(ps, ps);
-      
+
       ctx.globalAlpha = 0.9 + this.streakPulse * 0.1;
       ctx.fillStyle = "#fbbf24";
       ctx.font = `bold ${Math.round(18*s)}px 'Fredoka', sans-serif`;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 8;
       ctx.fillText(`🔥 ${this.streak} in a row!`, 0, 0);
-      ctx.shadowBlur = 0; 
+      ctx.shadowBlur = 0;
       ctx.restore();
     }
     /* Progress bar */
@@ -1153,6 +1311,12 @@ const Game9 = {
     ctx.fillText(`${this.correctThisLevel}/${this.answersPerLevel} to next level`, W/2, by - 6*s);
   },
 
+   /* ============================================================
+     LEVEL UP — small ping (badge pulse + tiny sparkle puff)
+     Replaces the old big screen-center burst — quick game needs
+     quick feedback, not a 1.8s interruption.
+  ============================================================ */
+  
   /* ── Game over screen ────────────────────────────────────── */
   drawGameOver(ctx) {
     const W=this.cssWidth, H=this.cssHeight, s=this.scale;
@@ -1205,6 +1369,9 @@ const Game9 = {
     this._fingerSmoothX=null; this._fingerSmoothY=null;
     this._targetFingerX=null; this._targetFingerY=null;
     this.fingerX=null; this.fingerY=null;
+    this._levelPingActive   = false;
+this._levelPingTime     = 0;
+this._levelPingDuration = 500;
     this.toast={text:"",timer:0,color:"#fff",y:0,alpha:0};
     this.setupDoors(); this.spawnNumber();
   },

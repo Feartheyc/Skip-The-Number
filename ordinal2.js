@@ -922,11 +922,44 @@ const Game10 = {
   },
 
   /* ── Mode 1 logic ────────────────────────────────────────── */
+  // updateMode1Logic(delta) {
+  //   this.updateProximityGlow(delta);
+  //   if(!this.mode1RoundActive||this.mode1GameOver||this.mode1SuctionActive||this.mode1BreakActive||this.blackHoleActive||this.mode1Confirming)return;
+  //   for(let i=0;i<this.mode1Numbers.length;i++){const n=this.mode1Numbers[i];if(n.spawnAlpha<0.5)continue;if(Math.hypot(this.mascot.x-n.x,this.mascot.y-n.y)<65*this.scale){this.startMode1Suction(i);break;}}
+  // },
+
   updateMode1Logic(delta) {
-    this.updateProximityGlow(delta);
-    if(!this.mode1RoundActive||this.mode1GameOver||this.mode1SuctionActive||this.mode1BreakActive||this.blackHoleActive||this.mode1Confirming)return;
-    for(let i=0;i<this.mode1Numbers.length;i++){const n=this.mode1Numbers[i];if(n.spawnAlpha<0.5)continue;if(Math.hypot(this.mascot.x-n.x,this.mascot.y-n.y)<65*this.scale){this.startMode1Suction(i);break;}}
-  },
+  this.updateProximityGlow(delta);
+  if (!this.mode1RoundActive || this.mode1GameOver || this.mode1SuctionActive || 
+      this.mode1BreakActive || this.blackHoleActive || this.mode1Confirming) return;
+
+  const pullRadius = 160 * this.scale;
+  const catchRadius = 65 * this.scale;
+
+  for (let i = 0; i < this.mode1Numbers.length; i++) {
+    const n = this.mode1Numbers[i];
+    if (n.spawnAlpha < 0.5) continue;
+
+    const dx = this.mascot.x - n.x;
+    const dy = this.mascot.y - n.y;
+    const dist = Math.hypot(dx, dy);
+
+    // Magnetic pull when close
+    if (dist < pullRadius && dist > catchRadius) {
+      const pullForce = (1 - dist / pullRadius) * 0.12 * delta;
+      n.x += (dx / dist) * pullForce;
+      n.y += (dy / dist) * pullForce;
+    }
+
+    // Trigger absorption
+    if (dist <= catchRadius) {
+      this.startMode1Suction(i);
+      break;
+    }
+  }
+},
+  
+
 
   /* ── Suction ─────────────────────────────────────────────── */
   startMode1Suction(index) {
