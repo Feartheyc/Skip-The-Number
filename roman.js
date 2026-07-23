@@ -1192,28 +1192,32 @@ clusterSegmentsToChars(segments) {
 clusterIntoCharacters(strokes) {
   if (!strokes || strokes.length === 0) return [];
   
-  const allSegments = this.extractSegments(strokes, 20);
+  const allSegments = this.extractSegments(strokes, 18);
   if (allSegments.length === 0) return [];
 
-  // Group segments by horizontal position (left to right)
-  const clusters = [];
-  let currentCluster = [];
-  let lastX = -Infinity;
-
-  // Sort segments by average X position
   const sortedSegments = [...allSegments].sort((a, b) => {
     const ax = (a.p1.x + a.p2.x) / 2;
     const bx = (b.p1.x + b.p2.x) / 2;
     return ax - bx;
   });
 
+  const clusters = [];
+  let currentCluster = [];
+  let lastX = -Infinity;
+
   sortedSegments.forEach(seg => {
     const avgX = (seg.p1.x + seg.p2.x) / 2;
     
-    if (currentCluster.length === 0 || avgX - lastX < 110) {  // 110px gap tolerance
+    // Special logic for vertical I's (narrow width)
+    const isLikelyI = (seg.p2.x - seg.p1.x) ** 2 + (seg.p2.y - seg.p1.y) ** 2 > 100 && 
+                      Math.abs(seg.p2.x - seg.p1.x) < 40; // tall and narrow
+
+    const gapThreshold = isLikelyI ? 55 : 90;   // allow I's closer
+
+    if (currentCluster.length === 0 || (avgX - lastX) < gapThreshold) {
       currentCluster.push(seg);
     } else {
-      if (currentCluster.length > 0) clusters.push(currentCluster);
+      if (currentCluster.length > 0) clusters.push([...currentCluster]);
       currentCluster = [seg];
     }
     lastX = avgX;
@@ -1249,7 +1253,6 @@ recognizeRoman(strokes) {
 },
 
 
-// Single character matcher (same as before but cleaner)
 recognizeSingleCharacter(segments) {
   if (!segments || segments.length === 0) return null;
 
@@ -1263,8 +1266,9 @@ recognizeSingleCharacter(segments) {
 
   const width = maxX - minX || 1;
   const height = maxY - minY || 1;
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
 
-  // Count crossings
   let crossCount = 0;
   for (let i = 0; i < segments.length; i++) {
     for (let j = i + 1; j < segments.length; j++) {
@@ -1274,25 +1278,44 @@ recognizeSingleCharacter(segments) {
 
   // === X ===
   if (crossCount >= 1) {
-    const midY = (minY + maxY) / 2;
     let middleCross = false;
+    const midY = centerY;
     for (let i = 0; i < segments.length; i++) {
       for (let j = i + 1; j < segments.length; j++) {
         const inter = this.segmentIntersection(segments[i], segments[j]);
         if (inter && Math.abs(inter.y - midY) < height * 0.4) middleCross = true;
       }
     }
-    if (middleCross) return { char: "X", score: 0.93 };
+    if (middleCross) return { char: "X", score: 0.94 };
   }
 
-  // === I - Much more lenient for single vertical strokes ===
+  // === I ===
   if (segments.length <= 3) {
     const dx = maxX - minX;
     const dy = maxY - minY;
-    const aspect = height / (width || 1);
-    
-    if (aspect > 2.2 && dx < 45) {           // tall and narrow
-      return { char: "I", score: 0.9 };
+    if (dy > dx * 1.85 && dx < 65) {
+      return { char: "I", score: 0.90 };
+    }
+  }
+
+  // === L - Improved (horizontal at bottom) ===
+  if (segments.length <= 3) {
+    let hasVertical = false;
+    let hasHorizontalAtBottom = false;
+
+    segments.forEach(s => {
+      const angle = Math.abs(Math.atan2(s.p2.y - s.p1.y, s.p2.x - s.p1.x));
+      const isVertical = angle > 0.6 && angle < 2.45;
+      const isHorizontal = angle < 0.7 || angle > 2.45;
+
+      if (isVertical) hasVertical = true;
+      if (isHorizontal && Math.max(s.p1.y, s.p2.y) > maxY - height * 0.35) {
+        hasHorizontalAtBottom = true;
+      }
+    });
+
+    if (hasVertical && hasHorizontalAtBottom) {
+      return { char: "L", score: 0.88 };
     }
   }
 
@@ -1302,31 +1325,20 @@ recognizeSingleCharacter(segments) {
     for (let i = 0; i < segments.length; i++) {
       for (let j = i + 1; j < segments.length; j++) {
         const inter = this.segmentIntersection(segments[i], segments[j]);
-        if (inter && inter.y > minY + height * 0.68) bottomIntersect = true;
+        if (inter && inter.y > minY + height * 0.67) bottomIntersect = true;
       }
     }
-    if (bottomIntersect) return { char: "V", score: 0.87 };
+    if (bottomIntersect) return { char: "V", score: 0.86 };
   }
 
-  // === L ===
-  if (segments.length <= 3) {
-    let hasVert = false, hasHorizBottom = false;
-    segments.forEach(s => {
-      const angle = Math.abs(Math.atan2(s.p2.y - s.p1.y, s.p2.x - s.p1.x));
-      if (angle > 0.65 && angle < 2.4) hasVert = true;
-      if ((angle < 0.7 || angle > 2.45) && Math.max(s.p1.y, s.p2.y) > maxY - height * 0.4) {
-        hasHorizBottom = true;
-      }
-    });
-    if (hasVert && hasHorizBottom) return { char: "L", score: 0.85 };
-  }
-
-  // === C - Strict width requirement ===
-  if (segments.length >= 2 && segments.length <= 5) {
+  // === C - Much better detection ===
+  if (segments.length >= 2 && segments.length <= 6) {
     const rightMost = Math.max(...segments.flatMap(s => [s.p1.x, s.p2.x]));
-    const centerX = (minX + maxX) / 2;
-    if (width > height * 0.65 && rightMost < centerX + width * 0.48) {
-      return { char: "C", score: 0.78 };
+    const aspect = height / width;
+
+    // Open to the right + decent width
+    if (rightMost < centerX + width * 0.42 && width > height * 0.6 && aspect > 0.75) {
+      return { char: "C", score: 0.85 };
     }
   }
 
