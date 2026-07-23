@@ -222,6 +222,8 @@ this._levelPingDuration = 500;
         this._lastTapTime = now;
       });
 
+      
+
       canvasElement.addEventListener("click", () => {
         if (this.gameOver && !this.collapseActive) this.retryGame();
       });
@@ -758,6 +760,7 @@ checkLevelUp() {
 
 //   ctx.restore();
 // },
+
 
 
 _triggerLevelUpBurst() {
