@@ -59,7 +59,477 @@ const Game5 = {
       window.addEventListener('resize', () => { if (this.running) this.resizeCanvas(); });
       this.listenersAdded = true;
     }
+window.addEventListener('keydown', (e) => {
+  if (e.key.toLowerCase() === 'd') {
+    this.debugMode = !this.debugMode;
+  }
+});
+    
+    
+
   },
+
+  // =========================================================================
+  // STAGE 1: GEOMETRY ENGINE & DOUGLAS-PEUCKER STROKE SIMPLIFIER
+  // =========================================================================
+  
+  pointToSegmentDist(px, py, x1, y1, x2, y2) {
+    const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+    if (l2 === 0) return Math.hypot(px - x1, py - y1);
+    let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+  },
+
+  douglasPeucker(pts, epsilon) {
+    if (pts.length <= 2) return pts;
+    let maxDist = 0;
+    let index = 0;
+    const end = pts.length - 1;
+
+    for (let i = 1; i < end; i++) {
+      const d = this.pointToSegmentDist(pts[i].x, pts[i].y, pts[0].x, pts[0].y, pts[end].x, pts[end].y);
+      if (d > maxDist) {
+        maxDist = d;
+        index = i;
+      }
+    }
+
+    if (maxDist > epsilon) {
+      const rec1 = this.douglasPeucker(pts.slice(0, index + 1), epsilon);
+      const rec2 = this.douglasPeucker(pts.slice(index), epsilon);
+      return rec1.slice(0, rec1.length - 1).concat(rec2);
+    } else {
+      return [pts[0], pts[end]];
+    }
+  },
+
+  // =========================================================================
+  // STAGE 2: LINE EXTRACTION & SEGMENT MERGING
+  // =========================================================================
+
+  extractSegments(rawStrokes, epsilon = 18) {
+    let rawSegments = [];
+    rawStrokes.forEach(stroke => {
+      if (stroke.length < 2) return;
+      const simplified = this.douglasPeucker(stroke, epsilon);
+      for (let i = 0; i < simplified.length - 1; i++) {
+        const p1 = simplified[i];
+        const p2 = simplified[i + 1];
+        if (Math.hypot(p2.x - p1.x, p2.y - p1.y) > 10) {
+          rawSegments.push({ p1: { x: p1.x, y: p1.y }, p2: { x: p2.x, y: p2.y } });
+        }
+      }
+    });
+    return this.mergeCollinearSegments(rawSegments);
+  },
+
+  mergeCollinearSegments(segments) {
+    let merged = true;
+    let list = [...segments];
+
+    while (merged) {
+      merged = false;
+      for (let i = 0; i < list.length; i++) {
+        for (let j = i + 1; j < list.length; j++) {
+          const s1 = list[i], s2 = list[j];
+          const combined = this.tryMergeTwoSegments(s1, s2);
+          if (combined) {
+            list[i] = combined;
+            list.splice(j, 1);
+            merged = true;
+            break;
+          }
+        }
+        if (merged) break;
+      }
+    }
+    return list;
+  },
+
+  tryMergeTwoSegments(s1, s2) {
+    const a1 = Math.atan2(s1.p2.y - s1.p1.y, s1.p2.x - s1.p1.x);
+    const a2 = Math.atan2(s2.p2.y - s2.p1.y, s2.p2.x - s2.p1.x);
+    
+    let diff = Math.abs(a1 - a2);
+    if (diff > Math.PI) diff = Math.PI * 2 - diff;
+    if (diff > Math.PI / 2) diff = Math.PI - diff;
+
+    // Angle tolerance: ~20 degrees
+    if (diff > 0.35) return null;
+
+    const pts = [s1.p1, s1.p2, s2.p1, s2.p2];
+    const dists = [
+      Math.hypot(s1.p1.x - s2.p1.x, s1.p1.y - s2.p1.y),
+      Math.hypot(s1.p1.x - s2.p2.x, s1.p1.y - s2.p2.y),
+      Math.hypot(s1.p2.x - s2.p1.x, s1.p2.y - s2.p1.y),
+      Math.hypot(s1.p2.x - s2.p2.x, s1.p2.y - s2.p2.y)
+    ];
+
+    // Gap tolerance: 25px max gap to merge
+    if (Math.min(...dists) > 25) return null;
+
+    // Find the extreme pair of points to create a single span
+    let maxDist = 0, bestP1 = null, bestP2 = null;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const d = Math.hypot(pts[i].x - pts[j].x, pts[i].y - pts[j].y);
+        if (d > maxDist) {
+          maxDist = d;
+          bestP1 = pts[i];
+          bestP2 = pts[j];
+        }
+      }
+    }
+
+    // Ensure all points lie near the merged line
+    for (let p of pts) {
+      if (this.pointToSegmentDist(p.x, p.y, bestP1.x, bestP1.y, bestP2.x, bestP2.y) > 15) {
+        return null;
+      }
+    }
+
+    return { p1: bestP1, p2: bestP2 };
+  },
+
+  // =========================================================================
+  // STAGE 3: INTERSECTION DETECTION & GRAPH GENERATION
+  // =========================================================================
+
+  segmentIntersection(s1, s2) {
+    const x1 = s1.p1.x, y1 = s1.p1.y, x2 = s1.p2.x, y2 = s1.p2.y;
+    const x3 = s2.p1.x, y3 = s2.p1.y, x4 = s2.p2.x, y4 = s2.p2.y;
+    const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+    if (denom === 0) return null;
+
+    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+
+    // Slight threshold margin for endpoints touching
+    if (ua >= -0.05 && ua <= 1.05 && ub >= -0.05 && ub <= 1.05) {
+      return { x: x1 + ua * (x2 - x1), y: y1 + ua * (y2 - y1) };
+    }
+    return null;
+  },
+
+  buildGraph(segments) {
+    let nodes = [];
+    let edges = [];
+
+    const getOrCreateNode = (pt) => {
+      for (let n of nodes) {
+        if (Math.hypot(n.x - pt.x, n.y - pt.y) < 20) return n;
+      }
+      const newNode = { id: nodes.length, x: pt.x, y: pt.y, degree: 0 };
+      nodes.push(newNode);
+      return newNode;
+    };
+
+    segments.forEach(s => {
+      const n1 = getOrCreateNode(s.p1);
+      const n2 = getOrCreateNode(s.p2);
+      n1.degree++;
+      n2.degree++;
+      edges.push({ n1, n2, seg: s });
+    });
+
+    // Check cross intersections
+    for (let i = 0; i < segments.length; i++) {
+      for (let j = i + 1; j < segments.length; j++) {
+        const pt = this.segmentIntersection(segments[i], segments[j]);
+        if (pt) getOrCreateNode(pt);
+      }
+    }
+
+    return { nodes, edges };
+  },
+
+ // =========================================================================
+// LENIENT + ROBUST RECOGNIZER (v2)
+// =========================================================================
+
+classifyStrokeGroup(segments) {
+  if (segments.length === 0) return null;
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  segments.forEach(s => {
+    minX = Math.min(minX, s.p1.x, s.p2.x);
+    maxX = Math.max(maxX, s.p1.x, s.p2.x);
+    minY = Math.min(minY, s.p1.y, s.p2.y);
+    maxY = Math.max(maxY, s.p1.y, s.p2.y);
+  });
+
+  const width = maxX - minX || 1;
+  const height = maxY - minY || 1;
+  const aspect = height / width;
+  const centerX = (minX + maxX) / 2;
+
+  const graph = this.buildGraph(segments);
+
+  // === I - Very lenient vertical line ===
+  if (segments.length <= 2) {
+    const totalLength = segments.reduce((sum, s) => {
+      return sum + Math.hypot(s.p2.x - s.p1.x, s.p2.y - s.p1.y);
+    }, 0);
+
+    const dx = Math.abs(maxX - minX);
+    const dy = Math.abs(maxY - minY);
+
+    if (dy > dx * 2.2 && totalLength > height * 0.65) {
+      return { char: "I", bounds: { minX, maxX, minY, maxY }, confidence: 0.92 };
+    }
+  }
+
+  // === V ===
+  if (segments.length <= 3) {
+    const inter = this.segmentIntersection(segments[0], segments[1] || segments[0]);
+    if (inter) {
+      const relY = (inter.y - minY) / height;
+      if (relY > 0.55) {   // lowered threshold
+        return { char: "V", bounds: { minX, maxX, minY, maxY }, confidence: 0.85 };
+      }
+    }
+    // Fallback: two lines going down to a common bottom area
+    if (segments.length === 2) {
+      const bottomPoints = [segments[0].p2, segments[1].p2];
+      if (Math.abs(bottomPoints[0].y - maxY) < height*0.3 && 
+          Math.abs(bottomPoints[1].y - maxY) < height*0.3) {
+        return { char: "V", bounds: { minX, maxX, minY, maxY }, confidence: 0.75 };
+      }
+    }
+  }
+
+  // === X ===
+  if (segments.length <= 3) {
+    let crossCount = 0;
+    for (let i = 0; i < segments.length; i++) {
+      for (let j = i+1; j < segments.length; j++) {
+        if (this.segmentIntersection(segments[i], segments[j])) crossCount++;
+      }
+    }
+    if (crossCount >= 1) {
+      return { char: "X", bounds: { minX, maxX, minY, maxY }, confidence: 0.88 };
+    }
+  }
+
+  // === L ===
+  if (segments.length <= 3) {
+    let hasVertical = false, hasHorizontal = false;
+    let horizAtBottom = false;
+
+    segments.forEach(s => {
+      const angle = Math.abs(Math.atan2(s.p2.y - s.p1.y, s.p2.x - s.p1.x));
+      if (angle > 0.9 && angle < 2.2) hasVertical = true;           // vertical-ish
+      if (angle < 0.6 || angle > 2.5) hasHorizontal = true;         // horizontal-ish
+    });
+
+    // Check if any horizontal segment is near bottom
+    segments.forEach(s => {
+      if (Math.max(s.p1.y, s.p2.y) > maxY - height * 0.35) {
+        horizAtBottom = true;
+      }
+    });
+
+    if (hasVertical && hasHorizontal && horizAtBottom) {
+      return { char: "L", bounds: { minX, maxX, minY, maxY }, confidence: 0.82 };
+    }
+  }
+
+  // === C ===
+  if (segments.length >= 2 && segments.length <= 5) {
+    const leftMost = Math.min(...segments.flatMap(s => [s.p1.x, s.p2.x]));
+    const rightMost = Math.max(...segments.flatMap(s => [s.p1.x, s.p2.x]));
+
+    const opensRight = rightMost < centerX + width * 0.45;
+    const opensLeft  = leftMost  > centerX - width * 0.45;
+
+    if ((opensRight || opensLeft) && aspect > 0.65 && aspect < 2.0) {
+      return { char: "C", bounds: { minX, maxX, minY, maxY }, confidence: 0.78 };
+    }
+  }
+
+  // Final fallback using graph
+  if (graph.nodes.some(n => n.degree >= 3)) {
+    return { char: "X", bounds: { minX, maxX, minY, maxY }, confidence: 0.6 };
+  }
+  if (segments.length === 2) {
+    return { char: "V", bounds: { minX, maxX, minY, maxY }, confidence: 0.55 };
+  }
+
+  return null;
+},
+
+// Keep the improved clusterSegmentsToChars from last version (or use this slightly relaxed one):
+clusterSegmentsToChars(segments) {
+  if (segments.length === 0) return [];
+
+  const clusters = [];
+  let unvisited = [...segments];
+
+  while (unvisited.length > 0) {
+    let cluster = [unvisited.pop()];
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+      for (let i = unvisited.length - 1; i >= 0; i--) {
+        const cand = unvisited[i];
+        const connects = cluster.some(s => {
+          const d1 = this.pointToSegmentDist(cand.p1.x, cand.p1.y, s.p1.x, s.p1.y, s.p2.x, s.p2.y);
+          const d2 = this.pointToSegmentDist(cand.p2.x, cand.p2.y, s.p1.x, s.p1.y, s.p2.x, s.p2.y);
+          return d1 < 60 || d2 < 60 || this.segmentIntersection(cand, s) !== null;   // increased tolerance
+        });
+
+        if (connects) {
+          cluster.push(cand);
+          unvisited.splice(i, 1);
+          changed = true;
+        }
+      }
+    }
+
+    if (cluster.length >= 1) clusters.push(cluster);
+  }
+
+  const recognized = clusters
+    .map(c => this.classifyStrokeGroup(c))
+    .filter(Boolean);
+
+  recognized.sort((a, b) => a.bounds.minX - b.bounds.minX);
+  return recognized;
+},
+// Improved clustering
+clusterSegmentsToChars(segments) {
+  if (segments.length === 0) return [];
+
+  const clusters = [];
+  let unvisited = [...segments];
+
+  while (unvisited.length > 0) {
+    let cluster = [unvisited.pop()];
+    let changed = true;
+
+    while (changed) {
+      changed = false;
+      for (let i = unvisited.length - 1; i >= 0; i--) {
+        const candidate = unvisited[i];
+        const isConnected = cluster.some(seg => {
+          const d1 = this.pointToSegmentDist(candidate.p1.x, candidate.p1.y, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+          const d2 = this.pointToSegmentDist(candidate.p2.x, candidate.p2.y, seg.p1.x, seg.p1.y, seg.p2.x, seg.p2.y);
+          return d1 < 45 || d2 < 45 || this.segmentIntersection(candidate, seg) !== null;
+        });
+
+        if (isConnected) {
+          cluster.push(candidate);
+          unvisited.splice(i, 1);
+          changed = true;
+        }
+      }
+    }
+
+    // Filter tiny noise clusters
+    if (cluster.length >= 1) {
+      clusters.push(cluster);
+    }
+  }
+
+  // Recognize and filter low quality
+  const recognized = clusters
+    .map(cluster => this.classifyStrokeGroup(cluster))
+    .filter(res => res !== null);
+
+  // Sort left to right
+  recognized.sort((a, b) => a.bounds.minX - b.bounds.minX);
+
+  return recognized;
+},
+
+  // Cluster segments spatially into individual character candidates
+  clusterSegmentsToChars(segments) {
+    if (segments.length === 0) return [];
+
+    let clusters = [];
+    let unvisited = [...segments];
+
+    while (unvisited.length > 0) {
+      let currentCluster = [unvisited.pop()];
+      let added = true;
+
+      while (added) {
+        added = false;
+        for (let i = unvisited.length - 1; i >= 0; i--) {
+          const cand = unvisited[i];
+          const connects = currentCluster.some(s => {
+            const d1 = this.pointToSegmentDist(cand.p1.x, cand.p1.y, s.p1.x, s.p1.y, s.p2.x, s.p2.y);
+            const d2 = this.pointToSegmentDist(cand.p2.x, cand.p2.y, s.p1.x, s.p1.y, s.p2.x, s.p2.y);
+            return d1 < 50 || d2 < 50 || this.segmentIntersection(cand, s) !== null;
+          });
+
+          if (connects) {
+            currentCluster.push(cand);
+            unvisited.splice(i, 1);
+            added = true;
+          }
+        }
+      }
+      clusters.push(currentCluster);
+    }
+
+    // Recognize each cluster
+    let recognized = [];
+    clusters.forEach(cluster => {
+      const res = this.classifyStrokeGroup(cluster);
+      if (res) recognized.push(res);
+    });
+
+    // Sort left to right by spatial X bounding box
+    recognized.sort((a, b) => a.bounds.minX - b.bounds.minX);
+    return recognized;
+  },
+
+  // =========================================================================
+  // STAGE 5 & 6: ROMAN NUMERAL PARSER & CONFIDENCE SCORING
+  // =========================================================================
+
+  parseRomanString(romanStr) {
+    const map = { I: 1, V: 5, X: 10, L: 50, C: 100 };
+    let total = 0;
+    for (let i = 0; i < romanStr.length; i++) {
+      const current = map[romanStr[i]];
+      const next = map[romanStr[i + 1]];
+      if (!current) return null;
+      if (next && current < next) {
+        total -= current;
+      } else {
+        total += current;
+      }
+    }
+    return total;
+  },
+
+ evaluateShapeVector(baseUnit) {
+  const result = this.recognizeRoman(this.freehandStrokes);
+  
+  if (!result || !result.roman) {
+    this.triggerFail();
+    return;
+  }
+
+  const parsedValue = this.parseRomanString(result.roman);
+  const level = this.levels[this.currentLevel];
+  const targetValue = parseInt(level.number, 10);
+
+  if (result.roman === level.symbol && parsedValue === targetValue) {
+    this.levelCompleteTimer = 1;
+    this.score += 20;
+    this.cursorColor = "#00FFCC";
+  } else {
+    this.triggerFail();
+  }
+},
+  // =========================================================================
+  // UI, DRAWING & GAME LOGIC INTEGRATION
+  // =========================================================================
 
   drawHelpPopUp(ctx, w, h, baseUnit) {
     ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
@@ -179,9 +649,11 @@ const Game5 = {
             }
             this.currentStroke = [{x: this.cursor.x, y: this.cursor.y}];
             this.freehandStrokes.push(this.currentStroke);
-            this.submitTimer = 100; // Keep timer active for UI visibility
+            this.submitTimer = 100;
             this.cursorColor = "white";
         }
+
+
     };
 
     const moveDraw = (e) => {
@@ -204,7 +676,6 @@ const Game5 = {
             this.tracePoints = []; 
             this.cursorColor = "white"; 
         } else if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0) {
-            // No longer auto-triggering evaluation here
             this.submitTimer = 100; 
         }
     };
@@ -236,6 +707,7 @@ const Game5 = {
     const baseUnit = Math.min(w, h);
     const x = this.cursor.x;
     const y = this.cursor.y;
+    if (!this.debugMode) this.debugMode = true;
 
     if (this.showHelp) {
         const boxW = baseUnit * 0.8, boxH = baseUnit * 0.7;
@@ -249,7 +721,6 @@ const Game5 = {
         return true; 
     }
 
-    // --- ADDITIVE CHANGE: MANUAL SUBMIT BUTTON CLICK ---
     if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
         const subW = baseUnit * 0.3, subH = baseUnit * 0.08;
         const subX = w / 2 - subW / 2, subY = baseUnit * 0.15;
@@ -269,7 +740,7 @@ const Game5 = {
         this.setMode("TRACE"); 
         return true; 
     }
-    if (x >= freeX && x <= freeX + btnW && y >= freeX && y <= freeX + btnH) { // Existing logic preserved
+    if (x >= freeX && x <= freeX + btnW && y >= btnY && y <= btnY + btnH) {
         this.setMode("FREEHAND"); 
         return true; 
     }
@@ -385,8 +856,6 @@ const Game5 = {
     if (this.levelCompleteTimer === 0 && this.levelFailedTimer === 0 && !this.isMenuOpen && !this.showHelp) {
         if (this.mode === "TRACE" && this.isDrawing) {
             this.handleTracing(w, h, baseUnit);
-        } else if (this.mode === "FREEHAND") {
-            this.handleFreehand(baseUnit);
         }
     }
     
@@ -394,6 +863,7 @@ const Game5 = {
     this.drawTemplate(ctx, w, h, baseUnit);
     this.drawUserInk(ctx, baseUnit);
     this.drawParticles(ctx, baseUnit); 
+    this.drawRecognitionDebug(ctx, baseUnit);
     if (!this.isMenuOpen && !this.showHelp) this.drawCursor(ctx, baseUnit); 
     this.drawUI(ctx, w, h, baseUnit);
 
@@ -440,7 +910,7 @@ const Game5 = {
     const p2 = this.getPoint(stroke.x2, stroke.y2, w, h);
     const lineLen = Math.hypot(p2.x - p1.x, p2.y - p1.y);
     const distToStart = Math.hypot(this.cursor.x - p1.x, this.cursor.y - p1.y);
-    const distToLine = this.pointToLineDist(this.cursor.x, this.cursor.y, p1.x, p1.y, p2.x, p2.y);
+    const distToLine = this.pointToSegmentDist(this.cursor.x, this.cursor.y, p1.x, p1.y, p2.x, p2.y);
     const snapAllowed = baseUnit * 0.08; 
     if (distToLine > snapAllowed) { this.cursorColor = "#FF4444"; return; }
     const newProgress = Math.min(1, Math.max(0, distToStart / lineLen));
@@ -463,88 +933,6 @@ const Game5 = {
     for(let i=0; i<20; i++) this.spawnParticle(this.cursor.x, this.cursor.y, true, baseUnit);
     if (this.activeStrokeIndex >= this.levels[this.currentLevel].strokes.length) {
       this.levelCompleteTimer = 1; 
-    }
-  },
-
-  handleFreehand(baseUnit) {
-      // --- ADDITIVE CHANGE: DISABLED AUTO-TIMER ---
-      /* if (!this.isDrawing && this.freehandStrokes.length > 0) {
-          if (this.submitTimer > 0) {
-              this.submitTimer--;
-              if (this.submitTimer <= 0) {
-                  this.evaluateShapeVector(baseUnit);
-              }
-          }
-      }
-      */
-  },
-
-  splitStrokeAtCorners(stroke) {
-    if (stroke.length < 10) return [stroke];
-    let segments = [];
-    let startIdx = 0;
-    for (let i = 5; i < stroke.length - 5; i++) {
-      const p1 = stroke[i - 4], p2 = stroke[i], p3 = stroke[i + 4];
-      const v1 = { x: p2.x - p1.x, y: p2.y - p1.y }, v2 = { x: p3.x - p2.x, y: p3.y - p2.y };
-      const mag1 = Math.hypot(v1.x, v1.y), mag2 = Math.hypot(v2.x, v2.y);
-      if (mag1 < 1 || mag2 < 1) continue;
-      const dot = (v1.x * v2.x + v1.y * v2.y) / (mag1 * mag2);
-      if (dot < 0.3) {
-        segments.push(stroke.slice(startIdx, i + 1));
-        startIdx = i;
-        i += 5; 
-      }
-    }
-    segments.push(stroke.slice(startIdx));
-    return segments;
-  },
-
-  evaluateShapeVector(baseUnit) {
-    let splitStrokes = [];
-    this.freehandStrokes.forEach(s => {
-        if(s.length > 3) splitStrokes.push(...this.splitStrokeAtCorners(s));
-    });
-
-    if (splitStrokes.length === 0) return this.triggerFail();
-
-    const maxGap = 800; 
-    for (let i = 0; i < splitStrokes.length - 1; i++) {
-        let p1 = splitStrokes[i][splitStrokes[i].length - 1];
-        let p2 = splitStrokes[i+1][0];
-        if (Math.hypot(p1.x - p2.x, p1.y - p2.y) > maxGap) return this.triggerFail();
-    }
-
-    const level = this.levels[this.currentLevel];
-    const template = level.localStrokes;
-    const normUser = this.normalizeStrokes(splitStrokes);
-
-    if (Math.abs(normUser.length - template.length) > 1) return this.triggerFail();
-
-    let usedTemplate = new Array(template.length).fill(false);
-    let totalScore = 0;
-
-    for (let u of normUser) {
-        let bestScore = -Infinity, bestIndex = -1;
-        for (let i = 0; i < template.length; i++) {
-            if (usedTemplate[i]) continue;
-            const score = this.strokeMatchScore(u, template[i]);
-            if (score > bestScore) { bestScore = score; bestIndex = i; }
-        }
-        if (bestIndex !== -1 && bestScore > 0.45) {
-            usedTemplate[bestIndex] = true;
-            totalScore += bestScore;
-        } else {
-            return this.triggerFail(); 
-        }
-    }
-
-    let matchedCount = usedTemplate.filter(v => v).length;
-    if (matchedCount === template.length && (totalScore / matchedCount) > 0.5) {
-        this.levelCompleteTimer = 1;
-        this.score += 20;
-        this.cursorColor = "#00FFCC";
-    } else {
-        this.triggerFail();
     }
   },
 
@@ -623,7 +1011,6 @@ const Game5 = {
     ctx.fillText("Number: " + level.number, w / 2, baseUnit * 0.05);
     ctx.shadowBlur = 0;
     
-    // --- ADDITIVE CHANGE: MANUAL SUBMIT BUTTON UI ---
     if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
         const subW = baseUnit * 0.3, subH = baseUnit * 0.08;
         const subX = w / 2 - subW / 2, subY = baseUnit * 0.15;
@@ -702,15 +1089,6 @@ const Game5 = {
     ctx.fillText("Use TRACE mode if you forgot!", w/2, h/2 + (baseUnit * 0.08));
   },
 
-  pointToLineDist(px, py, x1, y1, x2, y2) {
-    const A = px - x1, B = py - y1, C = x2 - x1, D = y2 - y1;
-    const dot = A * C + B * D, len_sq = C * C + D * D;
-    let param = -1; if (len_sq !== 0) param = dot / len_sq;
-    let xx, yy;
-    if (param < 0) { xx = x1; yy = y1; } else if (param > 1) { xx = x2; yy = y2; } else { xx = x1 + param * C; yy = y1 + param * D; }
-    return Math.hypot(px - xx, py - yy);
-  },
-
   spawnParticle(x, y, burst = false, baseUnit) {
     const angle = Math.random() * Math.PI * 2, mult = baseUnit ? baseUnit * 0.005 : 2; 
     const speed = burst ? (Math.random() * 5 + 2) * mult : (Math.random() * 2 + 1) * mult;
@@ -757,8 +1135,7 @@ const Game5 = {
       const roman = this.toRoman(i);
       this.levels.push({
         symbol: roman, number: i.toString(),
-        strokes: this.buildStrokesFromRoman(roman),
-        localStrokes: this.buildLocalFromRoman(roman)
+        strokes: this.buildStrokesFromRoman(roman)
       });
     }
   },
@@ -785,49 +1162,334 @@ const Game5 = {
     return strokes;
   },
 
-  buildLocalFromRoman(roman) {
-    const chars = roman.split(""), strokes = [];
-    const spacing = 1.2, totalWidth = chars.length * spacing, startX = 0.5 - totalWidth / 2 + spacing / 2;
-    chars.forEach((ch, index) => {
-      const offset = startX + index * spacing;
-      if (ch === "I") strokes.push({ x1: offset, y1: 0, x2: offset, y2: 1 });
-      if (ch === "V") strokes.push({ x1: offset - 0.5, y1: 0, x2: offset, y2: 1 }, { x1: offset, y1: 1, x2: offset + 0.5, y2: 0 });
-      if (ch === "X") strokes.push({ x1: offset - 0.5, y1: 0, x2: offset + 0.5, y2: 1 }, { x1: offset + 0.5, y1: 0, x2: offset - 0.5, y2: 1 });
-      if (ch === "L") strokes.push({ x1: offset - 0.5, y1: 0, x2: offset - 0.5, y2: 1 }, { x1: offset - 0.5, y1: 1, x2: offset + 0.5, y2: 1 });
-      if (ch === "C") strokes.push({ x1: offset + 0.5, y1: 0, x2: offset - 0.5, y2: 0.5 }, { x1: offset - 0.5, y1: 0.5, x2: offset + 0.5, y2: 1 });
-    });
-    return strokes;
-  },
-
   normalizeStrokes(strokes) {
-    let allPts = [];
-    strokes.forEach(s => allPts.push(...s));
-    let minX = Math.min(...allPts.map(p => p.x)), maxX = Math.max(...allPts.map(p => p.x));
-    let minY = Math.min(...allPts.map(p => p.y)), maxY = Math.max(...allPts.map(p => p.y));
-    let centerX = (minX + maxX) / 2;
-    let centerY = (minY + maxY) / 2;
-    let currentScale = Math.max(maxX - minX, maxY - minY, 100); 
-    return strokes.map(stroke => stroke.map(p => ({ x: (p.x - centerX) / currentScale, y: (p.y - centerY) / currentScale })));
-  },
+  if (!strokes || strokes.length === 0) return [];
+  
+  let allPoints = [];
+  strokes.forEach(stroke => stroke.forEach(p => allPoints.push(p)));
 
-  strokeMatchScore(stroke, tmpl) {
-    const p1 = stroke[0], p2 = stroke[stroke.length - 1];
-    const udx = p2.x - p1.x, udy = p2.y - p1.y, ulen = Math.hypot(udx, udy) + 0.0001;
-    const tdx = tmpl.x2 - tmpl.x1, tdy = tmpl.y2 - tmpl.y1, tlen = Math.hypot(tdx, tdy) + 0.0001;
-    const dirScore = Math.max(0, (udx * tdx + udy * tdy) / (ulen * tlen));
-    const lenScore = 1 - Math.min(1, Math.abs(ulen - tlen));
-    let dist = 0;
-    stroke.forEach(p => { dist += this.pointToLineDist(p.x, p.y, tmpl.x1, tmpl.y1, tmpl.x2, tmpl.y2); });
-    const distScore = 1 - Math.min(1, (dist / stroke.length) * 1.2);
-    return (dirScore * 0.6) + (lenScore * 0.2) + (distScore * 0.2);
-  },
+  if (allPoints.length < 3) return [];
 
-  roundRect(ctx, x, y, width, height, radius, fill, stroke) {
-    ctx.beginPath(); ctx.moveTo(x + radius, y); ctx.lineTo(x + width - radius, y);
-    ctx.quadraticCurveTo(x + width, y, x + width, y + radius); ctx.lineTo(x + width, y + height - radius);
-    ctx.quadraticCurveTo(x + width, y + height, x + width - radius, y + height); ctx.lineTo(x + radius, y + height);
-    ctx.quadraticCurveTo(x, y + height, x, y + height - radius); ctx.lineTo(x, y + radius);
-    ctx.quadraticCurveTo(x, y, x + radius, y); ctx.closePath();
-    if (fill) ctx.fill(); if (stroke) ctx.stroke();
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  allPoints.forEach(p => {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  });
+
+  const width = maxX - minX || 1;
+  const height = maxY - minY || 1;
+  const scale = 180 / Math.max(width, height);
+
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+
+  return strokes.map(stroke => stroke.map(p => ({
+    x: (p.x - centerX) * scale,
+    y: (p.y - centerY) * scale
+  })));
+},
+
+clusterIntoCharacters(strokes) {
+  if (!strokes || strokes.length === 0) return [];
+  
+  const allSegments = this.extractSegments(strokes, 20);
+  if (allSegments.length === 0) return [];
+
+  // Group segments by horizontal position (left to right)
+  const clusters = [];
+  let currentCluster = [];
+  let lastX = -Infinity;
+
+  // Sort segments by average X position
+  const sortedSegments = [...allSegments].sort((a, b) => {
+    const ax = (a.p1.x + a.p2.x) / 2;
+    const bx = (b.p1.x + b.p2.x) / 2;
+    return ax - bx;
+  });
+
+  sortedSegments.forEach(seg => {
+    const avgX = (seg.p1.x + seg.p2.x) / 2;
+    
+    if (currentCluster.length === 0 || avgX - lastX < 110) {  // 110px gap tolerance
+      currentCluster.push(seg);
+    } else {
+      if (currentCluster.length > 0) clusters.push(currentCluster);
+      currentCluster = [seg];
+    }
+    lastX = avgX;
+  });
+
+  if (currentCluster.length > 0) clusters.push(currentCluster);
+
+  return clusters;
+},
+
+// Main recognition function
+recognizeRoman(strokes) {
+  const clusters = this.clusterIntoCharacters(strokes);
+  if (clusters.length === 0) return null;
+
+  let roman = "";
+  let totalScore = 0;
+
+  clusters.forEach(cluster => {
+    const res = this.recognizeSingleCharacter(cluster);
+    if (res) {
+      roman += res.char;
+      totalScore += res.score;
+    } else {
+      roman += "?"; 
+    }
+  });
+
+  return {
+    roman: roman,
+    score: clusters.length > 0 ? totalScore / clusters.length : 0
+  };
+},
+
+
+// Single character matcher (same as before but cleaner)
+recognizeSingleCharacter(segments) {
+  if (!segments || segments.length === 0) return null;
+
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  segments.forEach(s => {
+    minX = Math.min(minX, s.p1.x, s.p2.x);
+    maxX = Math.max(maxX, s.p1.x, s.p2.x);
+    minY = Math.min(minY, s.p1.y, s.p2.y);
+    maxY = Math.max(maxY, s.p1.y, s.p2.y);
+  });
+
+  const width = maxX - minX || 1;
+  const height = maxY - minY || 1;
+
+  // Count crossings
+  let crossCount = 0;
+  for (let i = 0; i < segments.length; i++) {
+    for (let j = i + 1; j < segments.length; j++) {
+      if (this.segmentIntersection(segments[i], segments[j])) crossCount++;
+    }
   }
+
+  // === X ===
+  if (crossCount >= 1) {
+    const midY = (minY + maxY) / 2;
+    let middleCross = false;
+    for (let i = 0; i < segments.length; i++) {
+      for (let j = i + 1; j < segments.length; j++) {
+        const inter = this.segmentIntersection(segments[i], segments[j]);
+        if (inter && Math.abs(inter.y - midY) < height * 0.4) middleCross = true;
+      }
+    }
+    if (middleCross) return { char: "X", score: 0.93 };
+  }
+
+  // === I - Much more lenient for single vertical strokes ===
+  if (segments.length <= 3) {
+    const dx = maxX - minX;
+    const dy = maxY - minY;
+    const aspect = height / (width || 1);
+    
+    if (aspect > 2.2 && dx < 45) {           // tall and narrow
+      return { char: "I", score: 0.9 };
+    }
+  }
+
+  // === V ===
+  if (segments.length <= 3) {
+    let bottomIntersect = false;
+    for (let i = 0; i < segments.length; i++) {
+      for (let j = i + 1; j < segments.length; j++) {
+        const inter = this.segmentIntersection(segments[i], segments[j]);
+        if (inter && inter.y > minY + height * 0.68) bottomIntersect = true;
+      }
+    }
+    if (bottomIntersect) return { char: "V", score: 0.87 };
+  }
+
+  // === L ===
+  if (segments.length <= 3) {
+    let hasVert = false, hasHorizBottom = false;
+    segments.forEach(s => {
+      const angle = Math.abs(Math.atan2(s.p2.y - s.p1.y, s.p2.x - s.p1.x));
+      if (angle > 0.65 && angle < 2.4) hasVert = true;
+      if ((angle < 0.7 || angle > 2.45) && Math.max(s.p1.y, s.p2.y) > maxY - height * 0.4) {
+        hasHorizBottom = true;
+      }
+    });
+    if (hasVert && hasHorizBottom) return { char: "L", score: 0.85 };
+  }
+
+  // === C - Strict width requirement ===
+  if (segments.length >= 2 && segments.length <= 5) {
+    const rightMost = Math.max(...segments.flatMap(s => [s.p1.x, s.p2.x]));
+    const centerX = (minX + maxX) / 2;
+    if (width > height * 0.65 && rightMost < centerX + width * 0.48) {
+      return { char: "C", score: 0.78 };
+    }
+  }
+
+  return null;
+},
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// Individual matchers with tolerance
+matchI(segments) {
+  if (segments.length > 3) return null;
+  let verticalScore = 0;
+  segments.forEach(s => {
+    const angle = Math.abs(Math.atan2(s.p2.y - s.p1.y, s.p2.x - s.p1.x));
+    if (angle > 0.8 && angle < 2.3) verticalScore += 1; // quite vertical
+  });
+  const score = verticalScore / Math.max(segments.length, 1);
+  return score > 0.65 ? { char: "I", score: score * 0.95 } : null;
+},
+
+matchV(segments) {
+  if (segments.length > 4) return null;
+  let intersections = 0;
+  let bottomBias = 0;
+
+  for (let i = 0; i < segments.length; i++) {
+    for (let j = i+1; j < segments.length; j++) {
+      if (this.segmentIntersection(segments[i], segments[j])) intersections++;
+    }
+  }
+
+  segments.forEach(s => {
+    const avgY = (s.p1.y + s.p2.y) / 2;
+    if (avgY > 40) bottomBias += 1; // bottom half
+  });
+
+  const score = (intersections * 0.6 + bottomBias * 0.4) / Math.max(segments.length, 2);
+  return score > 0.55 ? { char: "V", score } : null;
+},
+
+matchX(segments) {
+  if (segments.length > 4) return null;
+  let crossCount = 0;
+  for (let i = 0; i < segments.length; i++) {
+    for (let j = i+1; j < segments.length; j++) {
+      if (this.segmentIntersection(segments[i], segments[j])) crossCount++;
+    }
+  }
+  const score = crossCount >= 1 ? 0.9 : 0.4;
+  return score > 0.6 ? { char: "X", score } : null;
+},
+
+matchL(segments) {
+  if (segments.length > 4) return null;
+  let vert = 0, horiz = 0, horizAtBottom = 0;
+
+  segments.forEach(s => {
+    const angle = Math.abs(Math.atan2(s.p2.y - s.p1.y, s.p2.x - s.p1.x));
+    if (angle > 0.7 && angle < 2.4) vert++;
+    else if (angle < 0.7 || angle > 2.5) {
+      horiz++;
+      if (Math.max(s.p1.y, s.p2.y) > 30) horizAtBottom++;
+    }
+  });
+
+  const score = (vert > 0 && horiz > 0 && horizAtBottom > 0) ? 0.85 : 0.3;
+  return score > 0.65 ? { char: "L", score } : null;
+},
+
+matchC(segments) {
+  if (segments.length < 2 || segments.length > 6) return null;
+
+  let minX = Infinity, maxX = -Infinity;
+  segments.forEach(s => {
+    minX = Math.min(minX, s.p1.x, s.p2.x);
+    maxX = Math.max(maxX, s.p1.x, s.p2.x);
+  });
+
+  const opensSide = maxX - minX < 120; // not too wide
+
+  const score = opensSide ? 0.8 : 0.35;
+  return score > 0.6 ? { char: "C", score: score } : null;
+},
+
+// Add this method inside the Game5 object
+drawRecognitionDebug(ctx, baseUnit) {
+  if (!this.debugMode || this.mode !== "FREEHAND") return;
+
+  const result = this.recognizeRoman(this.freehandStrokes);
+  const clusters = this.clusterIntoCharacters(this.freehandStrokes);
+  const normalized = this.normalizeStrokes(this.freehandStrokes);
+
+  // === Small preview of normalized drawing ===
+  ctx.save();
+  ctx.translate(70, 100);        // Position of preview box
+  ctx.scale(0.32, 0.32);
+
+  ctx.strokeStyle = "#00FFCC";
+  ctx.lineWidth = 14;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  if (normalized && normalized.length > 0) {
+    normalized.forEach(stroke => {
+      if (stroke.length < 2) return;
+      ctx.beginPath();
+      ctx.moveTo(stroke[0].x, stroke[0].y);
+      for (let i = 1; i < stroke.length; i++) {
+        ctx.lineTo(stroke[i].x, stroke[i].y);
+      }
+      ctx.stroke();
+    });
+  }
+
+  ctx.restore();
+
+  // === Debug Text Info ===
+  ctx.textAlign = "left";
+  ctx.font = `bold ${baseUnit * 0.028}px Arial`;
+  
+  let y = baseUnit * 0.18;
+  ctx.fillStyle = "#FFFFFF";
+  ctx.fillText("=== RECOGNITION DEBUG ===", 35, y);
+  y += baseUnit * 0.055;
+
+  if (result && result.roman) {
+    ctx.fillStyle = "#00FF88";
+    ctx.fillText(`Detected: ${result.roman}`, 35, y);
+    y += baseUnit * 0.05;
+    
+    ctx.fillStyle = "#88FFAA";
+    ctx.fillText(`Confidence: ${Math.round(result.score * 100)}%`, 35, y);
+    y += baseUnit * 0.05;
+  } else {
+    ctx.fillStyle = "#FF6666";
+    ctx.fillText("No clear character detected", 35, y);
+    y += baseUnit * 0.05;
+  }
+
+  ctx.fillStyle = "#BBBBBB";
+  ctx.font = `${baseUnit * 0.023}px Arial`;
+  ctx.fillText(`Characters detected: ${clusters ? clusters.length : 0}`, 35, y);
+  y += baseUnit * 0.045;
+
+  if (clusters && clusters.length > 0) {
+    ctx.fillText(`Segments: ${this.extractSegments(this.freehandStrokes, 20).length}`, 35, y);
+  }
+
+  // Instructions
+  ctx.fillStyle = "#666666";
+  ctx.font = `${baseUnit * 0.02}px Arial`;
+  ctx.fillText("Press D to toggle debug", 35, baseUnit * 0.75);
+},
 };
