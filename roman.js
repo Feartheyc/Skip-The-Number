@@ -1269,24 +1269,37 @@ recognizeSingleCharacter(segments) {
   const centerX = (minX + maxX) / 2;
   const centerY = (minY + maxY) / 2;
 
+  // Only count TRUE interior crossings, not corner-joins between
+  // consecutive segments of the same stroke (fixes X false-positives on L/C corners).
+  const trueCrossingPoint = (s1, s2) => {
+    const x1 = s1.p1.x, y1 = s1.p1.y, x2 = s1.p2.x, y2 = s1.p2.y;
+    const x3 = s2.p1.x, y3 = s2.p1.y, x4 = s2.p2.x, y4 = s2.p2.y;
+    const denom = (y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1);
+    if (denom === 0) return null;
+    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denom;
+    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denom;
+    if (ua > 0.15 && ua < 0.85 && ub > 0.15 && ub < 0.85) {
+      return { x: x1 + ua * (x2 - x1), y: y1 + ua * (y2 - y1) };
+    }
+    return null;
+  };
+
   let crossCount = 0;
+  let middleCross = false;
+  const midY = centerY;
   for (let i = 0; i < segments.length; i++) {
     for (let j = i + 1; j < segments.length; j++) {
-      if (this.segmentIntersection(segments[i], segments[j])) crossCount++;
+      const inter = trueCrossingPoint(segments[i], segments[j]);
+      if (inter) {
+        crossCount++;
+        if (Math.abs(inter.y - midY) < height * 0.4) middleCross = true;
+      }
     }
   }
 
   // === X ===
-  if (crossCount >= 1) {
-    let middleCross = false;
-    const midY = centerY;
-    for (let i = 0; i < segments.length; i++) {
-      for (let j = i + 1; j < segments.length; j++) {
-        const inter = this.segmentIntersection(segments[i], segments[j]);
-        if (inter && Math.abs(inter.y - midY) < height * 0.4) middleCross = true;
-      }
-    }
-    if (middleCross) return { char: "X", score: 0.94 };
+  if (crossCount >= 1 && middleCross) {
+    return { char: "X", score: 0.94 };
   }
 
   // === I ===
@@ -1298,7 +1311,22 @@ recognizeSingleCharacter(segments) {
     }
   }
 
-  // === L - Improved (horizontal at bottom) ===
+  // === C === (chain + curvature based — checked before L/V since it's the most
+  // specific signature: a simple open path that bends smoothly through a wide
+  // total angle, rather than one sharp ~90° corner)
+  if (segments.length >= 3 && segments.length <= 7) {
+    const chain = this.buildChain(segments);
+    if (chain) {
+      const bend = this.computeTotalBend(chain); // radians, absolute
+      // A gentle multi-point curve sweeping 80°–300° total, roughly as tall as wide
+      const aspect = height / width;
+      if (bend > 1.4 && bend < 5.3 && aspect > 0.55 && aspect < 2.2) {
+        return { char: "C", score: 0.85 };
+      }
+    }
+  }
+
+  // === L - horizontal at bottom ===
   if (segments.length <= 3) {
     let hasVertical = false;
     let hasHorizontalAtBottom = false;
@@ -1324,27 +1352,81 @@ recognizeSingleCharacter(segments) {
     let bottomIntersect = false;
     for (let i = 0; i < segments.length; i++) {
       for (let j = i + 1; j < segments.length; j++) {
-        const inter = this.segmentIntersection(segments[i], segments[j]);
+        const inter = trueCrossingPoint(segments[i], segments[j]) ||
+                       this.segmentIntersection(segments[i], segments[j]);
         if (inter && inter.y > minY + height * 0.67) bottomIntersect = true;
       }
     }
     if (bottomIntersect) return { char: "V", score: 0.86 };
   }
 
-  // === C - Much better detection ===
-  if (segments.length >= 2 && segments.length <= 6) {
-    const rightMost = Math.max(...segments.flatMap(s => [s.p1.x, s.p2.x]));
-    const aspect = height / width;
-
-    // Open to the right + decent width
-    if (rightMost < centerX + width * 0.42 && width > height * 0.6 && aspect > 0.75) {
-      return { char: "C", score: 0.85 };
+  // Fallback: even a 2-segment gentle curve can be a C if nothing else matched
+  if (segments.length === 2) {
+    const chain = this.buildChain(segments);
+    if (chain) {
+      const bend = this.computeTotalBend(chain);
+      const aspect = height / width;
+      if (bend > 0.9 && bend < 2.6 && aspect > 0.55 && aspect < 2.2) {
+        return { char: "C", score: 0.7 };
+      }
     }
   }
 
   return null;
 },
 
+// Reconstructs an ordered point chain from an unordered set of connected,
+// non-branching segments. Returns null if the segments don't form a simple
+// open path (e.g. they branch or there's no single-degree endpoint to start from).
+buildChain(segments) {
+  if (!segments || segments.length === 0) return null;
+  const near = (a, b) => Math.hypot(a.x - b.x, a.y - b.y) < 25;
+
+  let allPts = [];
+  segments.forEach(s => { allPts.push(s.p1); allPts.push(s.p2); });
+  const degreeOf = (pt) => allPts.filter(p => near(p, pt)).length;
+
+  let startSeg = null, startPt = null, otherPt = null;
+  for (let s of segments) {
+    if (degreeOf(s.p1) === 1) { startSeg = s; startPt = s.p1; otherPt = s.p2; break; }
+    if (degreeOf(s.p2) === 1) { startSeg = s; startPt = s.p2; otherPt = s.p1; break; }
+  }
+  if (!startSeg) return null;
+
+  let chainPts = [startPt, otherPt];
+  let used = new Set([startSeg]);
+  let currentPt = otherPt;
+
+  while (used.size < segments.length) {
+    let found = null;
+    for (let s of segments) {
+      if (used.has(s)) continue;
+      if (near(s.p1, currentPt)) { found = { seg: s, next: s.p2 }; break; }
+      if (near(s.p2, currentPt)) { found = { seg: s, next: s.p1 }; break; }
+    }
+    if (!found) return null; // branching or disconnected -> not a simple path
+    used.add(found.seg);
+    chainPts.push(found.next);
+    currentPt = found.next;
+  }
+  return chainPts;
+},
+
+// Sum of absolute turning angle (radians) along an ordered point chain.
+computeTotalBend(chainPts) {
+  if (!chainPts || chainPts.length < 3) return 0;
+  let total = 0;
+  for (let i = 1; i < chainPts.length - 1; i++) {
+    const a = chainPts[i - 1], b = chainPts[i], c = chainPts[i + 1];
+    const ang1 = Math.atan2(b.y - a.y, b.x - a.x);
+    const ang2 = Math.atan2(c.y - b.y, c.x - b.x);
+    let diff = ang2 - ang1;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    total += Math.abs(diff);
+  }
+  return total;
+},
 
 
 
