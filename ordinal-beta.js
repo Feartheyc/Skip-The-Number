@@ -4,7 +4,7 @@
    • Fixed typo: tx.translate → ctx.translate in _drawTutVisual
    • Fonts updated: 'Fredoka' primary, Comic Sans fallback removed
      from gameplay text; proper weight/size hierarchy
-   • Mascot follow speed increased — near-zero latency feel
+   • Mascot follow speed updated — direct positioning with anti-jitter deadzone
    • Level-up: golden star-burst ring instead of orange screen flash
    • Game-over hearts=0: dreamy portal collapse (pastel vortex +
      sparkle implosion) — different from Game10's black hole
@@ -33,8 +33,6 @@ const Game9 = {
   fingerX: null, fingerY: null,
   _fingerSmoothX: null, _fingerSmoothY: null,
   _targetFingerX: null, _targetFingerY: null,
-  /* Increased smoothing factor: 1.0 = instant follow, 0.3 = original */
-  FINGER_SMOOTH: 0.55,
 
   running: false,
   lastTime: 0,
@@ -48,15 +46,13 @@ const Game9 = {
   correctThisLevel: 0,
   answersPerLevel: 3,
   numberRange: 10,
-  /* Level-up burst system replaces flash */
-  levelUpBurst: null,      // { time, particles[] }
+  levelUpBurst: null,      
   levelUpDuration: 1800,
 
   streak: 0, bestStreak: 0, streakPulse: 0,
   gameOver: false,
   toast: { text:"", timer:0, color:"#fff", y:0, alpha:0 },
 
-  /* Portal-collapse game-over effect */
   collapseActive: false,
   collapseTime:   0,
   collapseDur:    2200,
@@ -67,7 +63,6 @@ const Game9 = {
 
   mascot: {
     x:0, y:0, vx:0, vy:0,
-    /* Faster accel + higher maxSpeed = responsive, still smooth */
     accel: 0.065,
     maxSpeed: 1.1,
     friction: 0.970,
@@ -96,11 +91,9 @@ const Game9 = {
   shootingStars: [], shootingStarSpawnTimer: 0,
   shootingStarSpawnInterval: 2000, shootingStarBursts: [],
 
-  /* ── Listener guard ─────────────────────────────────────── */
   _listenersAttached: false,
   _resizeTimer: null,
 
-  /* ── Tutorial state ─────────────────────────────────────── */
   _tutHoldProgress: 0,
   _tutEnterAnim: 0,
   _tutOrbT: 0,
@@ -111,25 +104,22 @@ const Game9 = {
   HOLD_SEC: 3.0,
 
   _lastFingerUpdateTime: 0,
-  FINGER_UPDATE_INTERVAL: 16, /* Update target every frame effectively */
+  FINGER_UPDATE_INTERVAL: 16,
 
   loading: true,
   assetsToLoad: 0,
   assetsLoaded: 0,
 
-
   _levelPingActive: false,
   _levelPingTime: 0,
   _levelPingDuration: 500,
 
-
   /* ============================================================
      INIT
   ============================================================ */
- init() {
+  init() {
     this._applyResize(window.innerWidth, window.innerHeight);
 
-    // ── Fixed Tracking Property Initializer ──
     this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
     if (pauseBtn) {
@@ -144,7 +134,7 @@ const Game9 = {
     this.correctThisLevel = 0;
     this.numberRange      = 10;
     this.streak           = 0;
-    this.bestStreak        = 0;
+    this.bestStreak       = 0;
     this.streakPulse      = 0;
     this.heartShakeTime   = 0;
     this.levelUpBurst     = null;
@@ -161,10 +151,9 @@ const Game9 = {
     this._targetFingerX   = null;
     this._targetFingerY   = null;
     this._levelPingActive   = false;
-this._levelPingTime     = 0;
-this._levelPingDuration = 500;
+    this._levelPingTime     = 0;
+    this._levelPingDuration = 500;
 
-    /* Reset asset counters on each init so re-play works */
     this.loading        = true;
     this.assetsToLoad   = 0;
     this.assetsLoaded   = 0;
@@ -200,7 +189,6 @@ this._levelPingDuration = 500;
         this._resizeTimer = setTimeout(() => this._onResize(), 300);
       });
 
-      // ── Unified Double Click / Double Tap Interaction Listener ──
       this._lastTapTime = 0;
       window.addEventListener("pointerdown", (e) => {
         if (this.gameState !== "playing") return;
@@ -222,15 +210,12 @@ this._levelPingDuration = 500;
         this._lastTapTime = now;
       });
 
-      
-
       canvasElement.addEventListener("click", () => {
         if (this.gameOver && !this.collapseActive) this.retryGame();
       });
     }
   },
 
-  /* ── Resize — layout only ────────────────────────────────── */
   _onResize() {
     this._applyResize(window.innerWidth, window.innerHeight);
     this.initStarfield();
@@ -254,7 +239,6 @@ this._levelPingDuration = 500;
     this.CENTER_Y = h / 2;
   },
 
-  /* ── Tutorial stars ─────────────────────────────────────── */
   _initTutStars() {
     const W = window.innerWidth, H = window.innerHeight;
     this._tutStars = [];
@@ -275,15 +259,6 @@ this._levelPingDuration = 500;
     this.gameOver  = false;
   },
 
-  /* ============================================================
-     TUTORIAL DRAW
-  ============================================================ */
-  /* ============================================================
-     TUTORIAL — main draw (Page-Based System to Prevent Overflow)
-  ============================================================ */
-  /* ============================================================
-     TUTORIAL — main draw (Page-Based System to Prevent Overflow)
-  ============================================================ */
   _updateTutorial(ctx, fingers, dt) {
     this._tutEnterAnim  = Math.min(1, this._tutEnterAnim + dt * 2);
     this._tutOrbT      += dt;
@@ -298,7 +273,6 @@ this._levelPingDuration = 500;
     const cx = this.CENTER_X, cy = this.CENTER_Y;
     const tColor = "#a78bfa";
 
-    /* Dreamy gradient background */
     const g = ctx.createLinearGradient(0, 0, 0, H);
     g.addColorStop(0, "#60A5FA");
     g.addColorStop(0.5, "#A78BFA");
@@ -335,7 +309,6 @@ this._levelPingDuration = 500;
       return isNaN(r) ? "160,120,252" : `${r},${g2},${b}`;
     };
 
-    /* Card Box Frame */
     ctx.shadowColor = tColor; ctx.shadowBlur = 28;
     ctx.fillStyle = "rgba(30,10,55,0.92)";
     ctx.beginPath(); ctx.roundRect(cardX, cardY, cardW, cardH, cR); ctx.fill();
@@ -344,7 +317,6 @@ this._levelPingDuration = 500;
     ctx.fillStyle = `rgba(${hr(tColor)},0.16)`;
     ctx.beginPath(); ctx.roundRect(cardX, cardY, cardW, 56, [cR, cR, 0, 0]); ctx.fill();
 
-    /* Header Panel */
     ctx.font = `bold ${isMob ? 22 : 28}px 'Fredoka', sans-serif`;
     ctx.fillStyle = tColor; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.shadowColor = tColor; ctx.shadowBlur = 14;
@@ -355,7 +327,6 @@ this._levelPingDuration = 500;
     ctx.fillStyle = "rgba(255,255,255,0.68)";
     ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Gameplay & Scoring' : 'Hearts & Streak Bonus'}`, cx, cardY + 65);
 
-    /* Left Side Mini-Diagram Visual Sandbox Box */
     const visX = cardX + 12, visY = cardY + 76;
     const visW = isMob ? cardW - 24 : cardW * 0.42;
     const visH = isMob ? 140 : cardH - 200;
@@ -364,7 +335,6 @@ this._levelPingDuration = 500;
     ctx.strokeStyle = `rgba(${hr(tColor)},0.14)`; ctx.lineWidth = 1; ctx.stroke();
     this._drawTutVisual(ctx, visX, visY, visW, visH, this._tutOrbT);
 
-    /* Right Side Content Arrays (Pagination Grid - Scrubbed & Resized) */
     const contentRows = [];
     if (this._tutPage === 1) {
       contentRows.push(
@@ -419,7 +389,6 @@ this._levelPingDuration = 500;
     }
     ctx.globalAlpha = alpha;
 
-    /* Interactive Hold Segment */
     const holdY = cardY + cardH - (isMob ? 82 : 86);
     ctx.strokeStyle = "rgba(253,224,71,0.22)"; ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(cardX + 20, holdY - 6); ctx.lineTo(cardX + cardW - 20, holdY - 6); ctx.stroke();
@@ -473,7 +442,6 @@ this._levelPingDuration = 500;
       ctx.fill(); ctx.shadowBlur = 0;
     }
 
-    /* Reticle Pass */
     if (hasFing) {
       const fx = fingers[0].x, fy = fingers[0].y;
       ctx.beginPath(); ctx.arc(fx, fy, 38, 0, Math.PI * 2);
@@ -493,10 +461,9 @@ this._levelPingDuration = 500;
     ctx.globalAlpha = 1;
   },
 
-  /* ── Tutorial mini-diagram ───────────────────────────────── */
   _drawTutVisual(ctx, px, py, pw, ph, t) {
     ctx.save();
-    ctx.translate(px, py);  /* FIXED: was tx.translate */
+    ctx.translate(px, py);
     const mx = pw / 2, my = ph / 2;
 
     const bg = ctx.createRadialGradient(mx, my, 0, mx, my, Math.min(pw, ph) * 0.55);
@@ -505,7 +472,6 @@ this._levelPingDuration = 500;
     ctx.fillStyle = bg;
     ctx.beginPath(); ctx.arc(mx, my, Math.min(pw, ph) * 0.55, 0, Math.PI * 2); ctx.fill();
 
-    /* Floating number */
     const fY = my - 48 + Math.sin(t * 1.4) * 10;
     ctx.font = "bold 50px 'Fredoka', sans-serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
@@ -521,7 +487,6 @@ this._levelPingDuration = 500;
       ctx.fillStyle = "#FFFACD"; ctx.fill();
     }
 
-    /* Mascot blob */
     const mascotY = my + 42, mR = 28;
     const mg = ctx.createRadialGradient(mx - 4, mascotY - 4, 0, mx, mascotY, mR);
     mg.addColorStop(0, "#c084fc"); mg.addColorStop(1, "#7c3aed");
@@ -535,12 +500,10 @@ this._levelPingDuration = 500;
     ctx.beginPath(); ctx.arc(mx, mascotY + 2, 8, 0.2, Math.PI - 0.2);
     ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.stroke();
 
-    /* Pickup dashed line */
     ctx.strokeStyle = "rgba(253,224,71,0.55)"; ctx.lineWidth = 2; ctx.setLineDash([4, 5]);
     ctx.beginPath(); ctx.moveTo(mx, mascotY - mR - 3); ctx.lineTo(mx, fY + 18); ctx.stroke();
     ctx.setLineDash([]);
 
-    /* 4 portal dots */
     const portals = [
       { x: pw * 0.15, y: ph * 0.82, l: "st" },
       { x: pw * 0.37, y: ph * 0.88, l: "nd" },
@@ -559,7 +522,6 @@ this._levelPingDuration = 500;
       ctx.fillText(p.l, p.x, p.y);
     }
 
-    /* Finger legend */
     ctx.beginPath(); ctx.arc(mx - 46, my + 42, 8, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(94,180,150,0.35)"; ctx.fill();
     ctx.beginPath(); ctx.arc(mx - 46, my + 42, 4, 0, Math.PI * 2);
@@ -573,7 +535,6 @@ this._levelPingDuration = 500;
     ctx.restore();
   },
 
-  /* ── No-finger prompt ────────────────────────────────────── */
   _drawNoFingerPrompt(ctx) {
     const fingers = window.fingerPositions || [];
     if (fingers.length > 0) { this._tutNoFingerFrames = 0; return; }
@@ -595,9 +556,6 @@ this._levelPingDuration = 500;
     ctx.globalAlpha = 1;
   },
 
-  /* ============================================================
-     DOORS
-  ============================================================ */
   setupDoors() {
     this.doors = [];
     const suffixes = ["st","nd","rd","th"];
@@ -611,9 +569,6 @@ this._levelPingDuration = 500;
 
   get doorRadius() { return this.DOOR_RADIUS * this.scale; },
 
-  /* ============================================================
-     NUMBER SPAWN
-  ============================================================ */
   spawnNumber() {
     const num             = Math.floor(Math.random() * this.numberRange) + 1;
     this.currentNumber    = num;
@@ -636,274 +591,142 @@ this._levelPingDuration = 500;
     return "th";
   },
 
-  /* ============================================================
-   LEVEL UP SYSTEM (Fixed duplicate method conflict)
-============================================================ */
-checkLevelUp() {
-  this.correctThisLevel++;
-  this.correctAnswers++;
-  if (this.correctThisLevel >= this.answersPerLevel) {
-    this.correctThisLevel = 0;
-    this.level++;
-    const ranges = [10, 20, 30, 50, 100];
-    this.numberRange = ranges[Math.min(this.level - 1, ranges.length - 1)];
-    this._triggerLevelUpBurst();
-    this.showToast(`🎉 Level ${this.level}! Numbers up to ${this.numberRange}!`, "#a78bfa");
-  }
-},
-
-
-// _triggerLevelUpBurst() {
-//   this._levelPingActive   = true;
-//   this._levelPingTime     = 0;
-//   this._levelPingDuration = 1300;
-
-//   // Confetti particles streaming top-down
-//   const cols = ["#f472b6", "#60a5fa", "#fbbf24", "#34d399", "#c4b5fd"];
-//   const particles = [];
-//   for (let i = 0; i < 40; i++) {
-//     particles.push({
-//       x: Math.random() * this.cssWidth,
-//       y: -20 - Math.random() * 100,
-//       vx: (Math.random() - 0.5) * 120,
-//       vy: 180 + Math.random() * 200,
-//       w: 8 + Math.random() * 6,
-//       h: 12 + Math.random() * 8,
-//       color: cols[i % cols.length],
-//       rot: Math.random() * Math.PI,
-//       vRot: (Math.random() - 0.5) * 0.3
-//     });
-//   }
-//   this.levelUpBurst = { time: 0, duration: 1300, particles };
-// },
-
-// _updateLevelUpBurst(delta) {
-//   if (this._levelPingActive) {
-//     this._levelPingTime += delta;
-//     if (this._levelPingTime >= this._levelPingDuration) {
-//       this._levelPingActive = false;
-//     }
-//   }
-//   if (!this.levelUpBurst) return;
-//   this.levelUpBurst.time += delta;
-//   const dt_s = delta / 1000;
-
-//   for (const p of this.levelUpBurst.particles) {
-//     p.x += p.vx * dt_s;
-//     p.y += p.vy * dt_s;
-//     p.rot += p.vRot;
-//   }
-// },
-
-// _drawLevelUpBurst(ctx) {
-//   if (!this._levelPingActive) return;
-
-//   const W = this.cssWidth, H = this.cssHeight, s = this.scale;
-//   const prog = this._levelPingTime / this._levelPingDuration;
-
-//   ctx.save();
-
-//   /* 1. Rain Confetti */
-//   if (this.levelUpBurst) {
-//     for (const p of this.levelUpBurst.particles) {
-//       ctx.save();
-//       ctx.translate(p.x, p.y);
-//       ctx.rotate(p.rot);
-//       ctx.fillStyle = p.color;
-//       ctx.fillRect(-p.w / 2, -p.h / 2, p.w * s, p.h * s);
-//       ctx.restore();
-//     }
-//   }
-
-//   /* 2. Elastic Slam-Down Stamp Banner */
-//   let dropY, scaleY = 1;
-//   if (prog < 0.25) {
-//     const t = prog / 0.25;
-//     dropY = (1 - Math.cos(t * Math.PI)) * 0.5 * (this.CENTER_Y) - 200; // Bounce down
-//   } else if (prog < 0.35) {
-//     const t = (prog - 0.25) / 0.1;
-//     scaleY = 1 - Math.sin(t * Math.PI) * 0.25; // Squash on impact
-//     dropY = this.CENTER_Y - 40 * s;
-//   } else if (prog > 0.85) {
-//     const t = (prog - 0.85) / 0.15;
-//     dropY = (this.CENTER_Y - 40 * s) - (t * t) * 300; // Launch upward out
-//   } else {
-//     dropY = this.CENTER_Y - 40 * s;
-//   }
-
-//   ctx.translate(W / 2, dropY);
-//   ctx.scale(1, scaleY);
-
-//   // Angled Angled Banner Box
-//   ctx.rotate(-0.04); // Slight playful tilt
-//   ctx.fillStyle = "#fbbf24";
-//   ctx.shadowColor = "#f59e0b"; ctx.shadowBlur = 20;
-  
-//   const bw = 460 * s, bh = 110 * s;
-//   this._rrect(ctx, -bw / 2, -bh / 2, bw, bh, 18 * s);
-//   ctx.fill(); ctx.shadowBlur = 0;
-
-//   // Inner Dark Plate
-//   ctx.fillStyle = "#1e1b4b";
-//   this._rrect(ctx, -bw / 2 + 6 * s, -bh / 2 + 6 * s, bw - 12 * s, bh - 12 * s, 14 * s);
-//   ctx.fill();
-
-//   // Text Elements
-//   ctx.textAlign = "center"; ctx.textBaseline = "middle";
-//   ctx.font = `black ${Math.round(40 * s)}px 'Fredoka', sans-serif`;
-//   ctx.fillStyle = "#fbbf24";
-//   ctx.fillText(`STAGE ${this.level} CLEARED!`, 0, -14 * s);
-
-//   ctx.font = `bold ${Math.round(20 * s)}px 'Fredoka', sans-serif`;
-//   ctx.fillStyle = "#ffffff";
-//   ctx.fillText(`NEW RANGE · UP TO ${this.numberRange}`, 0, 24 * s);
-
-//   ctx.restore();
-// },
-
-
-
-_triggerLevelUpBurst() {
-  this._levelPingActive   = true;
-  this._levelPingTime     = 0;
-  this._levelPingDuration = 1200;
-
-  // Explosive starburst particles + shockwave ring
-  const cols = ["#fbbf24", "#34d399", "#a78bfa", "#ffffff", "#f472b6"];
-  const particles = [];
-  for (let i = 0; i < 28; i++) {
-    const a = (Math.PI * 2 / 28) * i + Math.random() * 0.2;
-    const v = 180 + Math.random() * 220;
-    particles.push({
-      x: this.mascot.x, y: this.mascot.y,
-      vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-      r: 3 + Math.random() * 5,
-      color: cols[i % cols.length],
-      life: 1,
-      rot: Math.random() * Math.PI,
-      vRot: (Math.random() - 0.5) * 0.2
-    });
-  }
-  this.levelUpBurst = { time: 0, duration: 1200, particles, shockwaveR: 0 };
-},
-
-_updateLevelUpBurst(delta) {
-  if (this._levelPingActive) {
-    this._levelPingTime += delta;
-    if (this._levelPingTime >= this._levelPingDuration) {
-      this._levelPingActive = false;
+  checkLevelUp() {
+    this.correctThisLevel++;
+    this.correctAnswers++;
+    if (this.correctThisLevel >= this.answersPerLevel) {
+      this.correctThisLevel = 0;
+      this.level++;
+      const ranges = [10, 20, 30, 50, 100];
+      this.numberRange = ranges[Math.min(this.level - 1, ranges.length - 1)];
+      this._triggerLevelUpBurst();
+      this.showToast(`🎉 Level ${this.level}! Numbers up to ${this.numberRange}!`, "#a78bfa");
     }
-  }
-  if (!this.levelUpBurst) return;
-  this.levelUpBurst.time += delta;
-  const dt_s = delta / 1000;
+  },
 
-  // Expand shockwave
-  this.levelUpBurst.shockwaveR += 800 * dt_s;
+  _triggerLevelUpBurst() {
+    this._levelPingActive   = true;
+    this._levelPingTime     = 0;
+    this._levelPingDuration = 1200;
 
-  for (const p of this.levelUpBurst.particles) {
-    p.x  += p.vx * dt_s;
-    p.y  += p.vy * dt_s;
-    p.vx *= Math.pow(0.92, delta / 16);
-    p.vy *= Math.pow(0.92, delta / 16);
-    p.rot += p.vRot;
-    p.life -= dt_s * 1.1;
-  }
-  this.levelUpBurst.particles = this.levelUpBurst.particles.filter(p => p.life > 0);
-  if (this.levelUpBurst.time >= this.levelUpBurst.duration) this.levelUpBurst = null;
-},
+    const cols = ["#fbbf24", "#34d399", "#a78bfa", "#ffffff", "#f472b6"];
+    const particles = [];
+    for (let i = 0; i < 28; i++) {
+      const a = (Math.PI * 2 / 28) * i + Math.random() * 0.2;
+      const v = 180 + Math.random() * 220;
+      particles.push({
+        x: this.mascot.x, y: this.mascot.y,
+        vx: Math.cos(a) * v, vy: Math.sin(a) * v,
+        r: 3 + Math.random() * 5,
+        color: cols[i % cols.length],
+        life: 1,
+        rot: Math.random() * Math.PI,
+        vRot: (Math.random() - 0.5) * 0.2
+      });
+    }
+    this.levelUpBurst = { time: 0, duration: 1200, particles, shockwaveR: 0 };
+  },
 
-_drawLevelUpBurst(ctx) {
-  if (!this._levelPingActive) return;
-
-  const W = this.cssWidth, H = this.cssHeight, s = this.scale;
-  const prog = this._levelPingTime / this._levelPingDuration;
-
-  ctx.save();
-
-  /* 1. Dramatic Dark Overlay with Flash Peak */
-  const flashAlpha = prog < 0.1 ? (prog / 0.1) * 0.4 : Math.max(0, (1 - prog) * 0.65);
-  ctx.fillStyle = `rgba(15, 7, 32, ${flashAlpha})`;
-  ctx.fillRect(0, 0, W, H);
-
-  /* 2. Expanding Shockwave Ring from Mascot */
-  if (this.levelUpBurst && this.levelUpBurst.shockwaveR > 0) {
-    const swAlpha = Math.max(0, 1 - prog * 1.2);
-    ctx.beginPath();
-    ctx.arc(this.mascot.x, this.mascot.y, this.levelUpBurst.shockwaveR * s, 0, Math.PI * 2);
-    ctx.strokeStyle = `rgba(251, 191, 36, ${swAlpha})`;
-    ctx.lineWidth = 12 * s * swAlpha;
-    ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 24;
-    ctx.stroke(); ctx.shadowBlur = 0;
-  }
-
-  /* 3. Particle Starburst Puff */
-  if (this.levelUpBurst) {
-    for (const p of this.levelUpBurst.particles) {
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, p.life);
-      ctx.translate(p.x, p.y);
-      ctx.rotate(p.rot);
-      ctx.fillStyle   = p.color;
-      ctx.shadowColor = p.color; ctx.shadowBlur = 12;
-      
-      // Draw 4-point sparkle star
-      ctx.beginPath();
-      for (let i = 0; i < 4; i++) {
-        ctx.lineTo(Math.cos((i * Math.PI) / 2) * p.r * s * 2, Math.sin((i * Math.PI) / 2) * p.r * s * 2);
-        ctx.lineTo(Math.cos((i * Math.PI) / 2 + Math.PI / 4) * p.r * s * 0.6, Math.sin((i * Math.PI) / 2 + Math.PI / 4) * p.r * s * 0.6);
+  _updateLevelUpBurst(delta) {
+    if (this._levelPingActive) {
+      this._levelPingTime += delta;
+      if (this._levelPingTime >= this._levelPingDuration) {
+        this._levelPingActive = false;
       }
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
     }
-  }
+    if (!this.levelUpBurst) return;
+    this.levelUpBurst.time += delta;
+    const dt_s = delta / 1000;
 
-  /* 4. Giant Springy Typography Badge */
-  // Scale Bounce Envelope
-  let scale;
-  if (prog < 0.2) scale = (prog / 0.2) * 1.25; // overshoot
-  else if (prog < 0.35) scale = 1.25 - ((prog - 0.2) / 0.15) * 0.25; // settle to 1.0
-  else if (prog > 0.8) scale = 1.0 - ((prog - 0.8) / 0.2); // scale down out
-  else scale = 1.0;
+    this.levelUpBurst.shockwaveR += 800 * dt_s;
 
-  ctx.translate(W / 2, this.CENTER_Y - 40 * s);
-  ctx.scale(scale, scale);
+    for (const p of this.levelUpBurst.particles) {
+      p.x  += p.vx * dt_s;
+      p.y  += p.vy * dt_s;
+      p.vx *= Math.pow(0.92, delta / 16);
+      p.vy *= Math.pow(0.92, delta / 16);
+      p.rot += p.vRot;
+      p.life -= dt_s * 1.1;
+    }
+    this.levelUpBurst.particles = this.levelUpBurst.particles.filter(p => p.life > 0);
+    if (this.levelUpBurst.time >= this.levelUpBurst.duration) this.levelUpBurst = null;
+  },
 
-  // Outer Glowing Badge Glass Box
-  ctx.fillStyle = "rgba(24, 9, 48, 0.94)";
-  ctx.strokeStyle = "#fbbf24";
-  ctx.lineWidth = 4 * s;
-  ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 32;
-  
-  const bw = 480 * s, bh = 140 * s;
-  this._rrect(ctx, -bw / 2, -bh / 2, bw, bh, 24 * s);
-  ctx.fill(); ctx.stroke();
-  ctx.shadowBlur = 0;
+  _drawLevelUpBurst(ctx) {
+    if (!this._levelPingActive) return;
 
-  // Header Title
-  ctx.textAlign = "center"; ctx.textBaseline = "middle";
-  ctx.font = `bold ${Math.round(42 * s)}px 'Fredoka', sans-serif`;
-  ctx.fillStyle = "#fbbf24";
-  ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 18;
-  ctx.fillText("🌟 LEVEL UP!", 0, -20 * s);
-  ctx.shadowBlur = 0;
+    const W = this.cssWidth, H = this.cssHeight, s = this.scale;
+    const prog = this._levelPingTime / this._levelPingDuration;
 
-  // Level Subtext
-  ctx.font = `bold ${Math.round(22 * s)}px 'Fredoka', sans-serif`;
-  ctx.fillStyle = "#34d399";
-  ctx.fillText(`LEVEL ${this.level} · RANGE: 1–${this.numberRange}`, 0, 25 * s);
+    ctx.save();
 
-  ctx.restore();
-},
+    const flashAlpha = prog < 0.1 ? (prog / 0.1) * 0.4 : Math.max(0, (1 - prog) * 0.65);
+    ctx.fillStyle = `rgba(15, 7, 32, ${flashAlpha})`;
+    ctx.fillRect(0, 0, W, H);
 
+    if (this.levelUpBurst && this.levelUpBurst.shockwaveR > 0) {
+      const swAlpha = Math.max(0, 1 - prog * 1.2);
+      ctx.beginPath();
+      ctx.arc(this.mascot.x, this.mascot.y, this.levelUpBurst.shockwaveR * s, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(251, 191, 36, ${swAlpha})`;
+      ctx.lineWidth = 12 * s * swAlpha;
+      ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 24;
+      ctx.stroke(); ctx.shadowBlur = 0;
+    }
 
-  /* ============================================================
-     PORTAL COLLAPSE (game over — hearts = 0)
-     Dreamy vortex: pastel spiral rings shrink to center,
-     sparkles implode, portal glyph shatters — distinct from
-     Game10's physics black hole.
-  ============================================================ */
+    if (this.levelUpBurst) {
+      for (const p of this.levelUpBurst.particles) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, p.life);
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.rot);
+        ctx.fillStyle   = p.color;
+        ctx.shadowColor = p.color; ctx.shadowBlur = 12;
+        
+        ctx.beginPath();
+        for (let i = 0; i < 4; i++) {
+          ctx.lineTo(Math.cos((i * Math.PI) / 2) * p.r * s * 2, Math.sin((i * Math.PI) / 2) * p.r * s * 2);
+          ctx.lineTo(Math.cos((i * Math.PI) / 2 + Math.PI / 4) * p.r * s * 0.6, Math.sin((i * Math.PI) / 2 + Math.PI / 4) * p.r * s * 0.6);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    let scale;
+    if (prog < 0.2) scale = (prog / 0.2) * 1.25;
+    else if (prog < 0.35) scale = 1.25 - ((prog - 0.2) / 0.15) * 0.25;
+    else if (prog > 0.8) scale = 1.0 - ((prog - 0.8) / 0.2);
+    else scale = 1.0;
+
+    ctx.translate(W / 2, this.CENTER_Y - 40 * s);
+    ctx.scale(scale, scale);
+
+    ctx.fillStyle = "rgba(24, 9, 48, 0.94)";
+    ctx.strokeStyle = "#fbbf24";
+    ctx.lineWidth = 4 * s;
+    ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 32;
+    
+    const bw = 480 * s, bh = 140 * s;
+    this._rrect(ctx, -bw / 2, -bh / 2, bw, bh, 24 * s);
+    ctx.fill(); ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.font = `bold ${Math.round(42 * s)}px 'Fredoka', sans-serif`;
+    ctx.fillStyle = "#fbbf24";
+    ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = 18;
+    ctx.fillText("🌟 LEVEL UP!", 0, -20 * s);
+    ctx.shadowBlur = 0;
+
+    ctx.font = `bold ${Math.round(22 * s)}px 'Fredoka', sans-serif`;
+    ctx.fillStyle = "#34d399";
+    ctx.fillText(`LEVEL ${this.level} · RANGE: 1–${this.numberRange}`, 0, 25 * s);
+
+    ctx.restore();
+  },
+
   _startCollapse() {
     this.collapseActive = true;
     this.collapseTime   = 0;
@@ -933,7 +756,6 @@ _drawLevelUpBurst(ctx) {
     const prog = Math.min(this.collapseTime / this.collapseDur, 1);
 
     for (const p of this.collapseSpiral) {
-      /* Spiral inward: reduce radius, rotate */
       p.angle  += p.speed * delta * 0.004;
       p.radius *= Math.pow(0.992, delta / 16);
       p.x = this.CENTER_X + Math.cos(p.angle) * p.radius;
@@ -952,11 +774,9 @@ _drawLevelUpBurst(ctx) {
     const prog = Math.min(this.collapseTime / this.collapseDur, 1);
     const cx   = this.CENTER_X, cy = this.CENTER_Y;
 
-    /* Darkening overlay */
     ctx.fillStyle = `rgba(10,0,25,${prog * 0.72})`;
     ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
 
-    /* Pulsing vortex rings */
     for (let r = 3; r >= 1; r--) {
       const ringProg = ((prog * 3 + r * 0.3) % 1);
       const ringR    = ringProg * 260 * this.scale * (1 - prog * 0.6);
@@ -969,10 +789,8 @@ _drawLevelUpBurst(ctx) {
       ctx.stroke(); ctx.shadowBlur = 0;
     }
 
-    /* Portal glyph shattering */
     const portalR = 50 * this.scale * (1 - prog);
     if (portalR > 4) {
-      /* Rotating glowing ring shrinking to nothing */
       for (let i = 0; i < 8; i++) {
         const a  = this.collapseAngle + (Math.PI * 2 / 8) * i;
         const px = cx + Math.cos(a) * portalR;
@@ -986,7 +804,6 @@ _drawLevelUpBurst(ctx) {
       ctx.lineWidth   = 3 * this.scale; ctx.stroke();
     }
 
-    /* Imploding sparkles */
     for (const p of this.collapseSpiral) {
       ctx.globalAlpha = Math.max(0, p.life) * 0.9;
       ctx.fillStyle   = p.color;
@@ -996,7 +813,6 @@ _drawLevelUpBurst(ctx) {
     }
     ctx.globalAlpha = 1;
 
-    /* Center flash at peak */
     const flash = Math.max(0, 1 - Math.abs(prog - 0.85) * 10);
     if (flash > 0) {
       const gr = ctx.createRadialGradient(cx, cy, 0, cx, cy, 120 * this.scale);
@@ -1007,7 +823,6 @@ _drawLevelUpBurst(ctx) {
       ctx.beginPath(); ctx.arc(cx, cy, 120 * this.scale, 0, Math.PI * 2); ctx.fill();
     }
 
-    /* "Portal shattered!" text */
     if (prog > 0.4 && prog < 0.95) {
       const alpha = Math.sin(((prog - 0.4) / 0.55) * Math.PI);
       ctx.globalAlpha = alpha;
@@ -1019,19 +834,13 @@ _drawLevelUpBurst(ctx) {
     }
   },
 
-  /* ============================================================
-     PREDICTABLE SCORE MATRIX
-     Replaces the random pool with a streak-based payout system.
-  ============================================================ */
   _rollScore() {
-    // Base award is 10 points for a normal match
     if (this.streak < 3)  return 10;
-    if (this.streak < 5)  return 20; // Minor streak tier
-    if (this.streak < 10) return 30; // On Fire tier
-    return 50;                       // Ultimate tier (10+ streak)
+    if (this.streak < 5)  return 20;
+    if (this.streak < 10) return 30;
+    return 50;
   },
 
-  /* ── Toast ───────────────────────────────────────────────── */
   showToast(text, color) {
     this.toast = { text, color: color || "#fff", timer: 1600, y: this.CENTER_Y - 200 * this.scale, alpha: 1 };
   },
@@ -1055,7 +864,7 @@ _drawLevelUpBurst(ctx) {
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
- update(ctx, _fp, dtArg) {
+  update(ctx, _fp, dtArg) {
     if (!this.running) return;
     const delta = (dtArg > 0 && dtArg < 1) ? dtArg * 1000 : (dtArg > 0) ? Math.min(dtArg, 50) : 16;
 
@@ -1067,7 +876,6 @@ _drawLevelUpBurst(ctx) {
       return;
     }
 
-    // ── Live Playing State (Double Tap Active) ──
     this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
     if (pauseBtn) {
@@ -1075,7 +883,6 @@ _drawLevelUpBurst(ctx) {
       pauseBtn.style.opacity = "0";
     }
 
-    /* Playing background always drawn first */
     this.drawDreamBackground(ctx);
     this.updateStarLayer(this.starsFar,  delta);
     this.updateStarLayer(this.starsMid,  delta);
@@ -1086,10 +893,8 @@ _drawLevelUpBurst(ctx) {
     this.updateShootingStars(delta); this.drawShootingStars(ctx);
     this.updateStarBursts(delta);    this.drawStarBursts(ctx);
 
-    /* Level-up burst always updated/drawn (even during collapse) */
     this._updateLevelUpBurst(delta);
 
-    /* Collapse animation */
     if (this.collapseActive) {
       this.drawDoors(ctx);
       this.drawNumber(ctx);
@@ -1122,58 +927,56 @@ _drawLevelUpBurst(ctx) {
     this.drawToast(ctx);
     this._drawNoFingerPrompt(ctx);
   },
-  /* ── HUD timers ──────────────────────────────────────────── */
+
   updateHUDTimers(delta) {
     if (this.heartShakeTime > 0) this.heartShakeTime = Math.max(0, this.heartShakeTime - delta);
     if (this.streakPulse    > 0) this.streakPulse    = Math.max(0, this.streakPulse    - delta * 0.003);
   },
 
-  /* ── Finger — fast follow ────────────────────────────────── */
+  /* ── Finger tracking with direct follow & anti-jitter deadzone ───────────────── */
   updateFingerPosition(now) {
-    if (!window.fingerPositions || window.fingerPositions.length === 0) {
-      this.fingerX = null; this.fingerY = null; return;
+    if (now - this._lastFingerUpdateTime < this.FINGER_UPDATE_INTERVAL) return;
+    this._lastFingerUpdateTime = now;
+
+    if (!window.fingerPositions || !Array.isArray(window.fingerPositions) || window.fingerPositions.length === 0) {
+      this.fingerX = null; this.fingerY = null;
+      return;
     }
+
     const fp = window.fingerPositions[0];
-    if (this._fingerSmoothX === null) {
-      this._fingerSmoothX = fp.x; this._fingerSmoothY = fp.y;
-      this._targetFingerX = fp.x; this._targetFingerY = fp.y;
+
+    // Initialize position directly if unset
+    if (this.fingerX === null || this.fingerY === null) {
+      this.fingerX = fp.x;
+      this.fingerY = fp.y;
+      return;
     }
-    /* Update target every frame */
-    this._targetFingerX = fp.x;
-    this._targetFingerY = fp.y;
-    /* Smooth at FINGER_SMOOTH (0.55 = fast but not jittery) */
-    this._fingerSmoothX += (this._targetFingerX - this._fingerSmoothX) * this.FINGER_SMOOTH;
-    this._fingerSmoothY += (this._targetFingerY - this._fingerSmoothY) * this.FINGER_SMOOTH;
-    this.fingerX = this._fingerSmoothX;
-    this.fingerY = this._fingerSmoothY;
+
+    // Deadzone threshold (in CSS pixels): ignore micro-movements to remove jitter
+    const JITTER_THRESHOLD = 2.5; 
+    const dist = Math.hypot(fp.x - this.fingerX, fp.y - this.fingerY);
+
+    if (dist >= JITTER_THRESHOLD) {
+      this.fingerX = fp.x;
+      this.fingerY = fp.y;
+    }
   },
 
-  /* ── Mascot — faster physics ─────────────────────────────── */
+  /* ── Mascot movement ───────────────────────────────────── */
   updateMascot(delta) {
     if (this.fingerX === null || this.fingerY === null) return;
-    const dx = this.fingerX - this.mascot.x;
-    const dy = this.fingerY - this.mascot.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist > 4) {
-      const force = Math.min(dist * this.mascot.accel * delta, this.mascot.maxSpeed);
-      this.mascot.vx += (dx / dist) * force;
-      this.mascot.vy += (dy / dist) * force;
-    }
-    const fr = Math.pow(this.mascot.friction, delta);
-    this.mascot.vx *= fr; this.mascot.vy *= fr;
-    const spd = Math.sqrt(this.mascot.vx ** 2 + this.mascot.vy ** 2);
-    if (spd > this.mascot.maxSpeed) {
-      const r = this.mascot.maxSpeed / spd;
-      this.mascot.vx *= r; this.mascot.vy *= r;
-    }
-    this.mascot.x += this.mascot.vx * delta;
-    this.mascot.y += this.mascot.vy * delta;
+
+    // Follow finger position directly
+    this.mascot.x = this.fingerX;
+    this.mascot.y = this.fingerY;
+    this.mascot.vx = 0;
+    this.mascot.vy = 0;
+
     const pad = 80;
     this.mascot.x = Math.max(pad, Math.min(this.cssWidth  - pad, this.mascot.x));
     this.mascot.y = Math.max(pad, Math.min(this.cssHeight - pad, this.mascot.y));
   },
 
-  /* ── Pickup & door ───────────────────────────────────────── */
   checkPickup() {
     if (this.numberPosition.picked) return;
     const dx = this.mascot.x - this.numberPosition.x;
@@ -1199,10 +1002,10 @@ _drawLevelUpBurst(ctx) {
     }
   },
 
- confirmSelection(index) {
+  confirmSelection(index) {
     const door = this.doors[index];
     if (door.suffix === this.correctSuffix) {
-      this.streak++; // Increment streak first to calculate tier cleanly
+      this.streak++;
       if (this.streak > this.bestStreak) this.bestStreak = this.streak;
       this.streakPulse = 1;
 
@@ -1212,7 +1015,6 @@ _drawLevelUpBurst(ctx) {
       this.spawnSparkBurst(door.x, door.y);
       this.checkLevelUp();
 
-      // Custom message string matching the score matrix tiers
       const msg = this.streak >= 10 ? "🔥 UNSTOPPABLE!"
                 : this.streak >= 5  ? "⭐ On Fire!"
                 : this.streak >= 3  ? "✨ Good Streak!"
@@ -1233,11 +1035,9 @@ _drawLevelUpBurst(ctx) {
     setTimeout(() => { this.mascotState = "idle"; this.spawnNumber(); }, 1200);
   },
 
-   /* ── HUD — Fredoka throughout ────────────────────────────── */
   drawHUD(ctx) {
     const s = this.scale, W = this.cssWidth;
 
-    /* Score badge container */
     const sw=175*s, sh=54*s, sx=18*s, sy=16*s;
     ctx.fillStyle = "rgba(30,58,138,0.85)";
     this._rrect(ctx, sx, sy, sw, sh, 18*s); ctx.fill();
@@ -1246,7 +1046,6 @@ _drawLevelUpBurst(ctx) {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(`⭐ ${this.score}`, sx + sw/2, sy + sh/2);
 
-    /* Level badge container — small pulse+glow ping on level-up */
     const lw=150*s, lh=42*s, lx=W/2-lw/2, ly=16*s;
     const pinging = this._levelPingActive;
     const pingT   = pinging ? this._levelPingTime / this._levelPingDuration : 1;
@@ -1268,7 +1067,6 @@ _drawLevelUpBurst(ctx) {
     ctx.fillText(`Level ${this.level}`, 0, 0);
     ctx.restore();
 
-    /* Hearts tracking layout */
     const hSz=32*s, hGap=8*s, totalHW=this.maxHearts*(hSz+hGap)-hGap;
     const hx0=W-18*s-totalHW, hy0=18*s;
     const shk = this.heartShakeTime > 0 ? Math.sin(this.heartShakeTime * 0.055) * 5 * s : 0;
@@ -1280,7 +1078,6 @@ _drawLevelUpBurst(ctx) {
     }
     ctx.globalAlpha = 1;
 
-    /* ── STREAK ANCHORED UNDER SCORE BADGE ── */
     if (this.streak >= 2) {
       const ps = 1 + this.streakPulse * 0.15;
       ctx.save();
@@ -1298,7 +1095,7 @@ _drawLevelUpBurst(ctx) {
       ctx.shadowBlur = 0;
       ctx.restore();
     }
-    /* Progress bar */
+
     const barW=260*s, barH=16*s, bottomPad=40*s;
     const bx=W/2-barW/2, by=this.cssHeight-bottomPad-barH;
     ctx.fillStyle = "rgba(255,255,255,0.15)";
@@ -1314,13 +1111,6 @@ _drawLevelUpBurst(ctx) {
     ctx.fillText(`${this.correctThisLevel}/${this.answersPerLevel} to next level`, W/2, by - 6*s);
   },
 
-   /* ============================================================
-     LEVEL UP — small ping (badge pulse + tiny sparkle puff)
-     Replaces the old big screen-center burst — quick game needs
-     quick feedback, not a 1.8s interruption.
-  ============================================================ */
-  
-  /* ── Game over screen ────────────────────────────────────── */
   drawGameOver(ctx) {
     const W=this.cssWidth, H=this.cssHeight, s=this.scale;
     ctx.fillStyle = "rgba(0,0,0,0.78)"; ctx.fillRect(0, 0, W, H);
@@ -1373,12 +1163,12 @@ _drawLevelUpBurst(ctx) {
     this._targetFingerX=null; this._targetFingerY=null;
     this.fingerX=null; this.fingerY=null;
     this._levelPingActive   = false;
-this._levelPingTime     = 0;
-this._levelPingDuration = 500;
+    this._levelPingTime     = 0;
+    this._levelPingDuration = 500;
     this.toast={text:"",timer:0,color:"#fff",y:0,alpha:0};
     this.setupDoors(); this.spawnNumber();
   },
-  /* ── Draw number ─────────────────────────────────────────── */
+
   drawNumber(ctx) {
     if (this.numberPosition.picked) return;
     const baseX=this.numberPosition.x, baseY=this.numberPosition.y;
@@ -1394,7 +1184,6 @@ this._levelPingDuration = 500;
     this.drawFloatingSparkles(ctx, baseX, baseY+floatOff);
   },
 
-  /* ── Draw doors ──────────────────────────────────────────── */
   drawDoors(ctx) {
     const size=this.portalSize*this.scale;
     for (let i=0; i<this.doors.length; i++) {
@@ -1414,7 +1203,6 @@ this._levelPingDuration = 500;
     }
   },
 
-  /* ── Draw mascot ─────────────────────────────────────────── */
   drawMascot(ctx) {
     const spriteArray=this.mascotImages[this.mascotState];
     if (!spriteArray||spriteArray.length===0) return;
@@ -1454,7 +1242,6 @@ this._levelPingDuration = 500;
     ctx.restore();
   },
 
-  /* ── Spark bursts ────────────────────────────────────────── */
   spawnSparkBurst(x,y) {
     if (this.sparkBursts.length>80) return;
     this.sparkBursts.push({x,y,radius:0,maxRadius:140*this.scale,alpha:1,life:600});
@@ -1485,7 +1272,6 @@ this._levelPingDuration = 500;
     ctx.globalAlpha=1;
   },
 
-  /* ── Sprites with loading tracking ──────────────────────── */
   loadMascotSprites() {
     this.mascotImages = { idle:[], happy:[], confused:[] };
     const load = (src, arr) => {
@@ -1522,13 +1308,11 @@ this._levelPingDuration = 500;
     }
   },
 
-  /* ── Floating number ─────────────────────────────────────── */
   updateFloatingNumber(delta) {
     if (this.numberPosition.picked) return;
     this.floatTime+=delta; this.numberRotation+=delta*this.rotationSpeed; this.numberScalePulse+=delta*this.pulseSpeed;
   },
 
-  /* ── Starfield ───────────────────────────────────────────── */
   initStarfield() {
     if (!this.cssWidth||this.cssWidth<=0) return;
     this.starsFar=[]; this.starsMid=[]; this.starsNear=[];
@@ -1548,7 +1332,6 @@ this._levelPingDuration = 500;
     ctx.fillStyle="white"; ctx.fill();
   },
 
-  /* ── Shooting stars ──────────────────────────────────────── */
   createShootingStar() {
     if (this.shootingStars.length>=4) return;
     const fl=Math.random()<0.5, spd=Math.random()*6+4;
@@ -1584,7 +1367,6 @@ this._levelPingDuration = 500;
     for(const p of this.shootingStarBursts){const op=1-(p.life/p.maxLife);ctx.beginPath();ctx.arc(p.x,p.y,p.size*this.scale,0,Math.PI*2);ctx.fillStyle=`rgba(255,255,200,${op})`;ctx.fill();}
   },
 
-  /* ── Background ──────────────────────────────────────────── */
   drawDreamBackground(ctx) {
     const g=ctx.createLinearGradient(0,0,0,this.cssHeight);
     g.addColorStop(0,"#60A5FA"); g.addColorStop(0.5,"#A78BFA"); g.addColorStop(1,"#F472B6");
@@ -1604,23 +1386,21 @@ this._levelPingDuration = 500;
     ctx.fill();
   },
 
-  /* ── Utility ─────────────────────────────────────────────── */
   _rrect(ctx,x,y,w,h,r) {
     r=Math.min(r,w/2,h/2);
     ctx.beginPath(); 
     ctx.moveTo(x+r,y); 
     ctx.lineTo(x+w-r,y);
     ctx.quadraticCurveTo(x+w,y,x+w,y+r);
-     ctx.lineTo(x+w,y+h-r);
+    ctx.lineTo(x+w,y+h-r);
     ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
-     ctx.lineTo(x+r,y+h);
+    ctx.lineTo(x+r,y+h);
     ctx.quadraticCurveTo(x,y+h,x,y+h-r); 
     ctx.lineTo(x,y+r);
     ctx.quadraticCurveTo(x,y,x+r,y);
-     ctx.closePath();
+    ctx.closePath();
   },
 
-  /* ── Loading screen ──────────────────────────────────────── */
   drawLoadingScreen(ctx) {
     const W=this.cssWidth, H=this.cssHeight;
     const g=ctx.createLinearGradient(0,0,0,H);
