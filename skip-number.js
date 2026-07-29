@@ -1930,7 +1930,13 @@ _getCurrentLevelFloor(level = this.level) {
 _computeProgressPercent(useLiveRound = false) {
   const liveBonus = useLiveRound ? this._computeRoundSkillDelta() : 0;
   const points = Math.max(0, this.skillPoints + liveBonus);
-  return Math.min(100, Math.round((points / this.levelThreshold) * 100));
+  const floor = this._getCurrentLevelFloor();
+  const target = this.levelThreshold;
+  const levelRange = Math.max(1, target - floor);
+
+  // Signed: negative means points have dropped below this level's floor.
+  const raw = ((points - floor) / levelRange) * 100;
+  return Math.max(-100, Math.min(100, Math.round(raw)));
 },
 
 
@@ -2064,15 +2070,26 @@ _computeProgressPercent(useLiveRound = false) {
       this.roundNumber = nextRound;
       this.nextRoundNumber = nextRound + 1;
 
-      // ── FIXED: skillPoints is NO LONGER reset on level-up.
-      //    It keeps climbing continuously — only the target
-      //    (levelThreshold) rises, by summing in the new level's
-      //    delta on top of the cumulative total.
-      //    e.g. level1 threshold=22, player reaches 33 → levels up,
-      //    skillPoints stays 33, level2 delta=36 → new threshold=58.
+      // ── FIXED: skillPoints used to carry over 100% of whatever was
+      //    earned beyond the previous level's threshold. That let one
+      //    over-performing round (e.g. 54/54 when the target was 32)
+      //    blow straight through the NEXT level's requirement too,
+      //    since the overflow just sat there as free progress.
+      //    Now only 10% of that overflow survives the level-up —
+      //    skillPoints resets to (old threshold) + 10% of the excess,
+      //    and the new cumulative threshold is computed from there.
+      const overflow = Math.max(0, this.skillPoints - this.levelThreshold);
+      this.skillPoints = this.levelThreshold + overflow * 0.1;
+
       this.levelThreshold = this._getCumulativeThreshold(this.level);
       this.xp = this.skillPoints;
       this.xpToNext = this.levelThreshold;
+
+      // ── Keep the overlay summary in sync with the dampened value,
+      //    since it was captured earlier (before dampening) as
+      //    progressAfter/progressPercent. ──
+      summary.progressAfter = this.skillPoints;
+      summary.progressPercent = this._computeProgressPercent(false);
 
       this._syncDifficultyScalars();
       this._syncTierForLevel();
@@ -2354,36 +2371,44 @@ _updateSpawning(dt) {
   },
 
   _drawXPRing(ctx, cx, cy, radius) {
-    // ── FIXED: clamp fill at 1 — xp (skillPoints) can now legitimately
-    //    equal or momentarily approach xpToNext without ever being
-    //    force-reset, so guard against any float overshoot drawing
-    //    past a full circle. ──
-    const fill = this.level >= this.maxLevel ? 1 : Math.min(1, this.xp / this.xpToNext);
-    const tc   = this.tierColors[this.tier];
-    const start = -Math.PI / 2;
+  const percent = this.level >= this.maxLevel ? 100 : this._computeProgressPercent(false);
+  const fill = Math.abs(percent) / 100;
+  const isDeficit = percent < 0;
+
+  const tc = isDeficit ? this.C.wrong : this.tierColors[this.tier];
+  const start = -Math.PI / 2;
+
+  // Track
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = this.C.xpTrack;
+  ctx.lineWidth = 6;
+  ctx.stroke();
+
+  if (fill > 0.01) {
     ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI*2);
-    ctx.strokeStyle = this.C.xpTrack;
+    if (isDeficit) {
+      // Deficit fills counter-clockwise from the top, showing "how far below floor"
+      ctx.arc(cx, cy, radius, start, start - Math.PI * 2 * fill, true);
+    } else {
+      ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
+    }
+    ctx.strokeStyle = tc;
     ctx.lineWidth = 6;
+    ctx.shadowColor = tc;
+    ctx.shadowBlur = 12 + this.xpPopFlash * 20;
     ctx.stroke();
-    if (fill > 0.01) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, start, start + Math.PI*2*fill);
-      ctx.strokeStyle = tc;
-      ctx.lineWidth = 6;
-      ctx.shadowColor = tc;
-      ctx.shadowBlur = 12 + this.xpPopFlash*20;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-    if (this.xpPopFlash > 0) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius + 12*this.xpPopFlash, 0, Math.PI*2);
-      ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash*0.55})`;
-      ctx.lineWidth = 5*this.xpPopFlash;
-      ctx.stroke();
-    }
-  },
+    ctx.shadowBlur = 0;
+  }
+
+  if (this.xpPopFlash > 0) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash * 0.55})`;
+    ctx.lineWidth = 5 * this.xpPopFlash;
+    ctx.stroke();
+  }
+},
 
   /* ── HUD ─────────────────────────────────────────────────── */
   _pill(ctx, x, y, w, h) {
