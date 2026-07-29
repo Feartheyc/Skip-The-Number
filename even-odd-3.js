@@ -77,71 +77,86 @@ const Game8 = {
   SMOOTH: 0.6,
   MIN_ARM_LENGTH: 25,
 
+
+gameState: "tutorial",
+  _tutEnterAnim: 0,
+  _tutOrbT: 0,
+  _tutHoldProgress: 0,
+  _tutNoHandFrames: 0,
+  TUT_HOLD_SEC: 2.0,
+
   init() {
-    try {
-      if (screen.orientation && screen.orientation.lock) {
-        screen.orientation.lock("landscape").catch(e => console.log("Orientation lock failed:", e));
-      }
-    } catch (e) { }
-
-    window.addEventListener('click', () => {
-      if (window.currentGame !== Game8) return;
-
-      sfxButtonClick_8.currentTime = 0;
-      sfxButtonClick_8.play().catch(() => { });
-    });
-
-    this.currentMissingState = null;
-    this.missingFrames = 0;
-
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
-
-    this.CENTER_X = (canvasElement.width / dpr) / 2;
-    this.CENTER_Y = (canvasElement.height / dpr) / 2;
-
-    this.particlePool = [];
-    this.floaterPool = [];
-
-    if (!this.edgeZoneCanvas) this.edgeZoneCanvas = document.createElement("canvas");
-    if (!this.ballCanvas) this.ballCanvas = document.createElement("canvas");
-    if (!this.armCanvas) this.armCanvas = document.createElement("canvas");
-    if (!this.wristCanvas) this.wristCanvas = document.createElement("canvas");
-
-    this.resize();
-    window.addEventListener("resize", () => this.resize());
-
-    this.running = true;
-    this.score = 0;
-    this.balls = [];
-    this.particles = [];
-    this.floaters = [];
-
-    this.spawnTimer = 0;
-    this.spawnRate = 2000;
-    this.spawnMode = "top-bottom";
-    this.modeTimer = 0;
-    this.lastTime = performance.now();
-
-    this.gameStarted = false;
-
-    this.scoreScale = 1;
-    this.scoreColor = "white";
-
-    this.pivotLockTimer = { right: 0 };
-    this.lockProgress = 0;
-
-    this.armData = {
-      right: null
-    };
-
-    this.steeringHand = null;
-    this._rawHand = null;
-
-    // Used by swept collision.
-    this.lastArmAngle = null;
-
-    this.initPose();
-  },
+  try {
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock("landscape").catch(e => console.log("Orientation lock failed:", e));
+    }
+  } catch (e) { }
+ 
+  window.addEventListener('click', () => {
+    if (window.currentGame !== Game8) return;
+ 
+    sfxButtonClick_8.currentTime = 0;
+    sfxButtonClick_8.play().catch(() => { });
+  });
+ 
+  this.currentMissingState = null;
+  this.missingFrames = 0;
+ 
+  const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+ 
+  this.CENTER_X = (canvasElement.width / dpr) / 2;
+  this.CENTER_Y = (canvasElement.height / dpr) / 2;
+ 
+  this.particlePool = [];
+  this.floaterPool = [];
+ 
+  if (!this.edgeZoneCanvas) this.edgeZoneCanvas = document.createElement("canvas");
+  if (!this.ballCanvas) this.ballCanvas = document.createElement("canvas");
+  if (!this.armCanvas) this.armCanvas = document.createElement("canvas");
+  if (!this.wristCanvas) this.wristCanvas = document.createElement("canvas");
+ 
+  this.resize();
+  window.addEventListener("resize", () => this.resize());
+ 
+  this.running = true;
+  this.score = 0;
+  this.balls = [];
+  this.particles = [];
+  this.floaters = [];
+ 
+  this.spawnTimer = 0;
+  this.spawnRate = 2000;
+  this.spawnMode = "top-bottom";
+  this.modeTimer = 0;
+  this.lastTime = performance.now();
+ 
+  this.gameStarted = false;
+ 
+  this.scoreScale = 1;
+  this.scoreColor = "white";
+ 
+  this.pivotLockTimer = { right: 0 };
+  this.lockProgress = 0;
+ 
+  this.armData = {
+    right: null
+  };
+ 
+  this.steeringHand = null;
+  this._rawHand = null;
+ 
+  // Used by swept collision.
+  this.lastArmAngle = null;
+ 
+  // ── Tutorial state ──
+  this.gameState = "tutorial";
+  this._tutEnterAnim = 0;
+  this._tutOrbT = 0;
+  this._tutHoldProgress = 0;
+  this._tutNoHandFrames = 0;
+ 
+  this.initPose();
+},
 
   initPose() {
     if (this.pose) return;
@@ -506,41 +521,52 @@ const Game8 = {
     this.rebuildCaches();
   },
 
-  update(ctx) {
-    if (!this.running) return;
-
-    const now = performance.now();
-    const deltaTime = now - this.lastTime;
-    this.lastTime = now;
-
-    if (this.scoreScale > 1) {
-      this.scoreScale = Math.max(1, this.scoreScale - 0.05);
-    }
-
-    if (!this.gameStarted) {
-      this.checkPivotLock(deltaTime);
-    } else {
-      this.handleSpawning(deltaTime);
-      this.updateBalls(deltaTime / 16.67);
-      this.checkPhysics();
-      this.checkScoring();
-    }
-
-    this.updateParticles();
-    this.updateFloaters();
-
-    this.drawBackground(ctx);
-
-    if (this.gameStarted) {
-      this.drawBalls(ctx);
-      this.drawArms(ctx);
-    }
-
-    this.drawPivots(ctx);
-    this.drawParticles(ctx);
-    this.drawFloaters(ctx);
-    this.drawUI(ctx);
-  },
+ /* ── 3) REPLACE update(ctx) ──────────────────────────────────── */
+update(ctx) {
+  if (!this.running) return;
+ 
+  const now = performance.now();
+  const deltaTime = now - this.lastTime;
+  this.lastTime = now;
+ 
+  if (this.scoreScale > 1) {
+    this.scoreScale = Math.max(1, this.scoreScale - 0.05);
+  }
+ 
+  // ── Tutorial screen takes over rendering entirely until the
+  //    player holds their wrist at center for TUT_HOLD_SEC. ──
+  if (this.gameState === "tutorial") {
+    this.drawBackground(ctx);
+    this._updateTutorial(ctx, Math.min(deltaTime, 50));
+    return;
+  }
+ 
+  if (!this.gameStarted) {
+    // Safety fallback — shouldn't normally be reached since the
+    // tutorial now owns the pre-game state.
+    this.checkPivotLock(deltaTime);
+  } else {
+    this.handleSpawning(deltaTime);
+    this.updateBalls(deltaTime / 16.67);
+    this.checkPhysics();
+    this.checkScoring();
+  }
+ 
+  this.updateParticles();
+  this.updateFloaters();
+ 
+  this.drawBackground(ctx);
+ 
+  if (this.gameStarted) {
+    this.drawBalls(ctx);
+    this.drawArms(ctx);
+  }
+ 
+  this.drawPivots(ctx);
+  this.drawParticles(ctx);
+  this.drawFloaters(ctx);
+  this.drawUI(ctx);
+},
 
   handleSpawning(dt) {
     this.spawnTimer += dt;
@@ -1366,5 +1392,337 @@ const Game8 = {
 
   get pivotRadius() {
     return this._pivotRadius;
-  }
+  },
+
+
+
+/* ── 4a) NEW: main tutorial renderer ─────────────────────────── */
+_updateTutorial(ctx, dt) {
+  const dtS = dt / 1000; // seconds, for smooth animation
+  this._tutEnterAnim = Math.min(1, (this._tutEnterAnim || 0) + dtS * 2.2);
+  this._tutOrbT = (this._tutOrbT || 0) + dtS;
+ 
+  const alpha = 1 - Math.pow(1 - Math.max(0, Math.min(1, this._tutEnterAnim)), 3);
+ 
+  const W = this.cssWidth, H = this.cssHeight;
+  const isMob = W < 720;
+  const sc = this.scale || 1;
+ 
+  const accent  = "#BB66FF"; // pivot / arm purple
+  const accent2 = "#00FFFF"; // even / blue
+  const accentR = "#FF0000"; // odd / red
+ 
+  const hr = s => {
+    const h = (s || "").replace("#", "");
+    const r = parseInt(h.slice(0, 2), 16);
+    const g = parseInt(h.slice(2, 4), 16);
+    const b = parseInt(h.slice(4, 6), 16);
+    return isNaN(r) ? "187,102,255" : `${r},${g},${b}`;
+  };
+ 
+  // Dim the live grid/zone background so the card pops, while still
+  // letting the real game theme show through underneath it.
+  ctx.save();
+  ctx.globalAlpha = alpha * 0.55;
+  ctx.fillStyle = "#02040a";
+  ctx.fillRect(0, 0, W, H);
+  ctx.restore();
+ 
+  const cardW = Math.min(W - 32 * sc, isMob ? 380 : 760);
+  const cardH = Math.min(H - 40 * sc, isMob ? 600 : 480);
+  const cardX = this.CENTER_X - cardW / 2;
+  const cardY = this.CENTER_Y - cardH / 2;
+  const cR = 18 * sc;
+ 
+  ctx.save();
+  ctx.globalAlpha = alpha;
+ 
+  // Card body
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 26;
+  ctx.fillStyle = "rgba(6,10,22,0.95)";
+  ctx.beginPath();
+  ctx.roundRect(cardX, cardY, cardW, cardH, cR);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = `rgba(${hr(accent)},0.4)`;
+  ctx.lineWidth = 1.5 * sc;
+  ctx.stroke();
+ 
+  // Header strip
+  ctx.fillStyle = `rgba(${hr(accent)},0.16)`;
+  ctx.beginPath();
+  ctx.roundRect(cardX, cardY, cardW, 58 * sc, [cR, cR, 0, 0]);
+  ctx.fill();
+ 
+  ctx.font = `bold ${isMob ? 20 : 26}px Orbitron`;
+  ctx.fillStyle = accent;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 14;
+  ctx.fillText("🏓  ORBIT SWING", this.CENTER_X, cardY + 26 * sc);
+  ctx.shadowBlur = 0;
+ 
+  ctx.font = `${isMob ? 11 : 13}px Orbitron`;
+  ctx.fillStyle = "rgba(230,240,255,0.72)";
+  ctx.fillText("Knock every number into its matching zone!", this.CENTER_X, cardY + 48 * sc);
+ 
+  // ── Visual preview panel ──
+  const visX = cardX + 14 * sc, visY = cardY + 82 * sc;
+  const visW = isMob ? cardW - 28 * sc : cardW * 0.42;
+  const visH = isMob ? 150 * sc : cardH - 200 * sc;
+ 
+  ctx.fillStyle = "rgba(6,12,26,0.7)";
+  ctx.beginPath();
+  ctx.roundRect(visX, visY, visW, visH, 12 * sc);
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${hr(accent2)},0.18)`;
+  ctx.lineWidth = 1 * sc;
+  ctx.stroke();
+ 
+  this._drawTutVisual(ctx, visX, visY, visW, visH, this._tutOrbT);
+ 
+  // ── Rules list ──
+  const rows = [
+    { icon: "✋", text: "Your WRIST steers the swinging arm." },
+    { icon: "🎯", text: "Numbers fall straight down the center line." },
+    { icon: "🔴", text: "ODD numbers must be knocked LEFT into red." },
+    { icon: "🔵", text: "EVEN numbers must be knocked RIGHT into blue." },
+    { icon: "✅", text: "Correct zone = +10 points." },
+    { icon: "❌", text: "Wrong zone = -5 points + screen shake." },
+    { icon: "⚡", text: "Good hits speed up spawns — stay sharp!" },
+  ];
+ 
+  const rulesX = isMob ? cardX + 14 * sc : cardX + visW + 28 * sc;
+  const rulesY = isMob ? visY + visH + 12 * sc : cardY + 82 * sc;
+  const rulesW = isMob ? cardW - 28 * sc : cardW - visW - 44 * sc;
+  const rowH = isMob ? 30 * sc : 34 * sc;
+ 
+  rows.forEach((row, i) => {
+    const top = rulesY + i * rowH;
+    ctx.fillStyle = i % 2 === 0 ? "rgba(30,20,50,0.45)" : "rgba(14,10,30,0.3)";
+    ctx.beginPath();
+    ctx.roundRect(rulesX, top, rulesW, rowH - 4, 6 * sc);
+    ctx.fill();
+ 
+    ctx.font = `${isMob ? 13 : 15}px Orbitron`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText(row.icon, rulesX + 18 * sc, top + (rowH - 4) / 2);
+ 
+    ctx.font = `${isMob ? 10.5 : 12}px Orbitron`;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(230,240,255,0.9)";
+    ctx.fillText(row.text, rulesX + 38 * sc, top + (rowH - 4) / 2);
+  });
+ 
+  // ── Hold-to-start logic + prompt ──
+  const holdY = cardY + cardH - 74 * sc;
+  const hasHand = !!this.steeringHand;
+ 
+  if (hasHand) {
+    const dx = this.steeringHand.x - this.CENTER_X;
+    const dy = this.steeringHand.y - this.CENTER_Y;
+    const inZone = Math.sqrt(dx * dx + dy * dy) < 150 * sc;
+ 
+    this._tutNoHandFrames = 0;
+ 
+    if (inZone) {
+      this._tutHoldProgress = Math.min(1, this._tutHoldProgress + dt / (this.TUT_HOLD_SEC * 1000));
+      if (this._tutHoldProgress >= 1) {
+        ctx.restore();
+        this._startPlayingFromTutorial();
+        return;
+      }
+    } else {
+      this._tutHoldProgress = Math.max(0, this._tutHoldProgress - dt / 600);
+    }
+  } else {
+    this._tutNoHandFrames++;
+    this._tutHoldProgress = Math.max(0, this._tutHoldProgress - dt / 600);
+  }
+ 
+  if (!hasHand) {
+    const blink = Math.sin(this._tutOrbT * 3) > 0;
+    ctx.font = `bold ${isMob ? 13 : 15}px Orbitron`;
+    ctx.fillStyle = blink ? accent2 : `rgba(${hr(accent2)},0.55)`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = accent2;
+    ctx.shadowBlur = blink ? 12 : 0;
+    ctx.fillText("✋ Raise your wrist into the camera", this.CENTER_X, holdY);
+    ctx.shadowBlur = 0;
+    ctx.font = `${isMob ? 11 : 13}px Orbitron`;
+    ctx.fillStyle = "rgba(180,220,255,0.65)";
+    ctx.fillText("Then hold it over the center pivot", this.CENTER_X, holdY + 20 * sc);
+  } else {
+    const dx = this.steeringHand.x - this.CENTER_X;
+    const dy = this.steeringHand.y - this.CENTER_Y;
+    const inZone = Math.sqrt(dx * dx + dy * dy) < 150 * sc;
+    const pct = Math.round(this._tutHoldProgress * 100);
+ 
+    ctx.font = `bold ${isMob ? 13 : 15}px Orbitron`;
+    ctx.fillStyle = accent2;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = accent2;
+    ctx.shadowBlur = 10;
+    ctx.fillText(
+      inZone ? `Hold at center... ${pct}%` : "Move your wrist to the center pivot",
+      this.CENTER_X, holdY
+    );
+    ctx.shadowBlur = 0;
+ 
+    const barW = cardW * 0.6, barH = 8 * sc;
+    const barX = this.CENTER_X - barW / 2, barY = holdY + 16 * sc;
+    ctx.fillStyle = "rgba(20,20,40,0.8)";
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW, barH, 4 * sc);
+    ctx.fill();
+    ctx.fillStyle = accent2;
+    ctx.shadowColor = accent2;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.roundRect(barX, barY, barW * this._tutHoldProgress, barH, 4 * sc);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+ 
+  ctx.restore();
+ 
+  // ── Live wrist marker + progress ring, drawn full-brightness
+  //    on top of the (possibly dimmed) card ──
+  if (hasHand) {
+    const wx = this.steeringHand.x, wy = this.steeringHand.y;
+    const R = 30 * sc;
+ 
+    ctx.beginPath();
+    ctx.arc(wx, wy, R, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(${hr(accent)},0.3)`;
+    ctx.lineWidth = 5 * sc;
+    ctx.stroke();
+ 
+    if (this._tutHoldProgress > 0.01) {
+      ctx.beginPath();
+      ctx.arc(wx, wy, R, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this._tutHoldProgress);
+      ctx.strokeStyle = accent2;
+      ctx.lineWidth = 5 * sc;
+      ctx.shadowColor = accent2;
+      ctx.shadowBlur = 14;
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+ 
+    if (this.wristCanvas) {
+      const wr = 18 * sc;
+      ctx.drawImage(this.wristCanvas, wx - wr - 30, wy - wr - 30);
+    }
+  }
+},
+ 
+ 
+/* ── 4b) NEW: animated mini-diagram of the actual mechanic ───── */
+_drawTutVisual(ctx, px, py, pw, ph, t) {
+  ctx.save();
+  ctx.translate(px, py);
+ 
+  const cx = pw / 2, cy = ph / 2;
+  const armLen = Math.min(pw, ph) * 0.32;
+ 
+  // Colored edge zones — mirrors the real red/blue bands
+  const bandW = pw * 0.14;
+  ctx.fillStyle = "rgba(255,0,0,0.35)";
+  ctx.fillRect(0, 0, bandW, ph);
+  ctx.fillStyle = "rgba(0,255,255,0.35)";
+  ctx.fillRect(pw - bandW, 0, bandW, ph);
+ 
+  // Demo cycle: 0-2s shows an ODD ball knocked LEFT,
+  //             2-4s shows an EVEN ball knocked RIGHT.
+  const cycle = t % 4;
+  const isOddDemo = cycle < 2;
+  const localT = (cycle % 2) / 2; // 0..1 within this half-cycle
+  const num = isOddDemo ? 7 : 4;
+  const zoneColor = isOddDemo ? "#FF0000" : "#00FFFF";
+ 
+  const fallPhase = 0.45;
+  let bx, by;
+  if (localT < fallPhase) {
+    const p = localT / fallPhase;
+    bx = cx;
+    by = p * cy;
+  } else {
+    const p = (localT - fallPhase) / (1 - fallPhase);
+    const targetX = isOddDemo ? bandW * 0.5 : pw - bandW * 0.5;
+    bx = cx + (targetX - cx) * p;
+    by = cy + (ph - cy) * p * 0.9;
+  }
+ 
+  // Arm points toward the deflection direction, with a little idle swing
+  const armAngle = isOddDemo ? Math.PI * 0.82 : Math.PI * 0.18;
+  const swingAngle = armAngle + Math.sin(t * 3) * 0.12;
+ 
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(swingAngle);
+  ctx.strokeStyle = "#ac2fffff";
+  ctx.shadowColor = "#f36affff";
+  ctx.shadowBlur = 10;
+  ctx.lineWidth = 6;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(armLen, 0);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-armLen, 0);
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.restore();
+ 
+  // Pivot
+  ctx.beginPath();
+  ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+  ctx.fillStyle = "#ff2491ff";
+  ctx.fill();
+ 
+  // Ball
+  ctx.beginPath();
+  ctx.arc(bx, by, 14, 0, Math.PI * 2);
+  ctx.fillStyle = "#ffffff";
+  ctx.shadowColor = zoneColor;
+  ctx.shadowBlur = 14;
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#000";
+  ctx.font = "bold 13px Orbitron";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(num, bx, by);
+ 
+  // Zone labels
+  ctx.font = "10px Orbitron";
+  ctx.fillStyle = "#FF0000";
+  ctx.textAlign = "left";
+  ctx.fillText("ODD", 6, ph - 8);
+  ctx.fillStyle = "#00FFFF";
+  ctx.textAlign = "right";
+  ctx.fillText("EVEN", pw - 6, ph - 8);
+ 
+  ctx.restore();
+},
+ 
+ 
+/* ── 4c) NEW: transition out of the tutorial into real play ──── */
+_startPlayingFromTutorial() {
+  this.gameState = "playing";
+  this.gameStarted = true;
+  this._tutHoldProgress = 0;
+ 
+  const video = document.getElementById("input_video");
+  if (video) video.style.opacity = "0.2";
+ 
+  this.spawnFloatingText(this.CENTER_X, this.CENTER_Y, "START!", "white");
+},
 };

@@ -1924,9 +1924,15 @@ _getCurrentLevelFloor(level = this.level) {
   return this._getCumulativeThreshold(level - 1);
 },
 
- // ── FIXED: cap displayed percent at 100 even though skillPoints can
-//    technically sit anywhere relative to the ever-rising cumulative
-//    target — avoids visual overflow past a "full" bar. ──
+/* ============================================================
+   UPDATED FUNCTIONS FOR ILLUSION & LEVEL-UP PROGRESSION
+   ============================================================ */
+
+/**
+ * Computes the progress percentage for UI/ring display.
+ * Applies an illusion cap: if the target criteria is met mid-round,
+ * it caps visually at 99% so the ring does not fully close until round end.
+ */
 _computeProgressPercent(useLiveRound = false) {
   const liveBonus = useLiveRound ? this._computeRoundSkillDelta() : 0;
   const points = Math.max(0, this.skillPoints + liveBonus);
@@ -1934,11 +1940,16 @@ _computeProgressPercent(useLiveRound = false) {
   const target = this.levelThreshold;
   const levelRange = Math.max(1, target - floor);
 
-  // Signed: negative means points have dropped below this level's floor.
   const raw = ((points - floor) / levelRange) * 100;
-  return Math.max(-100, Math.min(100, Math.round(raw)));
-},
+  const clamped = Math.max(-100, Math.min(100, Math.round(raw)));
 
+  // ILLUSION: Mid-round progress visually caps at 99% if criteria met
+  if (this.gameState === "playing" && points >= target) {
+    return 99;
+  }
+
+  return clamped;
+},
 
   _maybeGrantAssistTime() {
   if (this.assistAppliedThisRound || this.gameState !== "playing" || this.roundWrapPending) return 0;
@@ -1990,118 +2001,107 @@ _computeProgressPercent(useLiveRound = false) {
   // spawn timer no longer exists — spawning stops automatically because
   // _updateSpawning() checks roundWrapPending
 },
- _resolveRoundEnd() {
-    if (this.gameState !== "playing") return;
+ /**
+ * Handles the end of a round and resolves level progression.
+ * Fully fills the ring and completes the actual level transition here.
+ */
+_resolveRoundEnd() {
+  if (this.gameState !== "playing") return;
 
-    // roundSkillDelta is kept ONLY for the overlay summary text —
-    // it is NOT added to skillPoints. skillPoints is now purely fed
-    // by live _gainXP() calls during play and never gets a second
-    // add-on at round-end (that was the double-counting bug).
-    const roundSkillDelta = this._computeRoundSkillDelta();
-    const progressBefore = this.skillPoints;
+  const roundSkillDelta = this._computeRoundSkillDelta();
+  const progressBefore = this.skillPoints;
 
-    const qualified = this.skillPoints >= this.levelThreshold;
-    const canLevelUp = qualified && this.level < this.maxLevel;
-    const currentRound = this.roundNumber;
-    
-    let nextRound;
-    const nextLevel = canLevelUp ? this.level + 1 : this.level;
-    
-    if (canLevelUp) {
-      nextRound = 1;
-    } else {
-      nextRound = currentRound + 1;
-    }
+  const qualified = this.skillPoints >= this.levelThreshold;
+  const canLevelUp = qualified && this.level < this.maxLevel;
+  const currentRound = this.roundNumber;
 
-    let dynamicBonusTime = canLevelUp ? 250 : this.roundEndBonus;
+  let nextRound;
+  const nextLevel = canLevelUp ? this.level + 1 : this.level;
 
-    this.nextRoundPlan = this._buildRoundPlan();
+  if (canLevelUp) {
+    nextRound = 1;
+  } else {
+    nextRound = currentRound + 1;
+  }
 
-    const summary = {
-      roundNumber: currentRound,
-      nextRoundNumber: nextRound,
-      levelBefore: this.level,
-      levelAfter: nextLevel,
-      roundSkillDelta,
-      progressBefore,
-      progressAfter: this.skillPoints,
-      progressPercent: this._computeProgressPercent(false),
-      timeBeforeBonus: Math.max(0, Math.ceil(this.timeRemaining)),
-      bonusTime: dynamicBonusTime,
-      totalScore: this.score,
-      maxCombo: this.bestCombo,
-      roundMaxCombo: this.roundMaxCombo,
-      totalWrong: this.totalWrongTouches,
-      totalMissed: this.totalMissedCorrect,
-      assistTimeBonus: this.assistTimeBonus,
-      nextRoundLabel: this.nextRoundPlan.label,
-      nextRoundTitle: this.nextRoundPlan.title,
-      nextRoundMode: this.nextRoundPlan.mode,
-      difficultyLabel: this._difficultyLabelForLevel(nextLevel),
-      qualified: canLevelUp,
-    };
+  let dynamicBonusTime = canLevelUp ? 250 : this.roundEndBonus;
 
-    this.overlayData = summary;
-    this.roundWrapPending = false;
-    this.roundWrapDelay = 0;
-    this.overlayHoldProgress = 0;
-    this.levelCongratsTapHold = 0;
-    this.notes = [];
-    this.popEffects = [];
-    this.explosions = [];
-    this.missQueue = [];
-    this.pendingShot = null;
-    this.previewCannons = [];
-    this.previewTimer = 0;
-    this.isCharging = false;
-    this.charge = 0;
-    this.chargeParticles = [];
-    this.combo = 0;
-    this.multiplier = 1;
-    this.lastHitType = "";
+  this.nextRoundPlan = this._buildRoundPlan();
 
-    this.timeRemaining = Math.max(0, this.timeRemaining + dynamicBonusTime);
-    this._bumpTimeCeiling();
-    this.assistTimeBonus = 0;
-    this.assistAppliedThisRound = false;
+  const summary = {
+    roundNumber: currentRound,
+    nextRoundNumber: nextRound,
+    levelBefore: this.level,
+    levelAfter: nextLevel,
+    roundSkillDelta,
+    progressBefore,
+    progressAfter: this.skillPoints,
+    // ILLUSION BREAK: Explicitly show 100% completion on summary screens
+    progressPercent: canLevelUp ? 100 : this._computeProgressPercent(false),
+    timeBeforeBonus: Math.max(0, Math.ceil(this.timeRemaining)),
+    bonusTime: dynamicBonusTime,
+    totalScore: this.score,
+    maxCombo: this.bestCombo,
+    roundMaxCombo: this.roundMaxCombo,
+    totalWrong: this.totalWrongTouches,
+    totalMissed: this.totalMissedCorrect,
+    assistTimeBonus: this.assistTimeBonus,
+    nextRoundLabel: this.nextRoundPlan.label,
+    nextRoundTitle: this.nextRoundPlan.title,
+    nextRoundMode: this.nextRoundPlan.mode,
+    difficultyLabel: this._difficultyLabelForLevel(nextLevel),
+    qualified: canLevelUp,
+  };
 
-    if (canLevelUp) {
-      this.level = nextLevel;
-      this.roundNumber = nextRound;
-      this.nextRoundNumber = nextRound + 1;
+  this.overlayData = summary;
+  this.roundWrapPending = false;
+  this.roundWrapDelay = 0;
+  this.overlayHoldProgress = 0;
+  this.levelCongratsTapHold = 0;
+  this.notes = [];
+  this.popEffects = [];
+  this.explosions = [];
+  this.missQueue = [];
+  this.pendingShot = null;
+  this.previewCannons = [];
+  this.previewTimer = 0;
+  this.isCharging = false;
+  this.charge = 0;
+  this.chargeParticles = [];
+  this.combo = 0;
+  this.multiplier = 1;
+  this.lastHitType = "";
 
-      // ── FIXED: skillPoints used to carry over 100% of whatever was
-      //    earned beyond the previous level's threshold. That let one
-      //    over-performing round (e.g. 54/54 when the target was 32)
-      //    blow straight through the NEXT level's requirement too,
-      //    since the overflow just sat there as free progress.
-      //    Now only 10% of that overflow survives the level-up —
-      //    skillPoints resets to (old threshold) + 10% of the excess,
-      //    and the new cumulative threshold is computed from there.
-      const overflow = Math.max(0, this.skillPoints - this.levelThreshold);
-      this.skillPoints = this.levelThreshold + overflow * 0.1;
+  this.timeRemaining = Math.max(0, this.timeRemaining + dynamicBonusTime);
+  this._bumpTimeCeiling();
+  this.assistTimeBonus = 0;
+  this.assistAppliedThisRound = false;
 
-      this.levelThreshold = this._getCumulativeThreshold(this.level);
-      this.xp = this.skillPoints;
-      this.xpToNext = this.levelThreshold;
+  if (canLevelUp) {
+    this.level = nextLevel;
+    this.roundNumber = nextRound;
+    this.nextRoundNumber = nextRound + 1;
 
-      // ── Keep the overlay summary in sync with the dampened value,
-      //    since it was captured earlier (before dampening) as
-      //    progressAfter/progressPercent. ──
-      summary.progressAfter = this.skillPoints;
-      summary.progressPercent = this._computeProgressPercent(false);
+    const overflow = Math.max(0, this.skillPoints - this.levelThreshold);
+    this.skillPoints = this.levelThreshold + overflow * 0.1;
 
-      this._syncDifficultyScalars();
-      this._syncTierForLevel();
-      this._updateHintState();
-      this._triggerLevelUpBurst();
-      this.gameState = "levelCongrats";
-    } else {
-      this.roundNumber = currentRound;
-      this.nextRoundNumber = nextRound;
-      this.gameState = "roundBreak";
-    }
-  },
+    this.levelThreshold = this._getCumulativeThreshold(this.level);
+    this.xp = this.skillPoints;
+    this.xpToNext = this.levelThreshold;
+
+    summary.progressAfter = this.skillPoints;
+
+    this._syncDifficultyScalars();
+    this._syncTierForLevel();
+    this._updateHintState();
+    this._triggerLevelUpBurst();
+    this.gameState = "levelCongrats";
+  } else {
+    this.roundNumber = currentRound;
+    this.nextRoundNumber = nextRound;
+    this.gameState = "roundBreak";
+  }
+},
 
   _enterGameOver() {
   if (this.gameState === "gameOver") return;
@@ -2370,7 +2370,11 @@ _updateSpawning(dt) {
     ctx.restore();
   },
 
-  _drawXPRing(ctx, cx, cy, radius) {
+  /**
+ * Renders the circular XP ring HUD element.
+ * Respects the illusion percentage and suppresses premature level-up visual flashes.
+ */
+_drawXPRing(ctx, cx, cy, radius) {
   const percent = this.level >= this.maxLevel ? 100 : this._computeProgressPercent(false);
   const fill = Math.abs(percent) / 100;
   const isDeficit = percent < 0;
@@ -2378,17 +2382,17 @@ _updateSpawning(dt) {
   const tc = isDeficit ? this.C.wrong : this.tierColors[this.tier];
   const start = -Math.PI / 2;
 
-  // Track
+  // Outer Track
   ctx.beginPath();
   ctx.arc(cx, cy, radius, 0, Math.PI * 2);
   ctx.strokeStyle = this.C.xpTrack;
   ctx.lineWidth = 6;
   ctx.stroke();
 
+  // Active Fill Segment
   if (fill > 0.01) {
     ctx.beginPath();
     if (isDeficit) {
-      // Deficit fills counter-clockwise from the top, showing "how far below floor"
       ctx.arc(cx, cy, radius, start, start - Math.PI * 2 * fill, true);
     } else {
       ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
@@ -2396,12 +2400,14 @@ _updateSpawning(dt) {
     ctx.strokeStyle = tc;
     ctx.lineWidth = 6;
     ctx.shadowColor = tc;
-    ctx.shadowBlur = 12 + this.xpPopFlash * 20;
+    // Suppress heavy flash intensity while holding at 99% illusion
+    const flashIntensity = percent >= 99 && this.gameState === "playing" ? 0 : this.xpPopFlash;
+    ctx.shadowBlur = 12 + flashIntensity * 20;
     ctx.stroke();
     ctx.shadowBlur = 0;
   }
 
-  if (this.xpPopFlash > 0) {
+  if (this.xpPopFlash > 0 && this.gameState !== "playing") {
     ctx.beginPath();
     ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
     ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash * 0.55})`;
@@ -2409,7 +2415,6 @@ _updateSpawning(dt) {
     ctx.stroke();
   }
 },
-
   /* ── HUD ─────────────────────────────────────────────────── */
   _pill(ctx, x, y, w, h) {
     const r = h / 2;

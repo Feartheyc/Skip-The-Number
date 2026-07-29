@@ -27,6 +27,7 @@ const Game10 = {
   theme: "space",
   themes: {
     space: {
+
       bg1: "#0a0e27", bg2: "#1a1040", bg3: "#0d1f3c",
       accent: "#7c3aed", accentGlow: "rgba(124,58,237,0.4)",
       textPrimary: "#e2e8f0", textAccent: "#a78bfa",
@@ -101,7 +102,7 @@ const Game10 = {
 
   /* ── Finger throttle ─────────────────────────────────────── */
   _lastFingerUpdateTime: 0,
-  FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
+  FINGER_UPDATE_INTERVAL: 16, 
 
   /* ============================================================
      INIT
