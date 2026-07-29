@@ -9,6 +9,7 @@
    • fullResetOnResize() removed — replaced with _onResize()
    • FIX: countValidNumbers() caps correctCount to achievable max
    • FIX: updateMode1Merge remainingCorrect safety net added
+   • UPDATE: Portal follows raw finger position directly with jitter threshold filtering
 ============================================================ */
 
 const Game10 = {
@@ -105,7 +106,6 @@ const Game10 = {
   /* ============================================================
      INIT
   ============================================================ */
-   /* ── INIT (only the relevant lines shown — merge into your existing init()) ── */
  init() {
     this._applyResize(window.innerWidth, window.innerHeight);
 
@@ -251,9 +251,6 @@ const Game10 = {
 
   /* ============================================================
      TUTORIAL DRAW
-  ============================================================ */
-  /* ============================================================
-     TUTORIAL DRAW (Page-Based Structure & Clear Boundaries)
   ============================================================ */
   _updateTutorial(ctx, fingers, dt) {
     this._tutEnterAnim = Math.min(1, this._tutEnterAnim + dt * 2);
@@ -444,7 +441,6 @@ const Game10 = {
   },
 
   /* ── Tutorial visual: portal with scattered number cards ── */
-
   _drawTutVisual(ctx, px, py, pw, ph, t) {
     ctx.save(); ctx.translate(px, py);
     const mx = pw / 2, my = ph / 2;
@@ -504,11 +500,9 @@ const Game10 = {
       ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("1", lx, ly);
     }
 
-    // ── Original Position Kept Intact Inside the Box ──
     ctx.font = "10px 'Fredoka', cursive"; ctx.fillStyle = "rgba(167,139,250,0.8)";
     ctx.textAlign = "center"; ctx.fillText("Swallow only numbers ending in ST!", mx, ph - 8);
 
-    // ── UPDATED: Finger Legend Positioned Below Box (Same as Triple Cannon mode) ──
     const legendY = ph + 10;
 
     ctx.beginPath(); ctx.arc(mx - 46, legendY, 8, 0, Math.PI * 2); ctx.fillStyle = "rgba(124,58,237,0.35)"; ctx.fill();
@@ -556,18 +550,16 @@ const Game10 = {
     if (l === 1) return "st"; if (l === 2) return "nd"; if (l === 3) return "rd";
     return "th";
   },
-   generateNumberWithSuffix(suffix, usedNumbers) {
+  generateNumberWithSuffix(suffix, usedNumbers) {
     usedNumbers = usedNumbers || new Set();
     let n, attempts = 0;
     do {
       n = Math.floor(Math.random() * this.numberRange) + 1;
       attempts++;
       if (attempts > 200) {
-        // Brute-force scan for any valid, unused number
         for (let i = 1; i <= this.numberRange; i++) {
           if (this.getSuffix(i) === suffix && !usedNumbers.has(i)) return i;
         }
-        // Fallback: allow reuse only if truly nothing else is available
         for (let i = 1; i <= this.numberRange; i++) {
           if (this.getSuffix(i) === suffix) return i;
         }
@@ -580,7 +572,7 @@ const Game10 = {
     return n;
   },
 
-  /* ── FIX: Count how many valid numbers exist for a suffix ── */
+  /* ── Count valid numbers for suffix ── */
   countValidNumbers(suffix) {
     let count = 0;
     for (let n = 1; n <= this.numberRange; n++) {
@@ -589,7 +581,6 @@ const Game10 = {
     return count;
   },
 
-  /* ── Spawn numbers ───────────────────────────────────────── */
   /* ── Spawn numbers ───────────────────────────────────────── */
   spawnMode1Numbers() {
     this.mode1Numbers = [];
@@ -601,7 +592,6 @@ const Game10 = {
     this.mode1MergeActive = false;
     this.mode1BreakActive = false;
 
-    // ── FIX: Cap correctCount to how many valid numbers actually exist ──
     const maxPossible = this.countValidNumbers(this.mode1TargetSuffix);
     const safeMax = Math.max(1, Math.min(this.mode1MaxMatches, maxPossible));
     const safeMin = Math.min(this.mode1MinMatches, safeMax);
@@ -627,7 +617,6 @@ const Game10 = {
     const used = [];
     let correctSpawned = 0;
 
-    // ── NEW: track every number value used this round to prevent duplicates ──
     const usedNumbers = new Set();
 
     for (let i = 0; i < count; i++) {
@@ -666,7 +655,7 @@ const Game10 = {
         do {
           num = Math.floor(Math.random() * this.numberRange) + 1;
           distAttempts++;
-          if (distAttempts > 300) break; // safety valve if range is too small to stay unique
+          if (distAttempts > 300) break;
         } while (
           (this.getSuffix(num) === this.mode1TargetSuffix || usedNumbers.has(num))
         );
@@ -690,6 +679,7 @@ const Game10 = {
       this.proximityGlow.push(0);
     }
   },
+
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
@@ -703,14 +693,12 @@ const Game10 = {
     delta = Math.min(Math.max(delta, 1), 50);
     this.lastTime = now;
 
-    // Tutorial state — same canvas, same loop
     if (this.gameState === "tutorial") {
       const fingers = window.fingerPositions || [];
       this._updateTutorial(ctx, fingers, delta / 1000);
       return;
     }
 
-    // ── Live Playing State (Double Tap Active) ──
     this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
     if (pauseBtn) {
@@ -718,7 +706,6 @@ const Game10 = {
       pauseBtn.style.opacity = "0";
     }
 
-    // Playing state drawing loops...
     this.drawBackground(ctx);
     if (this.theme === "space") {
       this.updateStars(delta); this.drawStars(ctx);
@@ -760,28 +747,38 @@ const Game10 = {
     this.drawGameOver(ctx);
     this._drawNoFingerPrompt(ctx);
   },
-  /* ── Finger (throttled) ──────────────────────────────────── */
+
+  /* ── Finger tracking with direct follow & anti-jitter deadzone ───────────────── */
   updateFingerPosition(now) {
     if (now - this._lastFingerUpdateTime < this.FINGER_UPDATE_INTERVAL) return;
     this._lastFingerUpdateTime = now;
 
     if (!window.fingerPositions || !Array.isArray(window.fingerPositions) || window.fingerPositions.length === 0) {
       this.fingerX = null; this.fingerY = null;
-      this.fingerSmoothX = null; this.fingerSmoothY = null;
       return;
     }
+
     const fp = window.fingerPositions[0];
-    if (this.fingerSmoothX === null) { this.fingerSmoothX = fp.x; this.fingerSmoothY = fp.y; }
-    this.fingerSmoothX += (fp.x - this.fingerSmoothX) * this.fingerSmoothing;
-    this.fingerSmoothY += (fp.y - this.fingerSmoothY) * this.fingerSmoothing;
-    const dx = this.fingerSmoothX - (this.fingerX || this.fingerSmoothX);
-    const dy = this.fingerSmoothY - (this.fingerY || this.fingerSmoothY);
-    if (this.fingerX !== null && Math.hypot(dx, dy) < 3) return;
-    this.fingerX = this.fingerSmoothX;
-    this.fingerY = this.fingerSmoothY;
+
+    // Initialize position directly if unset
+    if (this.fingerX === null || this.fingerY === null) {
+      this.fingerX = fp.x;
+      this.fingerY = fp.y;
+      return;
+    }
+
+    // Deadzone threshold (in CSS pixels): ignore microscopic micro-movements to remove jitter
+    const JITTER_THRESHOLD = 2.5; 
+    const dist = Math.hypot(fp.x - this.fingerX, fp.y - this.fingerY);
+
+    // Only update portal position when reading movement exceeds the threshold
+    if (dist >= JITTER_THRESHOLD) {
+      this.fingerX = fp.x;
+      this.fingerY = fp.y;
+    }
   },
 
-  /* ── Mascot ──────────────────────────────────────────────── */
+  /* ── Mascot / Portal Movement ───────────────────────────── */
   updateMascot(delta) {
     if (this.gameMode === 1 && this.mode1Confirming) {
       const dx = this.mode1PortalTargetX - this.mascot.x, dy = this.mode1PortalTargetY - this.mascot.y;
@@ -794,21 +791,15 @@ const Game10 = {
       }
       this.mascot.vx = 0; this.mascot.vy = 0; return;
     }
+
+    // Follow finger position directly
     if (this.fingerX !== null && this.fingerY !== null) {
-      const dx = this.fingerX - this.mascot.x, dy = this.fingerY - this.mascot.y;
-      const dist = Math.hypot(dx, dy);
-      if (dist > 8) {
-        const force = Math.min(dist * this.mascot.accel * delta, this.mascot.maxSpeed);
-        this.mascot.vx += (dx / dist) * force; this.mascot.vy += (dy / dist) * force;
-      }
+      this.mascot.x = this.fingerX;
+      this.mascot.y = this.fingerY;
+      this.mascot.vx = 0;
+      this.mascot.vy = 0;
     }
-    const fr = Math.pow(this.mascot.friction, delta);
-    this.mascot.vx *= fr; this.mascot.vy *= fr;
-    const spd = Math.hypot(this.mascot.vx, this.mascot.vy);
-    if (spd > this.mascot.maxSpeed) { const r = this.mascot.maxSpeed / spd; this.mascot.vx *= r; this.mascot.vy *= r; }
-    this.mascot.x += this.mascot.vx * delta; this.mascot.y += this.mascot.vy * delta;
-    if (Math.abs(this.mascot.vx) < 0.01) this.mascot.vx = 0;
-    if (Math.abs(this.mascot.vy) < 0.01) this.mascot.vy = 0;
+
     const pad = 70 * this.scale;
     this.mascot.x = Math.max(pad, Math.min(this.cssWidth  - pad, this.mascot.x));
     this.mascot.y = Math.max(pad, Math.min(this.cssHeight - pad, this.mascot.y));
@@ -922,44 +913,36 @@ const Game10 = {
   },
 
   /* ── Mode 1 logic ────────────────────────────────────────── */
-  // updateMode1Logic(delta) {
-  //   this.updateProximityGlow(delta);
-  //   if(!this.mode1RoundActive||this.mode1GameOver||this.mode1SuctionActive||this.mode1BreakActive||this.blackHoleActive||this.mode1Confirming)return;
-  //   for(let i=0;i<this.mode1Numbers.length;i++){const n=this.mode1Numbers[i];if(n.spawnAlpha<0.5)continue;if(Math.hypot(this.mascot.x-n.x,this.mascot.y-n.y)<65*this.scale){this.startMode1Suction(i);break;}}
-  // },
-
   updateMode1Logic(delta) {
-  this.updateProximityGlow(delta);
-  if (!this.mode1RoundActive || this.mode1GameOver || this.mode1SuctionActive || 
-      this.mode1BreakActive || this.blackHoleActive || this.mode1Confirming) return;
+    this.updateProximityGlow(delta);
+    if (!this.mode1RoundActive || this.mode1GameOver || this.mode1SuctionActive || 
+        this.mode1BreakActive || this.blackHoleActive || this.mode1Confirming) return;
 
-  const pullRadius = 160 * this.scale;
-  const catchRadius = 65 * this.scale;
+    const pullRadius = 160 * this.scale;
+    const catchRadius = 65 * this.scale;
 
-  for (let i = 0; i < this.mode1Numbers.length; i++) {
-    const n = this.mode1Numbers[i];
-    if (n.spawnAlpha < 0.5) continue;
+    for (let i = 0; i < this.mode1Numbers.length; i++) {
+      const n = this.mode1Numbers[i];
+      if (n.spawnAlpha < 0.5) continue;
 
-    const dx = this.mascot.x - n.x;
-    const dy = this.mascot.y - n.y;
-    const dist = Math.hypot(dx, dy);
+      const dx = this.mascot.x - n.x;
+      const dy = this.mascot.y - n.y;
+      const dist = Math.hypot(dx, dy);
 
-    // Magnetic pull when close
-    if (dist < pullRadius && dist > catchRadius) {
-      const pullForce = (1 - dist / pullRadius) * 0.12 * delta;
-      n.x += (dx / dist) * pullForce;
-      n.y += (dy / dist) * pullForce;
+      // Magnetic pull when close
+      if (dist < pullRadius && dist > catchRadius) {
+        const pullForce = (1 - dist / pullRadius) * 0.12 * delta;
+        n.x += (dx / dist) * pullForce;
+        n.y += (dy / dist) * pullForce;
+      }
+
+      // Trigger absorption
+      if (dist <= catchRadius) {
+        this.startMode1Suction(i);
+        break;
+      }
     }
-
-    // Trigger absorption
-    if (dist <= catchRadius) {
-      this.startMode1Suction(i);
-      break;
-    }
-  }
-},
-  
-
+  },
 
   /* ── Suction ─────────────────────────────────────────────── */
   startMode1Suction(index) {
@@ -1018,7 +1001,6 @@ const Game10 = {
       this.mode1MergeActive=false;
       this.mode1CorrectCollected++;
 
-      // ── FIX: safety net — if no correct numbers remain on screen, end round ──
       const remainingCorrect = this.mode1Numbers.filter(
         n => this.getSuffix(n.number) === this.mode1TargetSuffix
       ).length;
@@ -1048,7 +1030,8 @@ const Game10 = {
     const prog=1-lf;
     if(prog>0.08&&prog<0.88){const a=Math.sin(prog*Math.PI);ctx.save();ctx.globalAlpha=a;ctx.translate(this.CENTER_X,this.CENTER_Y-160*this.scale);ctx.scale(0.7+a*0.4,0.7+a*0.4);ctx.fillStyle=this.T.correct;ctx.font=`bold ${Math.round(56*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.T.correct;ctx.shadowBlur=20;ctx.fillText("⭐ Round Clear!",0,0);ctx.restore();}
   },
-   /* ── Round completion → level progression ───────────────── */
+
+  /* ── Level progression ──────────────────────────────────── */
   startNewRound() {
     this.roundsCompleted++;
     this._roundsInLevel = (this._roundsInLevel || 0) + 1;
@@ -1071,16 +1054,15 @@ const Game10 = {
   },
 
   _getNumberRangeForLevel(level) {
-    // Level 1→10, 2→20, 3→30, 4→50, 5→70, 6→100, then +30 per level beyond that
     const table = [10, 20, 30, 50, 70, 100];
     if (level - 1 < table.length) return table[level - 1];
     return 100 + (level - table.length) * 30;
   },
 
   _pickLevelRoundTarget() {
-    // Each level lasts a random 3–5 rounds
     return 3 + Math.floor(Math.random() * 3);
   },
+
   /* ── Number break ────────────────────────────────────────── */
   startNumberBreak(number){
     const px=this.mascot.x,py=this.mascot.y;this.mode1BreakActive=true;this.mode1BreakData={number,x:px,y:py,pieces:[],time:0};

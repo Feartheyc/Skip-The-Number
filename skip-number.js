@@ -856,6 +856,7 @@ _spawnAccumulator: 0,
     this.hintState = "full";
     this.noiseTime = 0;
     this.spawnInterval = 1800;
+    this.timeLimit = 300;
     this.timeRemaining = this.timeLimit;
     this.skillPoints = 0;
     this.bestCombo = 0;
@@ -1856,6 +1857,9 @@ _getCumulativeThreshold(level) {
     this.mode = modeKey || "default";
     this.roundNumber = 1;
     this.nextRoundNumber = 1;
+    this.timeLimit = 300; // ── FIXED: reset the time-bar ceiling too, or a
+                           //    prior session's inflated ceiling would carry
+                           //    over and make the bar start under-filled.
     this.timeRemaining = this.timeLimit;
     this.score = 0;
     this.skillPoints = 0;
@@ -1912,6 +1916,14 @@ _adjustSkill(amount) {
   return Math.round((accuracy * 34) + (comboNorm * 18) + (scoreNorm * 12) - penalty);
 },
 
+
+
+// Cumulative threshold of the PREVIOUS level — the "floor" this level's
+// progress bar should start counting from. Returns 0 for level 1.
+_getCurrentLevelFloor(level = this.level) {
+  return this._getCumulativeThreshold(level - 1);
+},
+
  // ── FIXED: cap displayed percent at 100 even though skillPoints can
 //    technically sit anywhere relative to the ever-rising cumulative
 //    target — avoids visual overflow past a "full" bar. ──
@@ -1928,6 +1940,7 @@ _computeProgressPercent(useLiveRound = false) {
   if (progress < 72 || this.timeRemaining > 42) return 0;
   const bonus = 2 + Math.floor(Math.random() * 4);
   this.timeRemaining += bonus;
+  this._bumpTimeCeiling();
   this.assistTimeBonus += bonus;
   this.assistAppliedThisRound = true;
   return bonus;
@@ -2042,6 +2055,7 @@ _computeProgressPercent(useLiveRound = false) {
     this.lastHitType = "";
 
     this.timeRemaining = Math.max(0, this.timeRemaining + dynamicBonusTime);
+    this._bumpTimeCeiling();
     this.assistTimeBonus = 0;
     this.assistAppliedThisRound = false;
 
@@ -2477,6 +2491,18 @@ _updateSpawning(dt) {
     ctx.fillText(diffLabels[this.hintState]||"", W-12, H-26);
     ctx.globalAlpha = 1;
   },
+
+
+  // ── FIXED: timeLimit is the time-bar denominator. It was a static 300,
+//    so any bonus that pushed timeRemaining above 300 made the bar
+//    render as fully-filled ("stuck") until the surplus burned back
+//    down below 300. Now timeLimit ratchets up to match the highest
+//    timeRemaining we've granted, so the bar always shows the correct
+//    proportion right after a bonus instead of pinning at 100%. ──
+_bumpTimeCeiling() {
+  if (this.timeRemaining > this.timeLimit) this.timeLimit = this.timeRemaining;
+},
+
 
   _drawTimeBar(ctx, isLauncher) {
     const W = this.centerX * 2;
