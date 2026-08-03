@@ -59,6 +59,7 @@ const Game3 = {
 
   eventsBound: false,
   helpBtn: null,
+  pauseBtn: null,
 
   difficultyMenuOpen: false,
   gradeBtn: null,
@@ -144,6 +145,7 @@ const Game3 = {
           const mouseX = e.clientX - rect.left;
           const mouseY = e.clientY - rect.top;
 
+          // 1. Difficulty Menu Trigger
           const gDx = mouseX - this.gradeBtn.x;
           const gDy = mouseY - this.gradeBtn.y;
           if (gDx * gDx + gDy * gDy <= (this.gradeBtn.r + 20) ** 2) {
@@ -165,14 +167,25 @@ const Game3 = {
             return;
           }
 
+          // 2. Help '?' Click Detection
           if (this.helpBtn) {
             const dx = mouseX - this.helpBtn.x;
             const dy = mouseY - this.helpBtn.y;
-            const hitRadius = this.helpBtn.r + 15;
-            if (dx * dx + dy * dy <= hitRadius * hitRadius) {
+            if (dx * dx + dy * dy <= (this.helpBtn.r + 10) ** 2) {
               this.showTutorial = true;
               this.tutorialHoldTime = 0;
               this._tutPage = 1;
+              return;
+            }
+          }
+
+          // 3. Pause Click Detection inside the Pill
+          if (this.pauseBtn && typeof PauseArea !== 'undefined') {
+            const dx = mouseX - this.pauseBtn.x;
+            const dy = mouseY - this.pauseBtn.y;
+            if (dx * dx + dy * dy <= (this.pauseBtn.r + 10) ** 2) {
+              PauseArea.togglePause();
+              return;
             }
           }
         });
@@ -200,7 +213,6 @@ const Game3 = {
     this.scale = base / 600;
     this.margin = 80 * this.scale;
 
-    this.helpBtn = { x: width - 60 * this.scale, y: 50 * this.scale, r: 18 * this.scale };
     this.gradeBtn = { x: 140 * this.scale, y: 50 * this.scale, r: 35 * this.scale };
     this.preRenderUI();
   },
@@ -275,7 +287,6 @@ const Game3 = {
       if (this.currentLevel === 1) {
         this.currentRelation = n1 > n2 ? ">" : "<";
       } 
-      // ⚡ ADDITIVE FIX: Hard-align direct smaller number relation targets cleanly with physical screen spaces
       else if (this.currentLevel === 2) {
         this.currentRelation = n1 < n2 ? ">" : "<";
       } 
@@ -393,7 +404,12 @@ const Game3 = {
     if (this.difficultyMenuOpen) this.drawDifficultyMenu(ctx);
 
     ctx.restore();
-    if (typeof PauseArea !== 'undefined') { PauseArea.drawPauseIcon(ctx); if (isPaused) PauseArea.draw(); }
+
+    // ⚡ FIX: Only draw PauseArea's full-screen pause menu modal when game IS PAUSED.
+    // Suppress PauseArea.drawPauseIcon(ctx) so the duplicate black circle isn't drawn over our pill!
+    if (typeof PauseArea !== 'undefined') {
+      if (isPaused) PauseArea.draw(ctx);
+    }
   },
 
   drawDifficultyMenu(ctx) {
@@ -571,23 +587,28 @@ const Game3 = {
       if (overlap < 0.5) { this.resetHolds(dt); return; }
     }
 
-    const tipsX = isSmallerNumberChallenge ? indexTip.x : (indexTip.x + thumbTip.x) / 2;
-    const threshold = 30 * this.scale;
+    if (isSmallerNumberChallenge) {
+      const deadzone = 40 * this.scale;
 
-    // ⚡ FIXED TILT EVALUATION: Normal horizontal mirroring direction mapping loop checks
-    let isLeftTilt = tipsX < wrist.x - threshold;
-    let isRightTilt = tipsX > wrist.x + threshold;
+      if (indexTip.x < this.centerX - deadzone) {
+        this.detectedSymbol = ">";
+      } else if (indexTip.x > this.centerX + deadzone) {
+        this.detectedSymbol = "<";
+      } else {
+        this.detectedSymbol = "Center";
+      }
+    } else {
+      const tipsX = (indexTip.x + thumbTip.x) / 2;
+      const threshold = 30 * this.scale;
 
-    if (window.isLeftHand && isSmallerNumberChallenge) {
-      const temp = isLeftTilt;
-      isLeftTilt = isRightTilt;
-      isRightTilt = temp;
+      if (tipsX < wrist.x - threshold) {
+        this.detectedSymbol = ">";
+      } else if (tipsX > wrist.x + threshold) {
+        this.detectedSymbol = "<";
+      } else {
+        this.detectedSymbol = "Center";
+      }
     }
-
-    // 🎯 RE-ALIGNED SYMBOLS: Flipped comparison symbols here to accurately lock answers with screen selections
-    if (isLeftTilt) this.detectedSymbol = "<"; // Point left maps to left card value selection
-    else if (isRightTilt) this.detectedSymbol = ">"; // Point right maps to right card value selection
-    else this.detectedSymbol = "Center";
 
     if (this.detectedSymbol !== this._lastDetectedSymbol) {
       this._lastDetectedSymbol = this.detectedSymbol;
@@ -768,73 +789,175 @@ const Game3 = {
   },
 
   drawUI(ctx) {
-    const topBarH = 80 * this.scale;
-    ctx.fillStyle = "rgba(20, 20, 20, 0.6)"; ctx.fillRect(0, 0, window.innerWidth, topBarH);
-    ctx.strokeStyle = "rgba(255,255,255,0.1)"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(0, topBarH); ctx.lineTo(window.innerWidth, topBarH); ctx.stroke();
+    const topY = 28 * this.scale;
 
+    // Helper: Rounded Rectangle Pill Helper
+    const drawPill = (x, y, w, h, bg = "rgba(20, 20, 20, 0.75)", stroke = "rgba(255, 255, 255, 0.15)") => {
+      ctx.fillStyle = bg;
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 2 * this.scale;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(x, y, w, h, h / 2);
+      else ctx.fillRect(x, y, w, h);
+      ctx.fill();
+      ctx.stroke();
+    };
+
+    // 1. Grade Badge (Left Pill)
+    const subLabel = this.currentGrade === 1 ? `Grade 1 (Lvl ${this.currentLevel})` : `Grade ${this.currentGrade}`;
+    ctx.font = `bold ${18 * this.scale}px Arial`;
+    const gradeW = ctx.measureText(subLabel).width + 36 * this.scale;
+    const gradeH = 44 * this.scale;
+    const gradeX = 25 * this.scale;
+    drawPill(gradeX, topY, gradeW, gradeH);
+    ctx.fillStyle = "#00FFCC";
+    ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.textAlign = "left"; ctx.font = `bold ${24 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
-    const subLabel = this.currentGrade === 1 ? `Grade 1 (Level ${this.currentLevel})` : `Grade ${this.currentGrade}`;
-    ctx.fillText(subLabel, 30 * this.scale, topBarH / 2);
+    ctx.fillText(subLabel, gradeX + gradeW / 2, topY + gradeH / 2);
 
-    ctx.textAlign = "center"; ctx.font = `bold ${26 * this.scale}px Arial`; ctx.fillStyle = "#FFD700";
-    ctx.fillText(`SCORE: ${this.score}`, this.centerX, topBarH / 2);
+    // 2. Score Badge (Center Pill)
+    const scoreText = `SCORE: ${this.score}`;
+    ctx.font = `bold ${22 * this.scale}px Arial`;
+    const scoreW = ctx.measureText(scoreText).width + 48 * this.scale;
+    const scoreH = 48 * this.scale;
+    const scoreX = this.centerX - scoreW / 2;
+    drawPill(scoreX, topY, scoreW, scoreH, "rgba(15, 15, 15, 0.82)", "#FFD700");
+    ctx.fillStyle = "#FFD700";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(scoreText, this.centerX, topY + scoreH / 2);
 
-    if (this.combo >= 2) { 
-      ctx.textAlign = "left"; ctx.fillStyle = "#FF6600"; ctx.font = `bold ${18 * this.scale}px Arial`; 
-      ctx.fillText(`Combo x${this.combo}`, this.centerX + 110 * this.scale, topBarH / 2); 
+    // Combo Counter Tag
+    if (this.combo >= 2) {
+      const comboText = `x${this.combo}`;
+      ctx.font = `bold ${16 * this.scale}px Arial`;
+      const comboW = ctx.measureText(comboText).width + 24 * this.scale;
+      const comboH = 32 * this.scale;
+      const comboX = scoreX + scoreW + 10 * this.scale;
+      const comboY = topY + (scoreH - comboH) / 2;
+      drawPill(comboX, comboY, comboW, comboH, "rgba(255, 102, 0, 0.9)", "rgba(255, 255, 255, 0.4)");
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillText(comboText, comboX + comboW / 2, comboY + comboH / 2);
     }
 
+    // Draining Combo Bar
     if (this.combo > 0 && this.comboTimer > 0) {
-      const barW = 280 * this.scale;
-      const barH = 6 * this.scale;
+      const barW = scoreW - 12 * this.scale;
+      const barH = 5 * this.scale;
       const barX = this.centerX - barW / 2;
-      const barY = topBarH + 8 * this.scale;
-      const ratio = this.comboTimer / this.COMBO_MAX_TIME;
+      const barY = topY + scoreH + 6 * this.scale;
+      const ratio = Math.max(0, Math.min(1, this.comboTimer / this.COMBO_MAX_TIME));
 
-      ctx.fillStyle = "rgba(0,0,0,0.4)";
-      ctx.roundRect ? ctx.beginPath() || ctx.roundRect(barX, barY, barW, barH, 3 * this.scale) || ctx.fill() : ctx.fillRect(barX, barY, barW, barH);
-      
-      ctx.fillStyle = `hsl(${ratio * 40}, 100%, 50%)`;
-      ctx.roundRect ? ctx.beginPath() || ctx.roundRect(barX, barY, barW * ratio, barH, 3 * this.scale) || ctx.fill() : ctx.fillRect(barX, barY, barW * ratio, barH);
+      ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(barX, barY, barW, barH, 3 * this.scale);
+      else ctx.fillRect(barX, barY, barW, barH);
+      ctx.fill();
+
+      ctx.fillStyle = `hsl(${ratio * 45}, 100%, 50%)`;
+      ctx.beginPath();
+      if (ctx.roundRect) ctx.roundRect(barX, barY, barW * ratio, barH, 3 * this.scale);
+      else ctx.fillRect(barX, barY, barW * ratio, barH);
+      ctx.fill();
     }
 
+    // 3. Center Cards Rendering
     ctx.textAlign = "center";
     const offsetX = 220 * this.scale;
-    const cardW = 180 * this.scale * this.popScale; const cardH = 160 * this.scale * this.popScale;
+    const cardW = 180 * this.scale * this.popScale; 
+    const cardH = 160 * this.scale * this.popScale;
 
     ctx.globalAlpha = this.fadeAlpha;
     const drawCard = (x, color, text) => {
-      ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.roundRect(x - cardW / 2 + 5, this.centerY - cardH / 2 + 8, cardW, cardH, 15 * this.scale); ctx.fill();
-      ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(x - cardW / 2, this.centerY - cardH / 2, cardW, cardH, 15 * this.scale); ctx.fill();
-      ctx.font = `bold ${64 * this.scale * this.popScale}px Arial`; ctx.fillStyle = "white"; ctx.fillText(text, x, this.centerY);
+      ctx.fillStyle = "rgba(0, 0, 0, 0.25)"; 
+      ctx.beginPath(); 
+      ctx.roundRect(x - cardW / 2 + 5, this.centerY - cardH / 2 + 8, cardW, cardH, 15 * this.scale); 
+      ctx.fill();
+
+      ctx.fillStyle = color; 
+      ctx.beginPath(); 
+      ctx.roundRect(x - cardW / 2, this.centerY - cardH / 2, cardW, cardH, 15 * this.scale); 
+      ctx.fill();
+
+      ctx.font = `bold ${64 * this.scale * this.popScale}px Arial`; 
+      ctx.fillStyle = "white"; 
+      ctx.fillText(text, x, this.centerY);
     };
 
     drawCard(this.centerX - offsetX, this.leftColor, this.leftText);
     drawCard(this.centerX + offsetX, this.rightColor, this.rightText);
 
     ctx.globalAlpha = 1;
-    ctx.font = `bold ${54 * this.scale}px Arial`; ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.font = `bold ${54 * this.scale}px Arial`; 
+    ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
     ctx.fillText("?", this.centerX, this.centerY);
 
-    ctx.font = `bold ${24 * this.scale}px Arial`; ctx.fillStyle = "#FFFFFF";
-    ctx.shadowBlur = 8; ctx.shadowColor = "#000";
+    // Prompt Message
+    ctx.font = `bold ${24 * this.scale}px Arial`; 
+    ctx.fillStyle = "#FFFFFF";
+    ctx.shadowBlur = 8; 
+    ctx.shadowColor = "#000";
     ctx.fillText(this.targetPromptText, this.centerX, this.centerY + 140 * this.scale);
     ctx.shadowBlur = 0;
 
-    this.drawHelpButton(ctx);
-    ctx.font = `12px Arial`; ctx.fillStyle = "rgba(0,255,0,0.3)"; ctx.textAlign = "left";
+    // 4. Combined Top-Right Control Pill (Help + Pause)
+    this.drawCombinedTopRightPill(ctx, topY);
+
+    ctx.font = `12px Arial`; 
+    ctx.fillStyle = "rgba(0, 255, 0, 0.3)"; 
+    ctx.textAlign = "left";
     ctx.fillText(`FPS: ${this.fps}`, 20, window.innerHeight - 20);
   },
 
-  drawHelpButton(ctx) {
-    if (!this.helpBtn) return;
-    const topBarH = 80 * this.scale;
-    this.helpBtn.x = window.innerWidth - 40 * this.scale; this.helpBtn.y = topBarH / 2;
-    ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(this.helpBtn.x, this.helpBtn.y, this.helpBtn.r, 0, 7); ctx.fill();
-    ctx.fillStyle = "white"; ctx.font = `bold ${18 * this.scale}px Arial`; ctx.textAlign = "center";
-    ctx.fillText("?", this.helpBtn.x, this.helpBtn.y);
+  // ⚡ COMBINED TOP-RIGHT CONTROL PILL METHOD
+  drawCombinedTopRightPill(ctx, topY) {
+    const pillH = 44 * this.scale;
+    const itemW = 44 * this.scale;
+    const pillW = itemW * 2 + 10 * this.scale; // Width for two side-by-side buttons
+    const pillX = window.innerWidth - pillW - 25 * this.scale;
+
+    // Main Outer Pill Container
+    ctx.fillStyle = "rgba(20, 20, 20, 0.75)";
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+    ctx.lineWidth = 2 * this.scale;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(pillX, topY, pillW, pillH, pillH / 2);
+    else ctx.fillRect(pillX, topY, pillW, pillH);
+    ctx.fill();
+    ctx.stroke();
+
+    // 1. Help ('?') Button Coordinates (Left side of Pill)
+    const helpX = pillX + itemW / 2;
+    const helpY = topY + pillH / 2;
+    this.helpBtn = { x: helpX, y: helpY, r: itemW / 2 };
+
+    ctx.fillStyle = "white";
+    ctx.font = `bold ${20 * this.scale}px Arial`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("?", helpX, helpY);
+
+    // Divider Line inside Pill
+    const divX = pillX + itemW + 5 * this.scale;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
+    ctx.lineWidth = 1.5 * this.scale;
+    ctx.beginPath();
+    ctx.moveTo(divX, topY + 10 * this.scale);
+    ctx.lineTo(divX, topY + pillH - 10 * this.scale);
+    ctx.stroke();
+
+    // 2. Pause ('⏸') Button Coordinates (Right side of Pill)
+    const pauseX = divX + itemW / 2 + 2 * this.scale;
+    const pauseY = topY + pillH / 2;
+    this.pauseBtn = { x: pauseX, y: pauseY, r: itemW / 2 };
+
+    // Custom Canvas Pause Bars ⏸
+    const barW = 3.5 * this.scale;
+    const barH = 14 * this.scale;
+    const gap = 3.5 * this.scale;
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(pauseX - barW - gap / 2, pauseY - barH / 2, barW, barH);
+    ctx.fillRect(pauseX + gap / 2, pauseY - barH / 2, barW, barH);
   },
 
   drawFeedback(ctx, text, color) {
