@@ -253,6 +253,9 @@ const Game10 = {
   /* ============================================================
      TUTORIAL DRAW
   ============================================================ */
+  /* ============================================================
+     TUTORIAL DRAW
+  ============================================================ */
   _updateTutorial(ctx, fingers, dt) {
     this._tutEnterAnim = Math.min(1, this._tutEnterAnim + dt * 2);
     this._tutOrbT     += dt;
@@ -309,7 +312,7 @@ const Game10 = {
     
     ctx.font = `${isMob ? 12 : 14}px 'Fredoka', 'Trebuchet MS', sans-serif`;
     ctx.fillStyle = "rgba(226,232,240,0.68)";
-    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Core Mechanics & Target UI' : 'Time Metrics & Risk Parameters'}`, cx, cardY + 65);
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Core Mechanics & Target UI' : 'Hearts & Streak Bonus'}`, cx, cardY + 65);
 
     /* Left Side Mini-Diagram Box Frame */
     const visX = cardX + 12, visY = cardY + 76;
@@ -329,24 +332,26 @@ const Game10 = {
         { icon: "🌌", text: "Move portal around to absorb numbers" },
         { icon: "✅", text: "Swallow numbers matching portal suffix" },
         { isHeader: true,  text: "⭐ Score Parameters" },
-        { icon: "✨", text: "Correct match grants +10 score instantly" },
+        { icon: "✨", text: "Absorb matching numbers to earn points" },
         { icon: "🔥", text: "Consecutive matches multiply total scores" }
       );
     } else {
       contentRows.push(
         { isHeader: true,  text: "⏱️ Round Vital Metrics" },
         { icon: "❤️", text: "You begin with 3 full structural hearts" },
-        { icon: "⏳", text: "absorbing incorrect numbers drops 1 heart" },
-        { isHeader: true,  text: "⚙️ Cosmic Dynamic Scales" },
-        { icon: "❌", text: "Errors drop points and collapse black holes" },
-        { icon: "🌟", text: "Clearing all targets triggers a Big Bang" }
+        { icon: "⏳", text: "Absorbing incorrect numbers drops 1 heart" },
+        { isHeader: true,  text: "🔥 Streak Bonus Points" },
+        { icon: "✅", text: "0-2 in a row = +10 points" },
+        { icon: "✨", text: "3-4 in a row = +20 points" },
+        { icon: "⭐", text: "5-9 in a row = +30 points" },
+        { icon: "🔥", text: "10+ in a row = +50 points!" }
       );
     }
 
     const rulesX = isMob ? cardX + 12 : cardX + visW + 24;
     const rulesY = isMob ? visY + visH + 10 : cardY + 76;
     const rulesW = isMob ? cardW - 24 : cardW - visW - 36;
-    const dynamicRowH = isMob ? (this._tutPage === 1 ? 30 : 34) : (this._tutPage === 1 ? 36 : 42);
+    const dynamicRowH = isMob ? (this._tutPage === 1 ? 30 : 27) : (this._tutPage === 1 ? 36 : 33);
 
     for (let i = 0; i < contentRows.length; i++) {
       const item = contentRows[i];
@@ -366,7 +371,7 @@ const Game10 = {
         ctx.fillStyle = T.textPrimary; ctx.textAlign = "left"; ctx.textBaseline = "middle";
         ctx.fillText(item.icon, rulesX + 10, currentY + dynamicRowH / 2 - 2);
         
-        ctx.font = `${isMob ? 11.5 : 13.5}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+        ctx.font = `${isMob ? 11.5 : 13}px 'Fredoka', 'Trebuchet MS', sans-serif`;
         ctx.fillStyle = `rgba(226,232,240,0.85)`;
         ctx.fillText(item.text, rulesX + 36, currentY + dynamicRowH / 2 - 2);
       }
@@ -960,25 +965,48 @@ const Game10 = {
     if(p>=1)this.finishMode1Suction();
   },
   finishMode1Suction() {
-    const s=this.mode1SuctionData,n=this.mode1Numbers[s.index];
-    if(!n)return;
-    const correct=this.getSuffix(n.number)===this.mode1TargetSuffix;
-    if(correct){
-      this.score+=10;this.streak++;if(this.streak>this.bestStreak)this.bestStreak=this.streak;
-      this.streakPulse=1;this.mascotState="happy";this.startPortalMerge(n.number);
-      this.mode1Numbers.splice(s.index,1);this.proximityGlow.splice(s.index,1);
-      this.showToast(this.getPositiveFeedback(),this.T.correct);this.spawnCorrectParticles(this.mascot.x,this.mascot.y);
+    const s = this.mode1SuctionData, n = this.mode1Numbers[s.index];
+    if (!n) return;
+    const correct = this.getSuffix(n.number) === this.mode1TargetSuffix;
+    if (correct) {
+      this.streak++;
+      if (this.streak > this.bestStreak) this.bestStreak = this.streak;
+      
+      // Calculate multiplier bonus based on consecutive correct streak
+      let points = 10;
+      if (this.streak >= 10) points = 50;
+      else if (this.streak >= 5) points = 30;
+      else if (this.streak >= 3) points = 20;
+
+      this.score += points;
+      this.streakPulse = 1;
+      this.mascotState = "happy";
+      this.startPortalMerge(n.number);
+      this.mode1Numbers.splice(s.index, 1);
+      this.proximityGlow.splice(s.index, 1);
+      this.showToast(`${this.getPositiveFeedback()} +${points}`, this.T.correct);
+      this.spawnCorrectParticles(this.mascot.x, this.mascot.y);
     } else {
-      this.score=Math.max(0,this.score-5);this.streak=0;this.hearts=Math.max(0,this.hearts-1);
-      this.heartShakeTime=520;this.mascotState="confused";
-      this.spawnHintFloater(n.number,n.x,n.y);this.showToast(this.getWrongFeedback(n.number),this.T.wrong);
-      this.spawnWrongParticles(this.mascot.x,this.mascot.y);
-      this.mode1Numbers.splice(s.index,1);this.proximityGlow.splice(s.index,1);
-      this.startNumberBreak(n.number);if(this.hearts<=0)setTimeout(()=>this.startBlackHoleCollapse(),600);
+      this.score = Math.max(0, this.score - 5);
+      this.streak = 0;
+      this.hearts = Math.max(0, this.hearts - 1);
+      this.heartShakeTime = 520;
+      this.mascotState = "confused";
+      this.spawnHintFloater(n.number, n.x, n.y);
+      this.showToast(this.getWrongFeedback(n.number), this.T.wrong);
+      this.spawnWrongParticles(this.mascot.x, this.mascot.y);
+      this.mode1Numbers.splice(s.index, 1);
+      this.proximityGlow.splice(s.index, 1);
+      this.startNumberBreak(n.number);
+      if (this.hearts <= 0) setTimeout(() => this.startBlackHoleCollapse(), 600);
     }
-    this.mode1SuctionActive=false;this.mode1SuctionData=null;
-    setTimeout(()=>{if(this.mascotState!=="idle")this.mascotState="idle";},1100);
+    this.mode1SuctionActive = false;
+    this.mode1SuctionData = null;
+    setTimeout(() => { if (this.mascotState !== "idle") this.mascotState = "idle"; }, 1100);
   },
+
+
+
   getPositiveFeedback(){if(this.streak>=5)return["🔥 You're on FIRE!","🌟 Unstoppable!","🚀 Total Genius!"][Math.floor(Math.random()*3)];if(this.streak>=3)return["⭐ Amazing streak!","💫 Keep going!","🎯 So good!"][Math.floor(Math.random()*3)];return["✅ That's right!","🎉 Correct!","👏 Great job!","💡 You got it!","🥳 Woohoo!"][Math.floor(Math.random()*5)];},
   getWrongFeedback(num){return`💡 ${num} is ${num}${this.getSuffix(num)} — try again!`;},
 
