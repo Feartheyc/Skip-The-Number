@@ -588,8 +588,8 @@ const Game1 = {
   roundNumber: 1,
   nextRoundNumber: 1,
   roundCycleGoal: 100,
-  timeLimit: 300,
-  timeRemaining: 300,
+  timeLimit: 200  ,
+  timeRemaining: 200,
   skillPoints: 0,
   levelThreshold: 90,
   bestCombo: 0,
@@ -609,8 +609,8 @@ const Game1 = {
   nextRoundPlan: null,
   roundWrapPending: false,
   roundWrapDelay: 0,
-  roundEndBonus: 20,
-  levelUpBonus: 180,
+  roundEndBonus: 10,
+  levelUpBonus: 100,
   roundHoldSec: 3.0,
   overlayHoldProgress: 0,
   levelCongratsTapHold: 0,
@@ -717,7 +717,7 @@ const Game1 = {
       tagline:"Like Mario coins — only collect every Nth one!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -736,7 +736,7 @@ const Game1 = {
       tagline:"Like Guitar Hero — hit the right notes in rhythm!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -756,7 +756,7 @@ const Game1 = {
       tagline:"Like Space Invaders — zap right ones before escape!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -772,7 +772,7 @@ const Game1 = {
       tagline:"Like Metroid — intercept numbers mid-flight!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -789,7 +789,7 @@ const Game1 = {
       tagline:"Like Galaga with 3 ships — pure chaos, total skill!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -856,7 +856,7 @@ _spawnAccumulator: 0,
     this.hintState = "full";
     this.noiseTime = 0;
     this.spawnInterval = 1800;
-    this.timeLimit = 300;
+    this.timeLimit = 200;
     this.timeRemaining = this.timeLimit;
     this.skillPoints = 0;
     this.bestCombo = 0;
@@ -1273,7 +1273,7 @@ _startPlaying() {
     } else {
       contentRows.push(
         { isHeader: true,  text: "⏱️ Time Metrics" },
-        { icon: "⏱️", text: "You begin with a clean 300 seconds." },
+        { icon: "⏱️", text: "You begin with a clean 200 seconds." },
         { icon: "⏳", text: "The countdown bar depletes continuously." },
         { icon: "➕", text: "Completing a round adds bonus time." },
         { icon: "🚀", text: "Leveling up grants a big time bonus." },
@@ -1857,7 +1857,7 @@ _getCumulativeThreshold(level) {
     this.mode = modeKey || "default";
     this.roundNumber = 1;
     this.nextRoundNumber = 1;
-    this.timeLimit = 300; // ── FIXED: reset the time-bar ceiling too, or a
+    this.timeLimit = 200; // ── FIXED: reset the time-bar ceiling too, or a
                            //    prior session's inflated ceiling would carry
                            //    over and make the bar start under-filled.
     this.timeRemaining = this.timeLimit;
@@ -2024,7 +2024,7 @@ _resolveRoundEnd() {
     nextRound = currentRound + 1;
   }
 
-  let dynamicBonusTime = canLevelUp ? 250 : this.roundEndBonus;
+  let dynamicBonusTime = canLevelUp ? 100 : this.roundEndBonus;
 
   this.nextRoundPlan = this._buildRoundPlan();
 
