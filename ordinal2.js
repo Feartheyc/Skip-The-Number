@@ -987,7 +987,7 @@ const Game10 = {
       this.showToast(`${this.getPositiveFeedback()} +${points}`, this.T.correct);
       this.spawnCorrectParticles(this.mascot.x, this.mascot.y);
     } else {
-      this.score = Math.max(0, this.score - 5);
+      this.score -= 5
       this.streak = 0;
       this.hearts = Math.max(0, this.hearts - 1);
       this.heartShakeTime = 520;

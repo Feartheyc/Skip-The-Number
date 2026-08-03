@@ -1021,7 +1021,8 @@ const Game9 = {
                 : "✅ Correct!";
       this.showToast(`${msg} +${points}`, "#34d399");
     } else {
-      this.score       = Math.max(0, this.score - 10);
+      // Allow score to go negative on incorrect selection
+      this.score      -= 5;
       this.streak      = 0;
       this.hearts      = Math.max(0, this.hearts - 1);
       this.heartShakeTime = 520;
