@@ -134,7 +134,7 @@ const Game9 = {
     this.correctThisLevel = 0;
     this.numberRange      = 10;
     this.streak           = 0;
-    this.bestStreak       = 0;
+    this.bestStreak        = 0;
     this.streakPulse      = 0;
     this.heartShakeTime   = 0;
     this.levelUpBurst     = null;
@@ -842,7 +842,9 @@ const Game9 = {
   },
 
   showToast(text, color) {
-    this.toast = { text, color: color || "#fff", timer: 1600, y: this.CENTER_Y - 200 * this.scale, alpha: 1 };
+    // Spawn well above the floating number (which sits at CENTER_Y - 230*scale)
+    // so the two never overlap, and start below the top HUD row.
+    this.toast = { text, color: color || "#fff", timer: 1600, y: this.CENTER_Y - 310 * this.scale, alpha: 1 };
   },
   updateToast(delta) {
     if (this.toast.timer <= 0) return;
@@ -852,12 +854,33 @@ const Game9 = {
   },
   drawToast(ctx) {
     if (this.toast.timer <= 0 || this.toast.alpha <= 0) return;
-    ctx.save(); ctx.globalAlpha = this.toast.alpha;
-    ctx.fillStyle = this.toast.color;
-    ctx.font = `bold ${Math.round(34 * this.scale)}px 'Fredoka', sans-serif`;
+    const s = this.scale;
+    ctx.save();
+    ctx.globalAlpha = this.toast.alpha;
+    ctx.font = `bold ${Math.round(30 * s)}px 'Fredoka', sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.shadowColor = this.toast.color; ctx.shadowBlur = 14;
+
+    // Dark pill behind the text so it reads clearly against the pastel
+    // background regardless of toast color.
+    const padX = 24 * s, padY = 14 * s;
+    const textW = ctx.measureText(this.toast.text).width;
+    const pillW = textW + padX * 2;
+    const pillH = 30 * s + padY * 2;
+    ctx.fillStyle = "rgba(20,10,40,0.72)";
+    this._rrect(ctx, this.CENTER_X - pillW / 2, this.toast.y - pillH / 2, pillW, pillH, pillH / 2);
+    ctx.fill();
+
+    // Dark outline behind the text first for extra separation, then the
+    // toast's own color drawn on top.
+    ctx.lineWidth = 5 * s;
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeText(this.toast.text, this.CENTER_X, this.toast.y);
+
+    ctx.shadowColor = this.toast.color; ctx.shadowBlur = 10;
+    ctx.fillStyle = this.toast.color;
     ctx.fillText(this.toast.text, this.CENTER_X, this.toast.y);
+    ctx.shadowBlur = 0;
+
     ctx.restore();
   },
 
