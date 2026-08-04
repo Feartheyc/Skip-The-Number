@@ -620,6 +620,12 @@ const Game10 = {
     const margin = 140 * this.scale;
     const safeR = 170 * this.scale;
 
+    // No-spawn zone is centered on the portal's CURRENT position (wherever
+    // the finger actually is right now), not the screen center — otherwise
+    // numbers can spawn under/near a portal that never recenters.
+    const originX = this.mascot.x;
+    const originY = this.mascot.y;
+
     const used = [];
     let correctSpawned = 0;
 
@@ -636,7 +642,7 @@ const Game10 = {
         x = margin + Math.random() * (this.cssWidth - margin * 2);
         y = margin + Math.random() * (this.cssHeight - margin * 2);
 
-        if (Math.hypot(x - this.CENTER_X, y - this.CENTER_Y) < safeR) continue;
+        if (Math.hypot(x - originX, y - originY) < safeR) continue;
 
         let tooClose = false;
         for (const p of used) {
@@ -787,15 +793,16 @@ const Game10 = {
   /* ── Mascot / Portal Movement ───────────────────────────── */
   updateMascot(delta) {
     if (this.gameMode === 1 && this.mode1Confirming) {
-      const dx = this.mode1PortalTargetX - this.mascot.x, dy = this.mode1PortalTargetY - this.mascot.y;
-      if (Math.hypot(dx, dy) > 4) {
-        const f = 1 - Math.pow(0.92, delta / 16.67);
-        this.mascot.x += dx * f; this.mascot.y += dy * f;
-      } else {
-        this.mascot.x = this.mode1PortalTargetX; this.mascot.y = this.mode1PortalTargetY;
-        this.mode1Confirming = false; this.startNewRound();
+      // Round-complete pause: portal freezes exactly where it caught the
+      // last correct number (does NOT fly to center — that's what caused
+      // it to land on top of a number the instant the finger was re-read).
+      this.mode1ConfirmTimer -= delta;
+      this.mascot.vx = 0; this.mascot.vy = 0;
+      if (this.mode1ConfirmTimer <= 0) {
+        this.mode1Confirming = false;
+        this.startNewRound();
       }
-      this.mascot.vx = 0; this.mascot.vy = 0; return;
+      return;
     }
 
     // Follow finger position directly
@@ -1046,7 +1053,17 @@ const Game10 = {
   },
 
   /* ── Round confirmation ──────────────────────────────────── */
-  startMode1Confirmation(){this.mode1RoundActive=false;this.mode1Confirming=true;this.mode1PortalTargetX=this.CENTER_X;this.mode1PortalTargetY=this.CENTER_Y-40*this.scale;this.startRoundReward();},
+  startMode1Confirmation(){
+    this.mode1RoundActive = false;
+    this.mode1Confirming = true;
+    // Portal stays exactly where it is — no travel to center. We just hold
+    // it in place for the reward animation, then spawn the next round
+    // around this same spot.
+    this.mode1ConfirmTimer = 1400;
+    this.mode1PortalTargetX = this.mascot.x;
+    this.mode1PortalTargetY = this.mascot.y;
+    this.startRoundReward();
+  },
   startRoundReward(){
     this.roundRewardActive=true;this.roundRewardTimer=1600;this.roundRewardStars=[];
     for(let i=0;i<18;i++){const ang=(Math.PI*2/18)*i;this.roundRewardStars.push({angle:ang,radius:0,speed:(2.5+Math.random()*2)*0.055,size:(8+Math.random()*8)*this.scale,color:["#fbbf24","#34d399","#a78bfa","#f472b6"][Math.floor(Math.random()*4)]});}
@@ -1057,7 +1074,7 @@ const Game10 = {
     for(const s of this.roundRewardStars){ctx.globalAlpha=lf*0.88;ctx.beginPath();ctx.arc(px+Math.cos(s.angle)*s.radius,py+Math.sin(s.angle)*s.radius,s.size,0,Math.PI*2);ctx.fillStyle=s.color;ctx.shadowColor=s.color;ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;}
     ctx.globalAlpha=1;
     const prog=1-lf;
-    if(prog>0.08&&prog<0.88){const a=Math.sin(prog*Math.PI);ctx.save();ctx.globalAlpha=a;ctx.translate(this.CENTER_X,this.CENTER_Y-160*this.scale);ctx.scale(0.7+a*0.4,0.7+a*0.4);ctx.fillStyle=this.T.correct;ctx.font=`bold ${Math.round(56*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.T.correct;ctx.shadowBlur=20;ctx.fillText("⭐ Round Clear!",0,0);ctx.restore();}
+    if(prog>0.08&&prog<0.88){const a=Math.sin(prog*Math.PI);ctx.save();ctx.globalAlpha=a;ctx.translate(px,py-160*this.scale);ctx.scale(0.7+a*0.4,0.7+a*0.4);ctx.fillStyle=this.T.correct;ctx.font=`bold ${Math.round(56*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.T.correct;ctx.shadowBlur=20;ctx.fillText("⭐ Round Clear!",0,0);ctx.restore();}
   },
 
   /* ── Level progression ──────────────────────────────────── */
