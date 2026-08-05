@@ -1182,14 +1182,36 @@ const Game10 = {
   updateHUDTimers(delta){if(this.heartShakeTime>0)this.heartShakeTime=Math.max(0,this.heartShakeTime-delta);if(this.streakPulse>0)this.streakPulse=Math.max(0,this.streakPulse-delta*0.003);},
   drawHUD(ctx) {
     const T=this.T,s=this.scale,W=this.cssWidth,H=this.cssHeight;
+    
+    // Top-Left Score Display Box
     const sw=175*s,sh=54*s,sx=18*s,sy=16*s;
     ctx.fillStyle=T.scoreBg;this._rrect(ctx,sx,sy,sw,sh,18*s);ctx.fill();
     ctx.fillStyle=T.numberColor;ctx.font=`bold ${Math.round(26*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(`⭐ ${this.score}`,sx+sw/2,sy+sh/2);
+
+    // Top-Right Hearts
     const hSz=32*s,hGap=8*s,totalHW=this.maxHearts*(hSz+hGap)-hGap;
     const hx0=W-18*s-totalHW,hy0=18*s,shk=this.heartShakeTime>0?Math.sin(this.heartShakeTime*0.055)*5*s:0;
     for(let i=0;i<this.maxHearts;i++){ctx.globalAlpha=i<this.hearts?1:0.2;ctx.font=`${Math.round(hSz)}px serif`;ctx.textAlign="left";ctx.textBaseline="top";ctx.fillText("❤️",hx0+i*(hSz+hGap),hy0+(i<this.hearts?shk:0));}
     ctx.globalAlpha=1;
-    if(this.streak>=2){const ps=1+this.streakPulse*0.3,instrTop=20*s,instrH=48*s,gap=20*s,sY=instrTop+instrH+gap;ctx.save();ctx.translate(W/2,sY);ctx.scale(ps,ps);ctx.globalAlpha=0.88+this.streakPulse*0.12;ctx.fillStyle=T.streakColor;ctx.font=`bold ${Math.round(24*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=T.streakColor;ctx.shadowBlur=10;ctx.fillText(`🔥 ${this.streak} in a row!`,0,0);ctx.shadowBlur=0;ctx.restore();}
+
+    // Top-Left Streak Counter (position matching Game 9)
+    if(this.streak>=2){
+      const ps=1+this.streakPulse*0.15;
+      const streakY=sy+sh+12*s;
+      ctx.save();
+      ctx.translate(sx+sw/2, streakY);
+      ctx.scale(ps,ps);
+      ctx.globalAlpha=0.9+this.streakPulse*0.1;
+      ctx.fillStyle=T.streakColor;
+      ctx.font=`bold ${Math.round(18*s)}px 'Fredoka',cursive`;
+      ctx.textAlign="center";ctx.textBaseline="middle";
+      ctx.shadowColor=T.streakColor;ctx.shadowBlur=8;
+      ctx.fillText(`🔥 ${this.streak} in a row!`,0,0);
+      ctx.shadowBlur=0;
+      ctx.restore();
+    }
+
+    // Bottom Level Tracker Badge
     const lw=200*s,lh=40*s,lx=W/2-lw/2,ly=H-58*s;
     ctx.fillStyle=T.scoreBg;this._rrect(ctx,lx,ly,lw,lh,13*s);ctx.fill();
     ctx.fillStyle=T.textAccent;ctx.font=`bold ${Math.round(18*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
