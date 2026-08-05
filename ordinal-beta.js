@@ -104,7 +104,7 @@ const Game9 = {
   HOLD_SEC: 3.0,
 
   _lastFingerUpdateTime: 0,
-  FINGER_UPDATE_INTERVAL: 16,
+  FINGER_UPDATE_INTERVAL: 50,
 
   loading: true,
   assetsToLoad: 0,
