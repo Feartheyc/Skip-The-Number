@@ -20,7 +20,7 @@ const Game3 = {
 
   currentGrade: 1,
   currentLevel: 1, 
-  targetPromptText: "Aim at the BIGGER number!", 
+  targetPromptText: "Point at the BIGGER number!", 
 
   winHoldTime: 0,
   winHoldThreshold: 1.0,
@@ -57,9 +57,10 @@ const Game3 = {
   GESTURE_GRACE_DELAY: 0.25, 
   _lastDetectedSymbol: "None",
 
+  handResetRequired: false,
+
   eventsBound: false,
   helpBtn: null,
-  pauseBtn: null,
 
   difficultyMenuOpen: false,
   gradeBtn: null,
@@ -115,6 +116,7 @@ const Game3 = {
     this.comboTimer = 0; 
     this.gestureGraceTimer = 0;
     this._lastDetectedSymbol = "None";
+    this.handResetRequired = false;
 
     if (!this.eventsBound) {
       this.eventsBound = true;
@@ -145,7 +147,6 @@ const Game3 = {
           const mouseX = e.clientX - rect.left;
           const mouseY = e.clientY - rect.top;
 
-          // 1. Difficulty Menu Trigger
           const gDx = mouseX - this.gradeBtn.x;
           const gDy = mouseY - this.gradeBtn.y;
           if (gDx * gDx + gDy * gDy <= (this.gradeBtn.r + 20) ** 2) {
@@ -167,24 +168,13 @@ const Game3 = {
             return;
           }
 
-          // 2. Help '?' Click Detection
           if (this.helpBtn) {
             const dx = mouseX - this.helpBtn.x;
             const dy = mouseY - this.helpBtn.y;
-            if (dx * dx + dy * dy <= (this.helpBtn.r + 10) ** 2) {
+            if (dx * dx + dy * dy <= (this.helpBtn.r + 15) ** 2) {
               this.showTutorial = true;
               this.tutorialHoldTime = 0;
               this._tutPage = 1;
-              return;
-            }
-          }
-
-          // 3. Pause Click Detection inside the Pill
-          if (this.pauseBtn && typeof PauseArea !== 'undefined') {
-            const dx = mouseX - this.pauseBtn.x;
-            const dy = mouseY - this.pauseBtn.y;
-            if (dx * dx + dy * dy <= (this.pauseBtn.r + 10) ** 2) {
-              PauseArea.togglePause();
               return;
             }
           }
@@ -214,6 +204,7 @@ const Game3 = {
     this.margin = 80 * this.scale;
 
     this.gradeBtn = { x: 140 * this.scale, y: 50 * this.scale, r: 35 * this.scale };
+    this.helpBtn = { x: width - 125 * this.scale, y: 50 * this.scale, r: 22 * this.scale };
     this.preRenderUI();
   },
 
@@ -243,24 +234,29 @@ const Game3 = {
     this.failHoldTime = 0;
     this.detectedSymbol = "None";
     this.gestureGraceTimer = 0;
+    this.confetti = [];
+    this.handResetRequired = true;
 
     if (this.currentGrade === 1) {
-      if (this.currentLevel === 1) this.targetPromptText = "Aim at the BIGGER number!";
-      else if (this.currentLevel === 2) this.targetPromptText = "Point finger at the SMALLER number!";
-      else if (this.currentLevel === 3) this.targetPromptText = "Follow the challenge instruction!";
+      if (this.currentLevel === 1) this.targetPromptText = "Point at the BIGGER number!";
+      else if (this.currentLevel === 2) this.targetPromptText = "Point at the SMALLER number!";
+      else if (this.currentLevel >= 3) {
+        const askBigger = Math.random() > 0.5;
+        this.targetPromptText = askBigger ? "Point at the BIGGER number!" : "Point at the SMALLER number!";
+      }
       this.spawnIntegers(1, 20);
     }
     else if (this.currentGrade === 2) {
-      this.targetPromptText = "Aim at the BIGGER number!";
+      this.targetPromptText = "Point at the BIGGER number!";
       this.spawnIntegers(-50, 50);
     }
     else if (this.currentGrade === 3) {
-      this.targetPromptText = "Aim at the BIGGER number!";
+      this.targetPromptText = "Point at the BIGGER number!";
       if (Math.random() > 0.5) this.spawnIntegers(100, 999);
       else this.spawnLikeFractions();
     }
     else if (this.currentGrade === 4) {
-      this.targetPromptText = "Aim at the BIGGER number!";
+      this.targetPromptText = "Point at the BIGGER number!";
       this.spawnIrregularFractions();
     }
 
@@ -274,39 +270,16 @@ const Game3 = {
     let n1 = Math.floor(Math.random() * (max - min + 1)) + min;
     let n2 = Math.floor(Math.random() * (max - min + 1)) + min;
 
-    if (this.currentGrade === 1 && this.currentLevel < 3) {
-      while (n1 === n2) n2 = Math.floor(Math.random() * (max - min + 1)) + min;
-    } else if (this.currentGrade !== 1) {
-      while (n1 === n2) n2 = Math.floor(Math.random() * (max - min + 1)) + min;
-    }
+    while (n1 === n2) n2 = Math.floor(Math.random() * (max - min + 1)) + min;
 
     this.leftValue = n1; this.rightValue = n2;
     this.leftText = n1.toString(); this.rightText = n2.toString();
 
-    if (this.currentGrade === 1) {
-      if (this.currentLevel === 1) {
-        this.currentRelation = n1 > n2 ? ">" : "<";
-      } 
-      else if (this.currentLevel === 2) {
-        this.currentRelation = n1 < n2 ? ">" : "<";
-      } 
-      else if (this.currentLevel === 3) {
-        if (n1 === n2) {
-          this.currentRelation = "Center"; 
-          this.targetPromptText = "EQUAL! Aim straight up!";
-        } else {
-          const mixType = Math.random() > 0.5;
-          if (mixType) {
-            this.targetPromptText = "Aim at the BIGGER number!";
-            this.currentRelation = n1 > n2 ? ">" : "<";
-          } else {
-            this.targetPromptText = "Point finger at the SMALLER number!";
-            this.currentRelation = n1 < n2 ? ">" : "<";
-          }
-        }
-      }
-    } else {
+    const isBiggerTarget = this.targetPromptText.includes("BIGGER");
+    if (isBiggerTarget) {
       this.currentRelation = n1 > n2 ? ">" : "<";
+    } else {
+      this.currentRelation = n1 < n2 ? ">" : "<";
     }
   },
 
@@ -376,7 +349,8 @@ const Game3 = {
 
     if (this.gameState === "PLAYING" || this.showTutorial) {
       if (!activeLandmarks || activeLandmarks.length < 3) {
-        if (isPlaying) this.drawFeedback(ctx, "Show One Hand!", "orange");
+        this.handResetRequired = false;
+        if (isPlaying) this.drawFeedback(ctx, "Lower hand between questions!", "rgba(255, 255, 255, 0.7)");
         else if (this.showTutorial) this.tutorialHoldTime = Math.max(0, this.tutorialHoldTime - dt);
       } else {
         const [indexTip, thumbTip, wrist] = activeLandmarks;
@@ -405,9 +379,8 @@ const Game3 = {
 
     ctx.restore();
 
-    // ⚡ FIX: Only draw PauseArea's full-screen pause menu modal when game IS PAUSED.
-    // Suppress PauseArea.drawPauseIcon(ctx) so the duplicate black circle isn't drawn over our pill!
     if (typeof PauseArea !== 'undefined') {
+      PauseArea.drawPauseIcon(ctx);
       if (isPaused) PauseArea.draw(ctx);
     }
   },
@@ -455,7 +428,7 @@ const Game3 = {
     ctx.fillText("COMPARATORS: HOW TO PLAY!", this.centerX, boxY + 35 * this.scale);
 
     ctx.font = `${14 * this.scale}px Arial`; ctx.fillStyle = "rgba(240,244,255,0.6)";
-    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Gameplay & Gestures' : 'Intensive Combo System'}`, this.centerX, boxY + 80 * this.scale);
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Hand Controls & Placement' : 'Timers & Scoring Multipliers'}`, this.centerX, boxY + 80 * this.scale);
 
     const visX = boxX + 40 * this.scale, visY = boxY + 120 * this.scale;
     const visW = 320 * this.scale, visH = 260 * this.scale;
@@ -470,21 +443,20 @@ const Game3 = {
     const contentRows = [];
     if (this._tutPage === 1) {
       contentRows.push(
-        { isHeader: true, text: "🎮 Challenge Rules" },
-        { icon: "👀", text: "Look at the number cards in center." },
-        { icon: "✌️", text: "Bigger number: Make a wide 'V' hand shape." },
-        { icon: "☝️", text: "Smaller number: Switch to a single pointing finger." },
-        { icon: "🎯", text: "Tilt or aim toward the winning value card." },
-        { icon: "⭕", text: "Equal values: Point straight up at the sky!" }
+        { isHeader: true, text: "🎮 Hand Placement & Rules" },
+        { icon: "👀", text: "Read the prompt at the bottom of screen." },
+        { icon: "☝️", text: "Point directly at the correct number card." },
+        { icon: "🖐️", text: "LOWER HAND after answering to start next Q!" },
+        { icon: "⏱️", text: "Hold point for 1s Response Timer to submit." }
       );
     } else {
       contentRows.push(
-        { isHeader: true, text: "🔥 Intensive Combo Meter" },
-        { icon: "⏱️", text: "Getting answers right triggers a 5s combo timer." },
-        { icon: "⏳", text: "A sleek multiplier meter bar appears at the top." },
-        { icon: "📉", text: "If the bar drains to 0, your combo drops back to 0!" },
-        { icon: "❌", text: "Striking a wrong card drops your score by -5." },
-        { icon: "🎉", text: "Success milestones release epic confetti storms!" }
+        { isHeader: true, text: "🔥 Timers & Multiplier Meter" },
+        { icon: "⚡", text: "Combo Timer (5s): Starts as question appears." },
+        { icon: "📈", text: "Answer fast to stack score multipliers!" },
+        { icon: "📉", text: "If Combo Timer drains to 0, multiplier resets." },
+        { icon: "🎯", text: "Response Bar (1s): Fills as you hold point." },
+        { icon: "❌", text: "Wrong choice deducts -5 (Score cap at 0)." }
       );
     }
 
@@ -521,6 +493,7 @@ const Game3 = {
     ctx.restore();
   },
 
+  // ⚡ UPDATED DIAGRAM: Clean single-finger pointing vector illustration
   _drawTutSandboxDiagram(ctx, x, y, w, h) {
     const cx = x + w / 2, cy = y + h / 2;
     
@@ -538,17 +511,16 @@ const Game3 = {
     if (this._tutPage === 1) {
       ctx.strokeStyle = "#00FFCC"; ctx.lineWidth = 6 * this.scale; ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(cx - 50 * this.scale + waveOffset, baseDrawingY - 15 * this.scale);
-      ctx.lineTo(cx + waveOffset, baseDrawingY + 45 * this.scale);
-      ctx.lineTo(cx - 10 * this.scale + waveOffset, baseDrawingY - 20 * this.scale);
+      ctx.moveTo(cx + waveOffset, baseDrawingY + 45 * this.scale);
+      ctx.lineTo(cx - 30 * this.scale + waveOffset, baseDrawingY - 15 * this.scale);
       ctx.stroke();
 
       ctx.fillStyle = "#fff";
       ctx.beginPath(); ctx.arc(cx + waveOffset, baseDrawingY + 45 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(cx - 50 * this.scale + waveOffset, baseDrawingY - 15 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx - 30 * this.scale + waveOffset, baseDrawingY - 15 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
       
       ctx.font = `bold ${12 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
-      ctx.fillText("Tilt V-Shape to Select", cx, baseDrawingY + 75 * this.scale);
+      ctx.fillText("Point Finger to Select", cx, baseDrawingY + 75 * this.scale);
     } else {
       const barW = 160 * this.scale, barH = 8 * this.scale;
       const bx = cx - barW / 2, by = baseDrawingY + 20 * this.scale;
@@ -577,45 +549,33 @@ const Game3 = {
   },
 
   checkPose(ctx, indexTip, thumbTip, wrist, dt) {
-    const isSmallerNumberChallenge = (this.currentGrade === 1 && this.currentLevel === 2) || (this.currentGrade === 1 && this.currentLevel === 3 && this.targetPromptText.includes("SMALLER"));
-    
-    if (!isSmallerNumberChallenge) {
-      const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
-      if (angle < 20) { this.resetHolds(dt); return; }
-      
-      const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
-      if (overlap < 0.5) { this.resetHolds(dt); return; }
+    const deadzone = 40 * this.scale;
+
+    let targetDetected = "Center";
+    if (indexTip.x < this.centerX - deadzone) {
+      targetDetected = ">"; // Left Card
+    } else if (indexTip.x > this.centerX + deadzone) {
+      targetDetected = "<"; // Right Card
     }
 
-    if (isSmallerNumberChallenge) {
-      const deadzone = 40 * this.scale;
-
-      if (indexTip.x < this.centerX - deadzone) {
-        this.detectedSymbol = ">";
-      } else if (indexTip.x > this.centerX + deadzone) {
-        this.detectedSymbol = "<";
+    if (this.handResetRequired) {
+      if (targetDetected === "Center") {
+        this.handResetRequired = false;
       } else {
-        this.detectedSymbol = "Center";
-      }
-    } else {
-      const tipsX = (indexTip.x + thumbTip.x) / 2;
-      const threshold = 30 * this.scale;
-
-      if (tipsX < wrist.x - threshold) {
-        this.detectedSymbol = ">";
-      } else if (tipsX > wrist.x + threshold) {
-        this.detectedSymbol = "<";
-      } else {
-        this.detectedSymbol = "Center";
+        this.resetHolds(dt);
+        this.drawFeedback(ctx, "Lower hand / re-aim to start next Q!", "orange");
+        return;
       }
     }
+
+    this.detectedSymbol = targetDetected;
 
     if (this.detectedSymbol !== this._lastDetectedSymbol) {
       this._lastDetectedSymbol = this.detectedSymbol;
       this.gestureGraceTimer = 0; 
     }
 
-    if (this.detectedSymbol === "None") {
+    if (this.detectedSymbol === "None" || this.detectedSymbol === "Center") {
       this.resetHolds(dt);
       return;
     }
@@ -650,7 +610,11 @@ const Game3 = {
 
   handleSuccess() {
     this.gameState = "SUCCESS";
-    this.score += 10;
+    this.handResetRequired = true;
+    
+    const multiplier = Math.min(5, Math.floor(this.combo / 2) + 1);
+    const pointsGained = 10 * multiplier;
+    this.score += pointsGained;
     this.combo++;
 
     this.comboTimer = this.COMBO_MAX_TIME;
@@ -671,12 +635,31 @@ const Game3 = {
     }
 
     if (this.currentGrade === 1) {
-      if (this.score >= 80 && this.currentLevel === 2) {
-        this.currentLevel = 3;
-        this.popups.push({ text: "LEVEL 3: MIX & EQUALS!", x: this.centerX, y: this.centerY - 140 * this.scale, vy: -15, life: 1.5, color: "#FF00FF", timestamp: performance.now() });
-      } else if (this.score >= 40 && this.currentLevel === 1) {
-        this.currentLevel = 2;
-        this.popups.push({ text: "LEVEL 2: SMALLER NUMBERS!", x: this.centerX, y: this.centerY - 140 * this.scale, vy: -15, life: 1.5, color: "#FFFF00", timestamp: performance.now() });
+      const calculatedLevel = Math.floor(this.score / 40) + 1;
+      
+      if (calculatedLevel > 5) {
+        this.currentGrade = 2;
+        this.currentLevel = 1;
+        this.popups.push({ 
+          text: "ADVANCED TO GRADE 2!", 
+          x: this.centerX, 
+          y: this.centerY - 140 * this.scale, 
+          vy: -15, 
+          life: 2.0, 
+          color: "#00FFCC", 
+          timestamp: performance.now() 
+        });
+      } else if (calculatedLevel > this.currentLevel) {
+        this.currentLevel = calculatedLevel;
+        this.popups.push({ 
+          text: `LEVEL ${this.currentLevel}!`, 
+          x: this.centerX, 
+          y: this.centerY - 140 * this.scale, 
+          vy: -15, 
+          life: 1.5, 
+          color: "#FFFF00", 
+          timestamp: performance.now() 
+        });
       }
     }
 
@@ -686,7 +669,7 @@ const Game3 = {
       this.playSFX('correct', 0.5);
     }
 
-    this.popups.push({ text: "SUCCESS!", x: this.centerX, y: this.centerY, vy: -20, life: 1.2, color: "#00FF22", timestamp: performance.now() });
+    this.popups.push({ text: `+${pointsGained}!`, x: this.centerX, y: this.centerY, vy: -20, life: 1.2, color: "#00FF22", timestamp: performance.now() });
 
     if (this.combo > 0 && this.combo % 5 === 0) {
       this.popups.push({ 
@@ -714,11 +697,13 @@ const Game3 = {
   handleFail() {
     this.playSFX('wrong', 0.5);
     this.gameState = "GAME_OVER";
+    this.handResetRequired = true;
     this.score = Math.max(0, this.score - 5);
     this.combo = 0;
     this.comboTimer = 0; 
     this.shakeTime = 0.35; 
     this.shakeMag = 14 * this.scale;
+    this.confetti = [];
 
     this.popups = this.popups.filter(p => p.color !== "#00FF22" && !p.isMilestone);
     this.popups.push({ text: "Wrong!", x: this.centerX, y: this.centerY, vy: 40, life: 1, color: "#FF4444", timestamp: performance.now() });
@@ -766,7 +751,6 @@ const Game3 = {
   drawArmSymbol(ctx, indexTip, thumbTip, wrist) {
     if (this.showTutorial) return; 
 
-    const isSmallerNumberChallenge = (this.currentGrade === 1 && this.currentLevel === 2) || (this.currentGrade === 1 && this.currentLevel === 3 && this.targetPromptText.includes("SMALLER"));
     const isCorrect = this.detectedSymbol === this.currentRelation;
     const isWrong = this.detectedSymbol !== "None" && this.detectedSymbol !== this.currentRelation;
 
@@ -776,22 +760,13 @@ const Game3 = {
 
     ctx.strokeStyle = color; ctx.lineWidth = 10 * this.scale; ctx.lineCap = "round";
     ctx.beginPath();
-    
-    if (isSmallerNumberChallenge) {
-      ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.stroke();
-      ctx.fillStyle = "white"; [indexTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
-    } else {
-      const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
-      if (angle < 20) return;
-      ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.lineTo(thumbTip.x, thumbTip.y); ctx.stroke();
-      ctx.fillStyle = "white"; [indexTip, thumbTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
-    }
+    ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.stroke();
+    ctx.fillStyle = "white"; [indexTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
   },
 
   drawUI(ctx) {
     const topY = 28 * this.scale;
 
-    // Helper: Rounded Rectangle Pill Helper
     const drawPill = (x, y, w, h, bg = "rgba(20, 20, 20, 0.75)", stroke = "rgba(255, 255, 255, 0.15)") => {
       ctx.fillStyle = bg;
       ctx.strokeStyle = stroke;
@@ -803,7 +778,6 @@ const Game3 = {
       ctx.stroke();
     };
 
-    // 1. Grade Badge (Left Pill)
     const subLabel = this.currentGrade === 1 ? `Grade 1 (Lvl ${this.currentLevel})` : `Grade ${this.currentGrade}`;
     ctx.font = `bold ${18 * this.scale}px Arial`;
     const gradeW = ctx.measureText(subLabel).width + 36 * this.scale;
@@ -815,7 +789,6 @@ const Game3 = {
     ctx.textBaseline = "middle";
     ctx.fillText(subLabel, gradeX + gradeW / 2, topY + gradeH / 2);
 
-    // 2. Score Badge (Center Pill)
     const scoreText = `SCORE: ${this.score}`;
     ctx.font = `bold ${22 * this.scale}px Arial`;
     const scoreW = ctx.measureText(scoreText).width + 48 * this.scale;
@@ -827,7 +800,6 @@ const Game3 = {
     ctx.textBaseline = "middle";
     ctx.fillText(scoreText, this.centerX, topY + scoreH / 2);
 
-    // Combo Counter Tag
     if (this.combo >= 2) {
       const comboText = `x${this.combo}`;
       ctx.font = `bold ${16 * this.scale}px Arial`;
@@ -840,7 +812,6 @@ const Game3 = {
       ctx.fillText(comboText, comboX + comboW / 2, comboY + comboH / 2);
     }
 
-    // Draining Combo Bar
     if (this.combo > 0 && this.comboTimer > 0) {
       const barW = scoreW - 12 * this.scale;
       const barH = 5 * this.scale;
@@ -861,7 +832,6 @@ const Game3 = {
       ctx.fill();
     }
 
-    // 3. Center Cards Rendering
     ctx.textAlign = "center";
     const offsetX = 220 * this.scale;
     const cardW = 180 * this.scale * this.popScale; 
@@ -892,7 +862,6 @@ const Game3 = {
     ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
     ctx.fillText("?", this.centerX, this.centerY);
 
-    // Prompt Message
     ctx.font = `bold ${24 * this.scale}px Arial`; 
     ctx.fillStyle = "#FFFFFF";
     ctx.shadowBlur = 8; 
@@ -900,8 +869,7 @@ const Game3 = {
     ctx.fillText(this.targetPromptText, this.centerX, this.centerY + 140 * this.scale);
     ctx.shadowBlur = 0;
 
-    // 4. Combined Top-Right Control Pill (Help + Pause)
-    this.drawCombinedTopRightPill(ctx, topY);
+    this.drawHelpPillButton(ctx, topY);
 
     ctx.font = `12px Arial`; 
     ctx.fillStyle = "rgba(0, 255, 0, 0.3)"; 
@@ -909,26 +877,21 @@ const Game3 = {
     ctx.fillText(`FPS: ${this.fps}`, 20, window.innerHeight - 20);
   },
 
-  // ⚡ COMBINED TOP-RIGHT CONTROL PILL METHOD
-  drawCombinedTopRightPill(ctx, topY) {
-    const pillH = 44 * this.scale;
+  drawHelpPillButton(ctx, topY) {
     const itemW = 44 * this.scale;
-    const pillW = itemW * 2 + 10 * this.scale; // Width for two side-by-side buttons
-    const pillX = window.innerWidth - pillW - 25 * this.scale;
+    const pillX = window.innerWidth - itemW - 85 * this.scale;
 
-    // Main Outer Pill Container
     ctx.fillStyle = "rgba(20, 20, 20, 0.75)";
     ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
     ctx.lineWidth = 2 * this.scale;
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(pillX, topY, pillW, pillH, pillH / 2);
-    else ctx.fillRect(pillX, topY, pillW, pillH);
+    if (ctx.roundRect) ctx.roundRect(pillX, topY, itemW, itemW, itemW / 2);
+    else ctx.fillRect(pillX, topY, itemW, itemW);
     ctx.fill();
     ctx.stroke();
 
-    // 1. Help ('?') Button Coordinates (Left side of Pill)
     const helpX = pillX + itemW / 2;
-    const helpY = topY + pillH / 2;
+    const helpY = topY + itemW / 2;
     this.helpBtn = { x: helpX, y: helpY, r: itemW / 2 };
 
     ctx.fillStyle = "white";
@@ -936,28 +899,6 @@ const Game3 = {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("?", helpX, helpY);
-
-    // Divider Line inside Pill
-    const divX = pillX + itemW + 5 * this.scale;
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.2)";
-    ctx.lineWidth = 1.5 * this.scale;
-    ctx.beginPath();
-    ctx.moveTo(divX, topY + 10 * this.scale);
-    ctx.lineTo(divX, topY + pillH - 10 * this.scale);
-    ctx.stroke();
-
-    // 2. Pause ('⏸') Button Coordinates (Right side of Pill)
-    const pauseX = divX + itemW / 2 + 2 * this.scale;
-    const pauseY = topY + pillH / 2;
-    this.pauseBtn = { x: pauseX, y: pauseY, r: itemW / 2 };
-
-    // Custom Canvas Pause Bars ⏸
-    const barW = 3.5 * this.scale;
-    const barH = 14 * this.scale;
-    const gap = 3.5 * this.scale;
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillRect(pauseX - barW - gap / 2, pauseY - barH / 2, barW, barH);
-    ctx.fillRect(pauseX + gap / 2, pauseY - barH / 2, barW, barH);
   },
 
   drawFeedback(ctx, text, color) {
