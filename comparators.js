@@ -305,6 +305,32 @@ const Game3 = {
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
+  // ⚡ DEEP CIRCULAR SPOTLIGHT VIGNETTE
+  drawSciFiCameraOverlay(ctx) {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    ctx.save();
+
+    // Radial gradient creates a dark circular frame around the screen center
+    const innerRadius = Math.min(w, h) * 0.22;
+    const outerRadius = Math.max(w, h) * 0.55;
+
+    const vignette = ctx.createRadialGradient(
+      this.centerX, this.centerY, innerRadius,
+      this.centerX, this.centerY, outerRadius
+    );
+    vignette.addColorStop(0, "rgba(0, 0, 0, 0)");
+    vignette.addColorStop(0.45, "rgba(0, 0, 0, 0.45)");
+    vignette.addColorStop(0.85, "rgba(0, 0, 0, 0.88)");
+    vignette.addColorStop(1, "rgba(0, 0, 0, 0.96)");
+
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.restore();
+  },
+
   update(ctx, landmarks, dt = 1 / 60) {
     const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
     if (isPaused) dt = 0;
@@ -326,6 +352,9 @@ const Game3 = {
       this.shakeTime -= dt;
       ctx.translate((Math.random() - 0.5) * this.shakeMag, (Math.random() - 0.5) * this.shakeMag);
     }
+
+    // Render Vignette Spotlight
+    this.drawSciFiCameraOverlay(ctx);
 
     if (this.combo > 0 && this.gameState === "PLAYING" && !this.showTutorial && !this.difficultyMenuOpen) {
       this.comboTimer -= dt;
@@ -493,7 +522,6 @@ const Game3 = {
     ctx.restore();
   },
 
-  // ⚡ UPDATED DIAGRAM: Clean single-finger pointing vector illustration
   _drawTutSandboxDiagram(ctx, x, y, w, h) {
     const cx = x + w / 2, cy = y + h / 2;
     
