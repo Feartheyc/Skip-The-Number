@@ -227,6 +227,9 @@ const Game10 = {
     this.scale    = Math.min(w / this.BASE_WIDTH, h / this.BASE_HEIGHT) || 1;
     this.CENTER_X = w / 2;
     this.CENTER_Y = h / 2;
+    // Invalidate cached gradients/canvases that depend on size/scale
+    this._bgCanvas = null;
+    this._portalHaloCache = null;
   },
 
   /* ── Tutorial stars ─────────────────────────────────────── */
@@ -529,7 +532,11 @@ const Game10 = {
     const copy  = "☝ Raise your index finger to navigate the galaxy!";
     const blink = Math.sin(performance.now() * 0.003) > 0;
     ctx.font = "bold 15px 'Fredoka', 'Trebuchet MS', sans-serif";
-    const tw = ctx.measureText(copy).width;
+    // Cache text width — string and font never change, measureText is a layout op
+    if (this._noFingerTextWidth === undefined) {
+      this._noFingerTextWidth = ctx.measureText(copy).width;
+    }
+    const tw = this._noFingerTextWidth;
     const bw = tw + 56, bh = 46, bx = W / 2 - bw / 2, by = H - 110;
     ctx.globalAlpha = blink ? 0.95 : 0.55;
     ctx.fillStyle = "rgba(18,12,46,0.92)";
@@ -835,14 +842,40 @@ const Game10 = {
   },
 
   /* ── Background ──────────────────────────────────────────── */
+  /* Pre-render the (static) background gradient stack to an offscreen
+     canvas once, then just blit it every frame. Avoids rebuilding two
+     gradients from scratch 60x/sec — same pixels, far cheaper draw call.
+     Cache is invalidated on resize (_applyResize clears _bgCanvas) and
+     rebuilt automatically if theme changes at runtime. */
+  _buildBgCache() {
+    const W = this.cssWidth, H = this.cssHeight, T = this.T;
+    const dpr = window.devicePixelRatio || 1;
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.round(W * dpr));
+    off.height = Math.max(1, Math.round(H * dpr));
+    const octx = off.getContext("2d");
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const g = octx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, T.bg1); g.addColorStop(0.5, T.bg2); g.addColorStop(1, T.bg3);
+    octx.fillStyle = g; octx.fillRect(0, 0, W, H);
+
+    const r = octx.createRadialGradient(this.CENTER_X, this.CENTER_Y * 0.7, 0, this.CENTER_X, this.CENTER_Y * 0.7, W * 0.55);
+    r.addColorStop(0, "rgba(124,58,237,0.12)"); r.addColorStop(1, "rgba(0,0,0,0)");
+    octx.fillStyle = r; octx.fillRect(0, 0, W, H);
+
+    this._bgCanvas = off;
+    this._bgCanvasTheme = this.theme;
+    this._bgCanvasCssW = W;
+    this._bgCanvasCssH = H;
+  },
   drawBackground(ctx) {
-    const T=this.T,W=this.cssWidth,H=this.cssHeight;
-    const g=ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,T.bg1);g.addColorStop(0.5,T.bg2);g.addColorStop(1,T.bg3);
-    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-    const r=ctx.createRadialGradient(this.CENTER_X,this.CENTER_Y*0.7,0,this.CENTER_X,this.CENTER_Y*0.7,W*0.55);
-    r.addColorStop(0,"rgba(124,58,237,0.12)");r.addColorStop(1,"rgba(0,0,0,0)");
-    ctx.fillStyle=r;ctx.fillRect(0,0,W,H);
+    const W = this.cssWidth, H = this.cssHeight;
+    if (!this._bgCanvas || this._bgCanvasTheme !== this.theme ||
+        this._bgCanvasCssW !== W || this._bgCanvasCssH !== H) {
+      this._buildBgCache();
+    }
+    ctx.drawImage(this._bgCanvas, 0, 0, W, H);
   },
 
   initStarfield() {
@@ -859,7 +892,15 @@ const Game10 = {
       const fl=Math.random()<0.5,spd=(7+Math.random()*5)*0.055;
       this.shootingStars.push({x:fl?-60:this.cssWidth+60,y:Math.random()*this.cssHeight*0.5,vx:fl?spd:-spd,vy:(1.5+Math.random()*1.5)*0.055,life:0,maxLife:900});
     }
-    for(let i=this.shootingStars.length-1;i>=0;i--){const s=this.shootingStars[i];s.x+=s.vx*delta;s.y+=s.vy*delta;s.life+=delta;if(s.life>s.maxLife)this.shootingStars.splice(i,1);}
+    // Swap-and-pop removal (order doesn't matter for rendering) — avoids
+    // O(n) element shifting that splice() does inside a loop.
+    for(let i=this.shootingStars.length-1;i>=0;i--){
+      const s=this.shootingStars[i];s.x+=s.vx*delta;s.y+=s.vy*delta;s.life+=delta;
+      if(s.life>s.maxLife){
+        this.shootingStars[i]=this.shootingStars[this.shootingStars.length-1];
+        this.shootingStars.pop();
+      }
+    }
   },
   drawShootingStars(ctx) {
     for(const s of this.shootingStars){const alpha=Math.max(0,1-s.life/s.maxLife),tL=160,absVx=Math.abs(s.vx)||0.01,tx=s.x-s.vx*tL/absVx,ty=s.y-s.vy*tL/absVx;const grd=ctx.createLinearGradient(s.x,s.y,tx,ty);grd.addColorStop(0,`rgba(255,255,255,${alpha})`);grd.addColorStop(1,"rgba(255,255,255,0)");ctx.strokeStyle=grd;ctx.lineWidth=2*this.scale;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(tx,ty);ctx.stroke();}
@@ -873,14 +914,27 @@ const Game10 = {
   drawDustMotes(ctx) { for(const d of this.dustMotes){ctx.globalAlpha=d.alpha;ctx.beginPath();ctx.arc(d.x,d.y,d.r*this.scale,0,Math.PI*2);ctx.fillStyle=this.T.accent;ctx.fill();}ctx.globalAlpha=1; },
 
   /* ── Portal player ───────────────────────────────────────── */
+  /* Halo gradient only depends on sz (i.e. scale) and theme accent color —
+     cache it per scale value instead of building a fresh radial gradient
+     every single frame. */
+  _getPortalHalo(ctx, sz) {
+    const key = sz.toFixed(2) + "|" + this.theme;
+    if (this._portalHaloCache && this._portalHaloCache.key === key) {
+      return this._portalHaloCache.gradient;
+    }
+    const T = this.T;
+    const halo = ctx.createRadialGradient(0, 0, sz * 0.25, 0, 0, sz * 0.75);
+    halo.addColorStop(0, T.accentGlow); halo.addColorStop(1, "rgba(0,0,0,0)");
+    this._portalHaloCache = { key, gradient: halo };
+    return halo;
+  },
   drawMode1PortalPlayer(ctx) {
     const T=this.T,px=this.mascot.x,py=this.mascot.y;
     const sz=this.portalSize*this.scale,now=performance.now();
     const spdN=Math.min(Math.hypot(this.mascot.vx,this.mascot.vy)/this.mascot.maxSpeed,1);
     const scX=1+spdN*0.10,scY=1-spdN*0.07,bob=Math.sin(now*0.003)*5*this.scale;
     ctx.save();ctx.translate(px,py+bob);ctx.scale(scX,scY);
-    const halo=ctx.createRadialGradient(0,0,sz*0.25,0,0,sz*0.75);
-    halo.addColorStop(0,T.accentGlow);halo.addColorStop(1,"rgba(0,0,0,0)");
+    const halo=this._getPortalHalo(ctx, sz);
     ctx.fillStyle=halo;ctx.beginPath();ctx.arc(0,0,sz*0.75,0,Math.PI*2);ctx.fill();
     const frame=this.portalFrames[this.portalFrameIndex];
     if(frame&&frame.complete&&frame.naturalWidth>0){ctx.drawImage(frame,-sz/2,-sz/2,sz,sz);}
@@ -907,6 +961,10 @@ const Game10 = {
 
   drawMode1Numbers(ctx) {
     const T=this.T,now=performance.now();
+    // Shadow blur is one of the most expensive canvas ops on weak/Android
+    // GPUs. Only pay for it once glow is visually meaningful — below this
+    // threshold the blur was imperceptible anyway (radius < ~1px).
+    const SHADOW_GLOW_THRESHOLD = 0.12;
     for(let i=0;i<this.mode1Numbers.length;i++){
       const n=this.mode1Numbers[i];
       if(n.spawnAlpha<=0.01)continue;
@@ -915,11 +973,14 @@ const Game10 = {
       const sc=(n.renderScale||1)*(1+glow*0.12);
       const isC=this.getSuffix(n.number)===this.mode1TargetSuffix;
       ctx.save();ctx.globalAlpha=n.spawnAlpha;ctx.translate(n.x,n.y+fY);ctx.rotate(n.renderRotation||0);ctx.scale(sc,sc);
-      if(glow>0.05){ctx.shadowColor=isC?T.correct:T.wrong;ctx.shadowBlur=22*glow;}
+      if(glow>SHADOW_GLOW_THRESHOLD){ctx.shadowColor=isC?T.correct:T.wrong;ctx.shadowBlur=22*glow;}
       const cr=44*this.scale;
       ctx.fillStyle=T.cardBg;ctx.strokeStyle=glow>0.1?(isC?T.correct:T.wrong):T.cardBorder;ctx.lineWidth=(2+glow*3)*this.scale;
       this._rrect(ctx,-cr,-cr*0.72,cr*2,cr*1.44,16*this.scale);ctx.fill();ctx.stroke();
-      ctx.shadowColor=T.numberGlow;ctx.shadowBlur=12+glow*18;ctx.fillStyle=T.numberColor;
+      if (glow>SHADOW_GLOW_THRESHOLD) { ctx.shadowBlur=0; }
+      ctx.shadowColor=T.numberGlow;
+      ctx.shadowBlur=glow>SHADOW_GLOW_THRESHOLD ? (12+glow*18) : 0;
+      ctx.fillStyle=T.numberColor;
       ctx.font=`bold ${Math.round(46*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
       ctx.fillText(n.number,0,0);ctx.shadowBlur=0;ctx.restore();
     }
@@ -1019,7 +1080,15 @@ const Game10 = {
 
   /* ── Hint floater ────────────────────────────────────────── */
   spawnHintFloater(num,x,y){this.floatNumbers.push({text:`${num}${this.getSuffix(num)}`,x,y,vy:-0.06,alpha:1,life:1400,maxLife:1400});},
-  updateFloatNumbers(delta){for(let i=this.floatNumbers.length-1;i>=0;i--){const f=this.floatNumbers[i];f.y+=f.vy*delta;f.life-=delta;f.alpha=Math.max(0,f.life/f.maxLife);if(f.life<=0)this.floatNumbers.splice(i,1);}},
+  updateFloatNumbers(delta){
+    for(let i=this.floatNumbers.length-1;i>=0;i--){
+      const f=this.floatNumbers[i];f.y+=f.vy*delta;f.life-=delta;f.alpha=Math.max(0,f.life/f.maxLife);
+      if(f.life<=0){
+        this.floatNumbers[i]=this.floatNumbers[this.floatNumbers.length-1];
+        this.floatNumbers.pop();
+      }
+    }
+  },
   drawFloatNumbers(ctx){for(const f of this.floatNumbers){ctx.save();ctx.globalAlpha=f.alpha;ctx.fillStyle=this.T.wrong;ctx.font=`bold ${Math.round(38*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.T.wrong;ctx.shadowBlur=12;ctx.fillText(f.text,f.x,f.y);ctx.restore();}},
 
   /* ── Merge animation ─────────────────────────────────────── */
@@ -1166,7 +1235,15 @@ const Game10 = {
   /* ── Particles ───────────────────────────────────────────── */
   spawnCorrectParticles(x,y){const cols=["#34d399","#fbbf24","#a78bfa","#ffffff"];for(let i=0;i<20;i++){if(this.particles.length>=this.MAX_PARTICLES)break;const a=Math.random()*Math.PI*2,v=(Math.random()*6+3)*0.055;this.particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,color:cols[i%cols.length],size:(Math.random()*5+3)*this.scale,life:700,maxLife:700,type:"star"});}},
   spawnWrongParticles(x,y){for(let i=0;i<12;i++){if(this.particles.length>=this.MAX_PARTICLES)break;const a=Math.random()*Math.PI*2,v=(Math.random()*4+2)*0.055;this.particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,color:"#f87171",size:(Math.random()*4+2)*this.scale,life:500,maxLife:500,type:"circle"});}},
-  updateParticles(delta){for(let i=this.particles.length-1;i>=0;i--){const p=this.particles[i];p.x+=p.vx*delta;p.y+=p.vy*delta;const fric=1-(1-0.994)*delta/16;p.vx*=fric;p.vy*=fric;p.vy+=0.00007*delta;p.life-=delta;if(p.life<=0)this.particles.splice(i,1);}},
+  updateParticles(delta){
+    for(let i=this.particles.length-1;i>=0;i--){
+      const p=this.particles[i];p.x+=p.vx*delta;p.y+=p.vy*delta;const fric=1-(1-0.994)*delta/16;p.vx*=fric;p.vy*=fric;p.vy+=0.00007*delta;p.life-=delta;
+      if(p.life<=0){
+        this.particles[i]=this.particles[this.particles.length-1];
+        this.particles.pop();
+      }
+    }
+  },
   drawParticles(ctx){for(const p of this.particles){ctx.globalAlpha=Math.max(0,p.life/p.maxLife);ctx.fillStyle=p.color;if(p.type==="star")this._star(ctx,p.x,p.y,p.size,5);else{ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();}}ctx.globalAlpha=1;},
   _star(ctx,x,y,r,pts){ctx.save();ctx.translate(x,y);ctx.beginPath();for(let i=0;i<pts*2;i++){const a=(Math.PI/pts)*i-Math.PI/2,rr=i%2===0?r:r*0.44;i===0?ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr):ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);}ctx.closePath();ctx.fill();ctx.restore();},
 
@@ -1175,7 +1252,17 @@ const Game10 = {
     if(this.sparkBursts.length<this.MAX_SPARKS)this.sparkBursts.push({x,y,radius:0,maxRadius:130*this.scale,alpha:1,life:550,maxLife:550});
     for(let i=0;i<16;i++){if(this.sparkBursts.length>=this.MAX_SPARKS)break;const a=Math.random()*Math.PI*2,v=(Math.random()*9+3)*0.055;this.sparkBursts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,size:(Math.random()*4+2)*this.scale,life:480,maxLife:480,type:"p"});}
   },
-  updateSparkBursts(delta){for(let i=this.sparkBursts.length-1;i>=0;i--){const s=this.sparkBursts[i];s.life-=delta;if(s.type==="p"){s.x+=s.vx*delta;s.y+=s.vy*delta;const fric=1-(1-0.993)*delta/16;s.vx*=fric;s.vy*=fric;}else{s.radius=s.maxRadius*(1-s.life/s.maxLife);s.alpha=Math.max(0,s.life/s.maxLife);}if(s.life<=0)this.sparkBursts.splice(i,1);}},
+  updateSparkBursts(delta){
+    for(let i=this.sparkBursts.length-1;i>=0;i--){
+      const s=this.sparkBursts[i];s.life-=delta;
+      if(s.type==="p"){s.x+=s.vx*delta;s.y+=s.vy*delta;const fric=1-(1-0.993)*delta/16;s.vx*=fric;s.vy*=fric;}
+      else{s.radius=s.maxRadius*(1-s.life/s.maxLife);s.alpha=Math.max(0,s.life/s.maxLife);}
+      if(s.life<=0){
+        this.sparkBursts[i]=this.sparkBursts[this.sparkBursts.length-1];
+        this.sparkBursts.pop();
+      }
+    }
+  },
   drawSparkBursts(ctx){for(const s of this.sparkBursts){if(s.type==="p"){ctx.globalAlpha=Math.max(0,s.life/s.maxLife);ctx.fillStyle=this.T.correct;ctx.beginPath();ctx.arc(s.x,s.y,s.size,0,Math.PI*2);ctx.fill();}else{ctx.globalAlpha=Math.max(0,s.alpha);ctx.strokeStyle=this.T.correct;ctx.lineWidth=5*this.scale;ctx.beginPath();ctx.arc(s.x,s.y,s.radius,0,Math.PI*2);ctx.stroke();}}ctx.globalAlpha=1;},
 
   /* ── HUD ─────────────────────────────────────────────────── */
@@ -1222,8 +1309,10 @@ const Game10 = {
     if(this.mode1GameOver||this.blackHoleActive)return;
     const T=this.T,s=this.scale,W=this.cssWidth;
     const suf=this.mode1TargetSuffix,maxW=Math.min(W-44*s,700*s),bh=48*s,bx=W/2-maxW/2,by=20*s;
-    ctx.fillStyle=T.cardBg;this._rrect(ctx,bx,by,maxW,bh,13*s);ctx.fill();
-    ctx.strokeStyle=T.cardBorder;ctx.lineWidth=1.5*s;this._rrect(ctx,bx,by,maxW,bh,13*s);ctx.stroke();
+    ctx.fillStyle=T.cardBg;
+    ctx.beginPath(); this._rrectPath(ctx,bx,by,maxW,bh,13*s); ctx.fill();
+    ctx.strokeStyle=T.cardBorder;ctx.lineWidth=1.5*s;
+    ctx.beginPath(); this._rrectPath(ctx,bx,by,maxW,bh,13*s); ctx.stroke();
     ctx.fillStyle=T.textPrimary;ctx.font=`bold ${Math.round(19*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
     ctx.fillText(`You are the ${suf.toUpperCase()} Galaxy! Collect numbers ending in "${suf}"`,W/2,by+bh/2);
   },
@@ -1261,5 +1350,8 @@ const Game10 = {
   },
 
   /* ── Utility ─────────────────────────────────────────────── */
-  _rrect(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();},
+  // Path-only builder (no beginPath) so callers that fill+stroke the same
+  // shape don't have to rebuild the rounded-rect path twice.
+  _rrectPath(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();},
+  _rrect(ctx,x,y,w,h,r){ctx.beginPath();this._rrectPath(ctx,x,y,w,h,r);},
 };
