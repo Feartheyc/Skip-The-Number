@@ -116,6 +116,7 @@ const Game9 = {
 
   _bgCacheCanvas: null,
   _spriteCache: {},
+  portalSuckAnim: null,
 
   /* ============================================================
      INIT
@@ -953,10 +954,12 @@ const Game9 = {
     this.updateSparkBursts(delta);
     this.updateToast(delta);
     this.updateHUDTimers(delta);
+    this._updatePortalSuck(delta);
 
     this.drawDoors(ctx);
     this.drawNumber(ctx);
     this.drawMascot(ctx);
+    this._drawPortalSuck(ctx);
     this._drawLevelUpBurst(ctx);
     this.drawHUD(ctx);
     this.drawSparkBursts(ctx);
@@ -1040,7 +1043,9 @@ const Game9 = {
 
   confirmSelection(index) {
     const door = this.doors[index];
-    if (door.suffix === this.correctSuffix) {
+    const wasCorrect = door.suffix === this.correctSuffix;
+
+    if (wasCorrect) {
       this.streak++;
       if (this.streak > this.bestStreak) this.bestStreak = this.streak;
       this.streakPulse = 1;
@@ -1048,7 +1053,6 @@ const Game9 = {
       const points = this._rollScore();
       this.score  += points;
       this.mascotState = "happy";
-      this.spawnSparkBurst(door.x, door.y);
       this.checkLevelUp();
 
       const msg = this.streak >= 10 ? "🔥 UNSTOPPABLE!"
@@ -1064,12 +1068,84 @@ const Game9 = {
       this.heartShakeTime = 520;
       this.mascotState    = "confused";
       this.showToast(`💡 ${this.currentNumber} is ${this.currentNumber}${this.getSuffix(this.currentNumber)}!`, "#f87171");
-      if (this.hearts <= 0) {
-        setTimeout(() => this._startCollapse(), 600);
-        return;
-      }
+    }
+
+    // Detach the number from the mascot immediately and let it get pulled
+    // into the portal it just touched, instead of riding along with the
+    // mascot for the rest of this pause.
+    this.mascot.carryingNumber = false;
+    this._startPortalSuck(door, wasCorrect);
+
+    if (!wasCorrect && this.hearts <= 0) {
+      setTimeout(() => this._startCollapse(), 600);
+      return;
     }
     setTimeout(() => { this.mascotState = "idle"; this.spawnNumber(); }, 1200);
+  },
+
+  _startPortalSuck(door, wasCorrect) {
+    // Carried number is drawn at roughly (mascot.x, mascot.y - 80*scale)
+    // in drawMascot — start the animation from that same spot so the
+    // handoff from "carried" to "sucked in" is seamless.
+    this.portalSuckAnim = {
+      number: this.currentNumber,
+      startX: this.mascot.x,
+      startY: this.mascot.y - 80 * this.scale,
+      doorX: door.x,
+      doorY: door.y,
+      time: 0,
+      duration: 480,
+      wasCorrect,
+    };
+  },
+
+  _updatePortalSuck(delta) {
+    const a = this.portalSuckAnim;
+    if (!a) return;
+    a.time += delta;
+    if (a.time >= a.duration) {
+      // Payoff sparkle fires right as the number vanishes into the portal,
+      // not the instant the door was touched — keeps the burst synced to
+      // what the player is actually watching.
+      if (a.wasCorrect) this.spawnSparkBurst(a.doorX, a.doorY);
+      this.portalSuckAnim = null;
+    }
+  },
+
+  _drawPortalSuck(ctx) {
+    const a = this.portalSuckAnim;
+    if (!a) return;
+    const t = Math.min(1, a.time / a.duration);
+
+    // Ease-in pull: drifts at first, then accelerates hard into the portal.
+    const pull  = t * t * t;
+    const x     = a.startX + (a.doorX - a.startX) * pull;
+    const y     = a.startY + (a.doorY - a.startY) * pull;
+    const scale = Math.max(0.02, 1 - t * t);
+    const spin  = t * t * Math.PI * 6;
+    const alpha = t < 0.7 ? 1 : Math.max(0, 1 - (t - 0.7) / 0.3);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.rotate(spin);
+    ctx.scale(scale, scale);
+    const spr = this._getGlowSprite(String(a.number), 70 * this.scale, "#FFD700", 34, "#FFD700", 7, "#FFFFFF");
+    ctx.drawImage(spr.canvas, -spr.w / 2, -spr.h / 2);
+    ctx.restore();
+
+    // Faint inward ring at the portal itself, collapsing in step with the pull.
+    const ringR = (1 - pull) * 46 * this.scale;
+    if (ringR > 2) {
+      ctx.save();
+      ctx.globalAlpha = 0.5 * (1 - pull);
+      ctx.beginPath();
+      ctx.arc(a.doorX, a.doorY, ringR, 0, Math.PI * 2);
+      ctx.strokeStyle = "#c4b5fd";
+      ctx.lineWidth = 3 * this.scale;
+      ctx.stroke();
+      ctx.restore();
+    }
   },
 
   drawHUD(ctx) {
@@ -1193,6 +1269,7 @@ const Game9 = {
     this.gameOver=false; this.selectionLocked=false;
     this.collapseActive=false; this.collapseTime=0; this.collapseSpiral=[];
     this.sparkBursts=[]; this.shootingStars=[]; this.shootingStarBursts=[];
+    this.portalSuckAnim=null;
     this.mascotState="idle"; this.mascot.carryingNumber=false;
     this.mascot.x=this.CENTER_X; this.mascot.y=this.CENTER_Y+100*this.scale;
     this.mascot.vx=0; this.mascot.vy=0;
