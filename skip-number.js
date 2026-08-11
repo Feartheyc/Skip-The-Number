@@ -1190,39 +1190,42 @@ _startPlaying() {
     ctx.stroke();
     this._drawTutVisual(ctx, td.visual, visX, visY, visW, visH, this._tutOrbT, tColor);
 
-    // ── Mode-specific gameplay descriptions (Page 1) — now driven by previewPlan ──
-    const gameplayByMode = {
-      skip: [
-        { icon: "🎯", text: "Numbers fly from the ring toward the center." },
-        { icon: "✅", text: `Collect multiples of ${previewSkip}.` },
-        { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
-        { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
-      ],
-      pattern: [
-        { icon: "🎶", text: "Numbers cycle: skip a set, then collect a set." },
-        { icon: "🧠", text: `Skip ${previewSkip}, Collect ${previewCollect} — then repeat.` },
-        { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
-        { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
-      ],
-      cannon: [
-        { icon: "💥", text: "The cannon fires numbers straight across the screen." },
-        { icon: "✅", text: `Touch correct multiples of ${previewSkip} before they fly off.` },
-        { icon: "🚀", text: "Numbers travel in one direction until they escape." },
-        { icon: "🛡️", text: "Safe Zone: Right by the cannon is safe! No tapping here. ⭕" },
-      ],
-      orb: [
-        { icon: "🌀", text: "A spinning orb launches numbers outward." },
-        { icon: "✅", text: `Catch correct multiples of ${previewSkip} as they fly past.` },
-        { icon: "💜", text: "The orb turns to aim — watch closely." },
-        { icon: "🛡️", text: "Safe Zone: Right by the orb is safe! No tapping here. ⭕" },
-      ],
-      triple: [
-        { icon: "🔴", text: "THREE cannons fire in random order." },
-        { icon: "👀", text: "A gold glow shows which cannon fires next." },
-        { icon: "✅", text: `Intercept correct multiples of ${previewSkip} from any direction.` },
-        { icon: "🛡️", text: "Safe Zone: Right by the cannons is safe! No tapping here. ⭕" },
-      ],
-    };
+    // ── Mode-specific gameplay descriptions (Page 1) — generic wording
+//    folded into the same line (no extra rows added), since the
+//    target number changes every round and shouldn't be implied
+//    as fixed on the one-time tutorial screen. ──
+const gameplayByMode = {
+  skip: [
+    { icon: "🎯", text: "Numbers fly from the ring toward the center." },
+    { icon: "✅", text: `Collect multiples of ${previewSkip} this round (changes each round!)` },
+    { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
+    { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+  ],
+  pattern: [
+    { icon: "🎶", text: "Numbers cycle: skip a set, then collect a set." },
+    { icon: "🧠", text: `Skip ${previewSkip}, collect ${previewCollect} this round (changes each round!)` },
+    { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
+    { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+  ],
+  cannon: [
+    { icon: "💥", text: "The cannon fires numbers straight across the screen." },
+    { icon: "✅", text: `Touch multiples of ${previewSkip} this round (changes each round!)` },
+    { icon: "🚀", text: "Numbers travel in one direction until they escape." },
+    { icon: "🛡️", text: "Safe Zone: Right by the cannon is safe! No tapping here. ⭕" },
+  ],
+  orb: [
+    { icon: "🌀", text: "A spinning orb launches numbers outward." },
+    { icon: "✅", text: `Catch multiples of ${previewSkip} this round (changes each round!)` },
+    { icon: "💜", text: "The orb turns to aim — watch closely." },
+    { icon: "🛡️", text: "Safe Zone: Right by the orb is safe! No tapping here. ⭕" },
+  ],
+  triple: [
+    { icon: "🔴", text: "THREE cannons fire in random order." },
+    { icon: "👀", text: "A gold glow shows which cannon fires next." },
+    { icon: "✅", text: `Intercept multiples of ${previewSkip} this round (changes each round!)` },
+    { icon: "🛡️", text: "Safe Zone: Right by the cannons is safe! No tapping here. ⭕" },
+  ],
+};
 
     // ── Mode-specific dynamics descriptions (Page 2) ──
     const dynamicsByMode = {
