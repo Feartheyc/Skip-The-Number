@@ -2489,11 +2489,13 @@ const Game11 = {
   drawStartScreen(ctx) {
     ctx.save();
 
+    // 1. Increased box height slightly to accommodate the title comfortably
     const boxW = 1000 * this.scale;
-    const boxH = 350 * this.scale;
+    const boxH = 410 * this.scale; 
     const boxX = this.CENTER_X - boxW / 2;
     const boxY = this.CENTER_Y - boxH / 2 - 40 * this.scale;
 
+    // Draw Instruction Panel Background
     ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
     ctx.strokeStyle = "rgba(124, 58, 237, 0.9)";
     ctx.lineWidth = 4 * this.scale;
@@ -2502,10 +2504,21 @@ const Game11 = {
     ctx.fill();
     ctx.stroke();
 
-    ctx.fillStyle = "#ffffff";
-    ctx.font = `bold ${28 * this.scale}px Arial`;
+    // 2. ✨ ADDED "HOW TO PLAY" TITLE
+    ctx.fillStyle = "#FACC15"; // Gold color
+    ctx.shadowColor = "rgba(250, 204, 21, 0.6)";
+    ctx.shadowBlur = 15 * this.scale;
+    ctx.font = `bold ${40 * this.scale}px Arial`;
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
+    ctx.fillText("HOW TO PLAY", this.CENTER_X, boxY + 45 * this.scale);
+
+    // Reset shadow blur for regular text
+    ctx.shadowBlur = 0;
+
+    // Instruction Lines (Adjusted Y positions to sit under the title)
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold ${26 * this.scale}px Arial`;
 
     const line1 = "Make the hand shape as shown on the left";
     const line2 = "to get the necessary ordinal suffix on the galaxy";
@@ -2514,27 +2527,28 @@ const Game11 = {
     const line5 = "Score 500 points to complete the game";
     const line6 = "Wrong answer will lead to decrease in score";
 
-    ctx.fillText(line1, this.CENTER_X, boxY + 50 * this.scale);
-    ctx.fillText(line2, this.CENTER_X, boxY + 100 * this.scale);
+    ctx.fillText(line1, this.CENTER_X, boxY + 100 * this.scale);
+    ctx.fillText(line2, this.CENTER_X, boxY + 145 * this.scale);
 
-    ctx.fillStyle = "#60a5fa"; // blueish color for emphasis on the new instruction
-    ctx.fillText(line3, this.CENTER_X, boxY + 150 * this.scale);
+    ctx.fillStyle = "#60a5fa"; // Blueish emphasis line
+    ctx.fillText(line3, this.CENTER_X, boxY + 190 * this.scale);
 
-    ctx.fillStyle = "#34d399"; // greenish color 
-    ctx.fillText(line4, this.CENTER_X, boxY + 220 * this.scale);
+    ctx.fillStyle = "#34d399"; // Greenish info line
+    ctx.fillText(line4, this.CENTER_X, boxY + 245 * this.scale);
 
-    ctx.font = `bold ${36 * this.scale}px Arial`;
-    ctx.fillStyle = "#f59e0b"; // amber/orange color for high emphasis
-    ctx.fillText(line5, this.CENTER_X, boxY + 275 * this.scale);
+    ctx.font = `bold ${32 * this.scale}px Arial`;
+    ctx.fillStyle = "#f59e0b"; // Amber/orange goal line
+    ctx.fillText(line5, this.CENTER_X, boxY + 295 * this.scale);
 
-    ctx.font = `bold ${28 * this.scale}px Arial`;
-    ctx.fillStyle = "#f87171"; // reddish color
-    ctx.fillText(line6, this.CENTER_X, boxY + 330 * this.scale);
+    ctx.font = `bold ${26 * this.scale}px Arial`;
+    ctx.fillStyle = "#f87171"; // Reddish warning line
+    ctx.fillText(line6, this.CENTER_X, boxY + 345 * this.scale);
 
+    // START Button
     const btnW = 220 * this.scale;
     const btnH = 70 * this.scale;
     const btnX = this.CENTER_X - btnW / 2;
-    const btnY = this.CENTER_Y + 150 * this.scale;
+    const btnY = this.CENTER_Y + 165 * this.scale;
 
     ctx.shadowColor = "rgba(124, 58, 237, 0.8)";
     ctx.shadowBlur = 15;
