@@ -1,238 +1,242 @@
-const Game1 = {
+/* ============================================================
+   ordinals-beta-2.js  (Game10) — v2
+   Changes:
+   • Tutorial state built in — no tutorial.js dependency
+   • Event listeners registered ONCE via _listenersAttached guard
+   • Resize debounced, repositions layout only — never resets score
+   • No-finger prompt drawn on canvas, zero extra DOM
+   • Hold-to-start reads window.fingerPositions directly
+   • fullResetOnResize() removed — replaced with _onResize()
+   • FIX: countValidNumbers() caps correctCount to achievable max
+   • FIX: updateMode1Merge remainingCorrect safety net added
+   • UPDATE: Portal follows raw finger position directly with jitter threshold filtering
+============================================================ */
 
-  /* ── Layout ─────────────────────────────────────────────── */
-  centerX: null,
-  centerY: null,
-  baseOuterRadius: 1000,
-  baseInnerRadius: 970,
-  currentOuterRadius: 1000,
-  currentInnerRadius: 970,
-  ringScale: 1.5,
+const Game10 = {
 
-  /* ── Palette ────────────────────────────────────────────── */
-  C: {
-    bg:          "#0d1b2e",
-    ring1:       "#c9933a",
-    ring1Glow:   "rgba(201,147,58,0.35)",
-    ring2:       "#7ecfb3",
-    ring2Glow:   "rgba(126,207,179,0.25)",
-    noteText:    "#f0f4ff",
-    correct:     "#6de8b4",
-    wrong:       "#e87c6d",
-    gold:        "#f5c842",
-    accent:      "#8ecae6",
-    hudBg:       "rgba(10,20,38,0.78)",
-    hudBorder:   "rgba(140,180,220,0.18)",
-    xpTrack:     "rgba(245,200,66,0.15)",
+  BASE_WIDTH:  1280,
+  BASE_HEIGHT: 720,
+  scale:    1,
+  CENTER_X: 0,
+  CENTER_Y: 0,
+
+  get cssWidth()  { return canvasElement.width  / (window.devicePixelRatio || 1); },
+  get cssHeight() { return canvasElement.height / (window.devicePixelRatio || 1); },
+
+  /* ── Theme ───────────────────────────────────────────────── */
+  theme: "space",
+  themes: {
+    space: {
+
+      bg1: "#0a0e27", bg2: "#1a1040", bg3: "#0d1f3c",
+      accent: "#7c3aed", accentGlow: "rgba(124,58,237,0.4)",
+      textPrimary: "#e2e8f0", textAccent: "#a78bfa",
+      correct: "#34d399", wrong: "#f87171",
+      numberColor: "#fbbf24", numberGlow: "rgba(251,191,36,0.6)",
+      cardBg: "rgba(255,255,255,0.07)", cardBorder: "rgba(255,255,255,0.15)",
+      scoreBg: "rgba(124,58,237,0.3)", heartColor: "#f472b6", streakColor: "#fbbf24",
+    },
   },
+  get T() { return this.themes[this.theme]; },
 
-  /* ── Notes & Game State ─────────────────────────────────── */
-  notes: [],
-  noteSpeed: 0,
-  popEffects: [],
-  explosions: [],
-  score: 0,
-  combo: 0,
-  multiplier: 1,
-  lastHitType: "",
-  hitTextTimer: 0,
-  missQueue: [],
-  currentNumber: 1,
-  maxNumber: 100,
-  spawnTimer: null,
-  spawnInterval: 1200,
+  /* ── Game state ──────────────────────────────────────────── */
+  score: 0, running: false, lastTime: 0, gameMode: 1,
+  fingerX: null, fingerY: null,
+  fingerSmoothX: null, fingerSmoothY: null,
+  fingerSmoothing: 0.12,
 
-  pulseTime: 0,
-  pulseSpeed: 2.2,
-  pulseAmountOuter: 10,
-  pulseAmountInner: 5,
+  mascot: { x:0, y:0, vx:0, vy:0, accel:0.012, maxSpeed:0.65, friction:0.980, size:130 },
 
-  /* ── Torus rotation ──────────────────────────────────────── */
-  torusAngle: 0,
+  mode1Numbers: [], mode1TargetSuffix: "st",
+  mode1CorrectTotal: 0, mode1CorrectCollected: 0,
+  mode1RoundActive: true, mode1Confirming: false,
+  mode1PortalTargetX: 0, mode1PortalTargetY: 0,
+  mode1GameOver: false,
+  mode1SuctionActive: false, mode1SuctionData: null,
+  mode1MergeActive: false,  mode1MergeData: null,
+  mode1BreakActive: false,  mode1BreakData: null,
+  mode1MaxMatches: 3, mode1MinMatches: 1,
 
-  mode: "default",
-  skipAmount: 3,
-  gameTitle: "SKIP 3",
-  pattern: { skip: 3, collect: 1 },
+  level: 1, roundsCompleted: 0, numberRange: 10,
+  hearts: 3, maxHearts: 3, heartShakeTime: 0,
+  streak: 0, bestStreak: 0, streakPulse: 0,
 
-  /* ── Launcher state ─────────────────────────────────────── */
-  cannonAngle: 0,
-  cannonTargetAngle: 0,
-  cannonLength: 0,
-  pendingShot: null,
-  lastCannonNote: null,
+  roundRewardActive: false, roundRewardTimer: 0, roundRewardStars: [],
 
-  orbImage: null,
-  orbAngle: 0,
-  orbTargetAngle: 0,
-  lastOrbNote: null,
+  blackHoleActive: false, blackHoleTime: 0,
+  blackHoleDuration: 2800, blackHoleStrength: 0, accretionAngle: 0,
 
-  charge: 0,
-  chargeSpeed: 0.8,
-  isCharging: false,
-  chargeParticles: [],
-  launcherSafeRadius: 0,
+  bigBangActive: false, bigBangTime: 0,
+  bigBangDuration: 1400, bigBangFlash: 0,
 
-  tripleCannons: [],
-  tripleBaseAngle: 0,
-  tripleTargetAngle: 0,
-  tripleCount: 3,
-  previewCannons: [],
-  previewTimer: 0,
-  previewDuration: 0.6,
+  particles: [], sparkBursts: [], floatNumbers: [],
+  MAX_PARTICLES: 120, MAX_SPARKS: 80,
 
-  /* ── Level / XP ──────────────────────────────────────────── */
-  xp: 0,
-  xpToNext: 8,
-  level: 1,
-  maxLevel: 20,
-  tier: 0,
-  tierNames:       ["Sprout 🌱", "Star ⭐", "Champ 🏆", "Legend 🌟"],
-  tierColors:      ["#6de8b4",   "#f5c842",  "#e8a06d",   "#c084fc"],
-  tierThresholds:  [1, 6, 12, 18],
+  stars: [], shootingStars: [], shootingStarTimer: 0, dustMotes: [],
+  shootingStarInterval: 2500,
 
-  levelUpActive: false,
-  levelUpTimer: 0,
-  levelUpDuration: 1400,
-  levelUpParticles: [],
-  xpPopFlash: 0,
-  hintState: "full",
-  noiseTime: 0,
+  portalFrames: [], portalFrameIndex: 0,
+  portalFrameTimer: 0, portalFrameSpeed: 80, portalSize: 200,
 
-  /* ── Adaptive Speed ──────────────────────────────────────── */
-  speedCap: 0,
-  speedMin: 0,
-  speedPenaltyStep: 0.06,
-  speedRecoveryStep: 0.02,
-  speedDriftRate: 0.008,
+  mascotImages: { idle:[], happy:[], confused:[] },
+  mascotFrame: 0, mascotFrameTimer: 0, mascotFrameSpeed: 120,
+  mascotState: "idle",
 
-  /* ── Background ─────────────────────────────────────────── */
-  bgStars: [],
+  proximityGlow: [],
+  toast: { text:"", timer:0, color:"#fff", y:0, alpha:0, maxTimer:1600 },
 
-  /* ── Hint messages ───────────────────────────────────────── */
-  _hintChangeMessages: {
-    subtle: "👀 Look carefully — hints are fading!",
-    none:   "🧠 No more hints — use your brain!",
-    decoy:  "😈 Watch out — fake signals ahead!",
-    chaos:  "🌀 CHAOS MODE — trust nothing!",
-  },
-  _hintChangeTimer: 0,
-  _hintChangeMessage: "",
+  /* ── Listener guard ─────────────────────────────────────── */
+  _listenersAttached: false,
+  _resizeTimer: null,
 
+  /* ── Tutorial state ─────────────────────────────────────── */
+  gameState: "tutorial",   // "tutorial" | "playing"
+  _tutHoldProgress: 0,
+  _tutEnterAnim: 0,
+  _tutOrbT: 0,
+  _tutPulseT: 0,
+  _tutStars: [],
+  _tutNoFingerFrames: 0,
+  _tutNoFingerThreshold: 90,
+  HOLD_SEC: 3.0,
+
+  /* ── Finger throttle ─────────────────────────────────────── */
+  _lastFingerUpdateTime: 0,
+  FINGER_UPDATE_INTERVAL: 50, 
 
   /* ============================================================
      INIT
   ============================================================ */
-  init() {
-    const rect = document.getElementById("container").getBoundingClientRect();
-    this.onResize(rect.width, rect.height);
+ init() {
+    this._applyResize(window.innerWidth, window.innerHeight);
 
-    this.notes = [];
-    this.popEffects = [];
-    this.explosions = [];
-    this.missQueue = [];
-    this.levelUpParticles = [];
-    this.chargeParticles = [];
+    // ── Fixed Tracking Property Initializer ──
+    this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
+    }
 
-    this.score = 0;
-    this.combo = 0;
-    this.multiplier = 1;
-    this.hitTextTimer = 1;
-    this.currentNumber = 1;
-    this.xp = 0;
-    this.xpToNext = 8;
+    this.score = 0; this.running = true; this.lastTime = performance.now();
+    this.hearts = 3; this.streak = 0; this.roundsCompleted = 0;
     this.level = 1;
-    this.tier = 0;
-    this.levelUpActive = false;
-    this.xpPopFlash = 0;
-    this.hintState = "full";
-    this.noiseTime = 0;
-    this.spawnInterval = 1200;
-    this.torusAngle = 0;
+    this._roundsInLevel = 0;
+    this._levelRoundTarget = this._pickLevelRoundTarget();
+    this.numberRange = this._getNumberRangeForLevel(this.level);
+    this.mode1GameOver = false; this.blackHoleActive = false;
+    this.bigBangActive = false; this.bigBangFlash = 0;
+    this.particles = []; this.sparkBursts = []; this.floatNumbers = [];
+    this.shootingStars = []; this.heartShakeTime = 0; this.streakPulse = 0;
+    this.fingerX = null; this.fingerY = null;
+    this.fingerSmoothX = null; this.fingerSmoothY = null;
 
-    this.mode = "default";
-    this.skipAmount = this.getRandomSkip();
-    this.gameTitle  = "SKIP " + this.skipAmount;
-    this.noteSpeed  = this.speedCap;
+    this.loadMascotSprites();
+    this.loadPortalSprites();
+    this.initStarfield();
+    this.initDustMotes();
 
-    this.orbImage = new Image();
-    this.orbImage.src = "orb1.png";
+    this.mascot.x = this.CENTER_X; this.mascot.y = this.CENTER_Y;
+    this.mascot.vx = 0; this.mascot.vy = 0;
 
-    this._initBgStars();
-    this._restartSpawnTimer();
+    this.activateGameMode1();
 
-    window.addEventListener("keydown", (e) => {
-      if (e.key === "1") this.activatePatternMode();
-      if (e.key === "2") this.activateCannonMode();
-      if (e.key === "3") this.activateOrbMode();
-      if (e.key === "4") this.activateTripleCannonMode();
-    });
-  },
+    this.gameState        = "tutorial";
+    this._tutHoldProgress = 0;
+    this._tutEnterAnim    = 0;
+    this._tutOrbT         = 0;
+    this._tutPulseT       = 0;
+    this._tutNoFingerFrames = 0;
+    this._initTutStars();
 
-  _restartSpawnTimer() {
-    if (this.spawnTimer) clearInterval(this.spawnTimer);
-    this.spawnTimer = setInterval(() => {
-      if      (this.mode === "cannon") this.spawnCannonNote();
-      else if (this.mode === "orb")    this.spawnOrbNote();
-      else if (this.mode === "triple") this.spawnTripleNote();
-      else                             this.spawnNote();
-    }, this.spawnInterval);
-  },
+    if (!this._listenersAttached) {
+      this._listenersAttached = true;
 
+      window.addEventListener("resize", () => {
+        clearTimeout(this._resizeTimer);
+        this._resizeTimer = setTimeout(() => this._onResize(), 150);
+      });
+      window.addEventListener("orientationchange", () => {
+        clearTimeout(this._resizeTimer);
+        this._resizeTimer = setTimeout(() => this._onResize(), 300);
+      });
 
-  /* ============================================================
-     RESIZE
-  ============================================================ */
-  onResize(width, height) {
-    this.centerX = width / 2;
-    this.centerY = height / 2;
-    const base = Math.min(width, height);
-    this.baseOuterRadius = base * 0.25 * this.ringScale;
-    this.baseInnerRadius = this.baseOuterRadius * 0.8;
-    this.currentOuterRadius = this.baseOuterRadius;
-    this.currentInnerRadius = this.baseInnerRadius;
+      // ── Unified Double Click / Double Tap Interaction Listener ──
+      this._lastTapTime = 0;
+      window.addEventListener("pointerdown", (e) => {
+        if (this.gameState !== "playing") return;
+        
+        const now = performance.now();
+        const timespan = now - this._lastTapTime;
+        
+        if (timespan > 0 && timespan < 300) {
+          e.preventDefault();
+          this._noHandDuration = 0;
+          
+          const pBtn = document.getElementById("pauseBtn");
+          if (pBtn) {
+            pBtn.style.display = "none";
+            pBtn.style.opacity = "0";
+          }
+          window.pauseGame();
+        }
+        this._lastTapTime = now;
+      });
 
-    this.speedCap  = this.baseOuterRadius * 0.6;
-    this.speedMin  = this.speedCap * 0.40;
-    if (!this.noteSpeed || this.noteSpeed > this.speedCap) {
-      this.noteSpeed = this.speedCap;
-    }
-
-    this.launcherSafeRadius = this.baseOuterRadius * 0.45;
-    this._initBgStars();
-  },
-
-
-  /* ============================================================
-     ADAPTIVE SPEED
-  ============================================================ */
-  _penalizeSpeed() {
-    this.noteSpeed = Math.max(this.speedMin, this.noteSpeed - this.speedCap * this.speedPenaltyStep);
-  },
-
-  _recoverSpeed() {
-    this.noteSpeed = Math.min(this.speedCap, this.noteSpeed + this.speedCap * this.speedRecoveryStep);
-  },
-
-  _driftSpeed(dt) {
-    if (this.noteSpeed < this.speedCap) {
-      this.noteSpeed = Math.min(
-        this.speedCap,
-        this.noteSpeed + (this.speedCap - this.noteSpeed) * this.speedDriftRate * dt * 60
-      );
+      canvasElement.addEventListener("click", () => {
+        if (this.mode1GameOver) this.retryMode1();
+      });
     }
   },
 
+  /* ── Resize — layout only, never resets score ───────────── */
+  _onResize() {
+    this._applyResize(window.innerWidth, window.innerHeight);
+    this.initStarfield();
+    this.initDustMotes();
+    // Clear visuals that depend on screen dimensions
+    this.shootingStars = [];
+    this.particles = [];
+    this.sparkBursts = [];
+    this.floatNumbers = [];
+    // Reposition mascot to center (prevents drift after resize)
+    this.mascot.x = this.CENTER_X; this.mascot.y = this.CENTER_Y;
+    this.mascot.vx = 0; this.mascot.vy = 0;
+    // Reset finger smoothing
+    this.fingerX = null; this.fingerY = null;
+    this.fingerSmoothX = null; this.fingerSmoothY = null;
+    // Re-layout numbers if mid-round
+    if (!this.mode1GameOver && this.gameState === "playing") {
+      this.spawnMode1Numbers();
+    }
+    // Cancel unstable states
+    this.mode1SuctionActive = false;
+    this.mode1MergeActive   = false;
+    this.mode1BreakActive   = false;
+    this.blackHoleActive    = false;
+    if (this.gameState === "tutorial") this._initTutStars();
+  },
 
-  /* ============================================================
-     BACKGROUND
-  ============================================================ */
-  _initBgStars() {
-    this.bgStars = [];
+  _applyResize(w, h) {
+    const dpr = window.devicePixelRatio || 1;
+    canvasElement.width        = Math.round(w * dpr);
+    canvasElement.height       = Math.round(h * dpr);
+    canvasElement.style.width  = w + "px";
+    canvasElement.style.height = h + "px";
+    canvasElement.getContext("2d").setTransform(dpr, 0, 0, dpr, 0, 0);
+    this.scale    = Math.min(w / this.BASE_WIDTH, h / this.BASE_HEIGHT) || 1;
+    this.CENTER_X = w / 2;
+    this.CENTER_Y = h / 2;
+  },
+
+  /* ── Tutorial stars ─────────────────────────────────────── */
+  _initTutStars() {
+    const w = window.innerWidth, h = window.innerHeight;
+    this._tutStars = [];
     for (let i = 0; i < 80; i++) {
-      this.bgStars.push({
-        x: Math.random() * (this.centerX * 2),
-        y: Math.random() * (this.centerY * 2),
+      this._tutStars.push({
+        x: Math.round(Math.random() * w),
+        y: Math.round(Math.random() * h),
         r: 0.5 + Math.random() * 1.4,
         a: 0.1 + Math.random() * 0.4,
         tw: Math.random() * Math.PI * 2,
@@ -241,1067 +245,1021 @@ const Game1 = {
     }
   },
 
-  _drawBg(ctx) {
-    const W = this.centerX * 2, H = this.centerY * 2;
-    const g = ctx.createRadialGradient(this.centerX, this.centerY * 0.6, 0, this.centerX, H * 0.5, Math.max(W, H) * 0.75);
-    g.addColorStop(0, "#1a2d4a");
-    g.addColorStop(0.5, "#0f1e35");
-    g.addColorStop(1, "#080f1c");
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, W, H);
+  /* ── Transition from tutorial → playing ─────────────────── */
+  _startPlaying() {
+    this.gameState = "playing";
   },
 
-  _drawBgStars(ctx, dt) {
-    for (const s of this.bgStars) {
+  /* ============================================================
+     TUTORIAL DRAW
+  ============================================================ */
+  /* ============================================================
+     TUTORIAL DRAW
+  ============================================================ */
+  _updateTutorial(ctx, fingers, dt) {
+    this._tutEnterAnim = Math.min(1, this._tutEnterAnim + dt * 2);
+    this._tutOrbT     += dt;
+    this._tutPulseT   += dt * 1.8;
+
+    if (this._tutPage === undefined) {
+      this._tutPage = 1;
+    }
+
+    const eA    = t => 1 - Math.pow(1 - Math.max(0, Math.min(1, t)), 3);
+    const alpha = eA(this._tutEnterAnim);
+    const W = this.cssWidth, H = this.cssHeight;
+    const cx = this.CENTER_X, cy = this.CENTER_Y;
+    const T = this.T;
+
+    /* Background matching game environment */
+    const bg = ctx.createLinearGradient(0, 0, 0, H);
+    bg.addColorStop(0, T.bg1); bg.addColorStop(0.5, T.bg2); bg.addColorStop(1, T.bg3);
+    ctx.globalAlpha = alpha; ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+    
+    const ag = ctx.createRadialGradient(cx, cy * 0.7, 0, cx, cy * 0.7, W * 0.55);
+    ag.addColorStop(0, "rgba(124,58,237,0.12)"); ag.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = ag; ctx.fillRect(0, 0, W, H);
+
+    for (const s of this._tutStars) {
       s.tw += s.ts;
-      const alpha = Math.max(0, s.a + Math.sin(s.tw) * 0.12);
-      ctx.globalAlpha = alpha;
-      ctx.fillStyle = "#c8dff0";
-      ctx.beginPath();
-      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.globalAlpha = alpha * Math.max(0, s.a + Math.sin(s.tw) * 0.12);
+      ctx.fillStyle = "#ffffff"; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = alpha;
+
+    const tColor = "#7c3aed";
+    const isMob  = W < 540;
+    const cardW  = Math.min(W - 32, isMob ? 360 : 700);
+    const cardH  = Math.min(H - 60, isMob ? 580 : 540);
+    const cardX  = cx - cardW / 2;
+    const cardY  = cy - cardH / 2;
+    const cR     = 20;
+    const hr = s => { const h=(s||"").replace("#",""); const r=parseInt(h.slice(0,2),16),g=parseInt(h.slice(2,4),16),b=parseInt(h.slice(4,6),16); return isNaN(r)?"124,58,237":`${r},${g},${b}`; };
+
+    /* Card Frame structure */
+    ctx.shadowColor = tColor; ctx.shadowBlur = 28;
+    ctx.fillStyle = "rgba(18,12,46,0.96)";
+    ctx.beginPath(); ctx.roundRect(cardX, cardY, cardW, cardH, cR); ctx.fill(); ctx.shadowBlur = 0;
+    ctx.strokeStyle = `rgba(${hr(tColor)},0.45)`; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.fillStyle = `rgba(${hr(tColor)},0.16)`;
+    ctx.beginPath(); ctx.roundRect(cardX, cardY, cardW, 56, [cR, cR, 0, 0]); ctx.fill();
+
+    /* Header text rendering */
+    ctx.font = `bold ${isMob ? 22 : 28}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+    ctx.fillStyle = "#a78bfa"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.shadowColor = "#a78bfa"; ctx.shadowBlur = 14;
+    ctx.fillText("🌌  GALAXY COLLECTOR", cx, cardY + 28); ctx.shadowBlur = 0;
+    
+    ctx.font = `${isMob ? 12 : 14}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+    ctx.fillStyle = "rgba(226,232,240,0.68)";
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Core Mechanics & Target UI' : 'Hearts & Streak Bonus'}`, cx, cardY + 65);
+
+    /* Left Side Mini-Diagram Box Frame */
+    const visX = cardX + 12, visY = cardY + 76;
+    const visW = isMob ? cardW - 24 : cardW * 0.42;
+    const visH = isMob ? 140 : cardH - 200;
+    ctx.fillStyle = "rgba(8,6,28,0.72)";
+    ctx.beginPath(); ctx.roundRect(visX, visY, visW, visH, 12); ctx.fill();
+    ctx.strokeStyle = `rgba(${hr(tColor)},0.14)`; ctx.lineWidth = 1; ctx.stroke();
+    this._drawTutVisual(ctx, visX, visY, visW, visH, this._tutOrbT);
+
+    /* Split Pagination Rows Matrix */
+    const contentRows = [];
+    if (this._tutPage === 1) {
+      contentRows.push(
+        { isHeader: true,  text: "🎮 Gameplay" },
+        { icon: "👆", text: "Your index finger controls the portal" },
+        { icon: "🌌", text: "Move portal around to absorb numbers" },
+        { icon: "✅", text: "Swallow numbers matching portal suffix" },
+        { isHeader: true,  text: "⭐ Score Parameters" },
+        { icon: "✨", text: "Absorb matching numbers to earn points" },
+        { icon: "🔥", text: "Consecutive matches multiply total scores" }
+      );
+    } else {
+      contentRows.push(
+        { isHeader: true,  text: "⏱️ Round Vital Metrics" },
+        { icon: "❤️", text: "You begin with 3 full structural hearts" },
+        { icon: "⏳", text: "Absorbing incorrect numbers drops 1 heart" },
+        { isHeader: true,  text: "🔥 Streak Bonus Points" },
+        { icon: "✅", text: "0-2 in a row = +10 points" },
+        { icon: "✨", text: "3-4 in a row = +20 points" },
+        { icon: "⭐", text: "5-9 in a row = +30 points" },
+        { icon: "🔥", text: "10+ in a row = +50 points!" }
+      );
+    }
+
+    const rulesX = isMob ? cardX + 12 : cardX + visW + 24;
+    const rulesY = isMob ? visY + visH + 10 : cardY + 76;
+    const rulesW = isMob ? cardW - 24 : cardW - visW - 36;
+    const dynamicRowH = isMob ? (this._tutPage === 1 ? 30 : 27) : (this._tutPage === 1 ? 36 : 33);
+
+    for (let i = 0; i < contentRows.length; i++) {
+      const item = contentRows[i];
+      const currentY = rulesY + (i * dynamicRowH);
+      const prog = Math.max(0, Math.min(1, (this._tutEnterAnim - i * 0.08) / 0.6));
+      ctx.globalAlpha = alpha * (1 - Math.pow(1 - prog, 3));
+
+      if (item.isHeader) {
+        ctx.font = `bold ${isMob ? 13 : 15}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+        ctx.fillStyle = "#a78bfa"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(item.text, rulesX + 4, currentY + dynamicRowH / 2);
+      } else {
+        ctx.fillStyle = i % 2 === 0 ? "rgba(18,10,50,0.55)" : "rgba(10,6,30,0.4)";
+        ctx.beginPath(); ctx.roundRect(rulesX, currentY, rulesW, dynamicRowH - 4, 8); ctx.fill();
+        
+        ctx.font = `${isMob ? 15 : 17}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+        ctx.fillStyle = T.textPrimary; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+        ctx.fillText(item.icon, rulesX + 10, currentY + dynamicRowH / 2 - 2);
+        
+        ctx.font = `${isMob ? 11.5 : 13}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+        ctx.fillStyle = `rgba(226,232,240,0.85)`;
+        ctx.fillText(item.text, rulesX + 36, currentY + dynamicRowH / 2 - 2);
+      }
+    }
+    ctx.globalAlpha = alpha;
+
+    /* Interactive Progress Divider and Hold Validation */
+    const holdY = cardY + cardH - (isMob ? 82 : 86);
+    ctx.strokeStyle = `rgba(${hr(tColor)},0.18)`; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cardX + 20, holdY - 6); ctx.lineTo(cardX + cardW - 20, holdY - 6); ctx.stroke();
+
+    const hasFing = fingers.length > 0;
+    if (hasFing) {
+      this._tutHoldProgress = Math.min(1, this._tutHoldProgress + dt / this.HOLD_SEC);
+      if (this._tutHoldProgress >= 1) {
+        if (this._tutPage === 1) {
+          this._tutPage = 2;
+          this._tutHoldProgress = 0;
+          this._tutEnterAnim = 0.3;
+        } else {
+          this._tutPage = 1;
+          ctx.globalAlpha = 1;
+          this._startPlaying();
+          return;
+        }
+      }
+    } else {
+      this._tutHoldProgress = Math.max(0, this._tutHoldProgress - dt * 0.5);
+    }
+
+    if (!hasFing) {
+      const blink = Math.sin(this._tutPulseT * 3) > 0;
+      ctx.font = `bold ${isMob ? 13 : 15}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+      ctx.fillStyle = blink ? "#fbbf24" : "rgba(251,191,36,0.55)";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.shadowColor = "#fbbf24"; ctx.shadowBlur = blink ? 12 : 0;
+      ctx.fillText("☝ Raise your index finger to the camera!", cx, holdY + 18); ctx.shadowBlur = 0;
+      ctx.font = `${isMob ? 11 : 13}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+      ctx.fillStyle = "rgba(167,139,250,0.65)";
+      const promptStr = this._tutPage === 1 ? "Hold still for 3 seconds to view Page 2" : "Hold still for 3 seconds to launch";
+      ctx.fillText(promptStr, cx, holdY + 40);
+    } else {
+      const pct = Math.round(this._tutHoldProgress * 100);
+      ctx.font = `bold ${isMob ? 13 : 15}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+      ctx.fillStyle = "#a78bfa"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.shadowColor = "#a78bfa"; ctx.shadowBlur = 10;
+      const actionStr = this._tutPage === 1 ? `Loading Page 2... ${pct}%` : `Hold still... ${pct}%`;
+      ctx.fillText(actionStr, cx, holdY + 16); ctx.shadowBlur = 0;
+      
+      const barW = cardW * 0.6, barH = 8, barX = cx - barW / 2, barY = holdY + 34;
+      ctx.fillStyle = "rgba(18,10,50,0.8)";
+      ctx.beginPath(); ctx.roundRect(barX, barY, barW, barH, 4); ctx.fill();
+      ctx.fillStyle = "#a78bfa"; ctx.shadowColor = "#a78bfa"; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.roundRect(barX, barY, barW * this._tutHoldProgress, barH, 4); ctx.fill(); ctx.shadowBlur = 0;
+    }
+
+    /* Reticle Pass */
+    if (hasFing) {
+      const fx = fingers[0].x, fy = fingers[0].y;
+      ctx.beginPath(); ctx.arc(fx, fy, 38, 0, Math.PI * 2);
+      ctx.strokeStyle = `rgba(${hr(tColor)},0.18)`; ctx.lineWidth = 5; ctx.stroke();
+      if (this._tutHoldProgress > 0.01) {
+        ctx.beginPath(); ctx.arc(fx, fy, 38, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * this._tutHoldProgress);
+        ctx.strokeStyle = "#a78bfa"; ctx.lineWidth = 5; ctx.shadowColor = "#a78bfa"; ctx.shadowBlur = 14; ctx.stroke(); ctx.shadowBlur = 0;
+      }
+      ctx.beginPath(); ctx.arc(fx, fy, 22, 0, Math.PI * 2);
+      ctx.shadowColor = "rgba(124,58,237,0.7)"; ctx.shadowBlur = 28;
+      ctx.fillStyle = "rgba(90,40,180,0.45)"; ctx.fill();
+      ctx.beginPath(); ctx.arc(fx, fy, 10, 0, Math.PI * 2);
+      ctx.shadowBlur = 12; ctx.fillStyle = "#c4b5fd"; ctx.fill(); ctx.shadowBlur = 0;
     }
     ctx.globalAlpha = 1;
   },
 
+  /* ── Tutorial visual: portal with scattered number cards ── */
+  _drawTutVisual(ctx, px, py, pw, ph, t) {
+    ctx.save(); ctx.translate(px, py);
+    const mx = pw / 2, my = ph / 2;
+    const T = this.T;
 
-  /* ============================================================
-     LEVEL / XP
-  ============================================================ */
-  _gainXP(amount) {
-    if (this.level >= this.maxLevel) return;
-    this.xp += amount;
-    if (this.xp >= this.xpToNext) {
-      this.xp = 0;
-      this.level++;
-      this.xpToNext = Math.min(8 + this.level * 2, 25);
-      this.xpPopFlash = 1;
-      for (let t = this.tierThresholds.length - 1; t >= 0; t--) {
-        if (this.level >= this.tierThresholds[t]) { this.tier = Math.max(this.tier, t); break; }
-      }
-      this._updateHintState();
-      if (this.level % 3 === 0) {
-        this.spawnInterval = Math.max(650, this.spawnInterval - 60);
-        this._restartSpawnTimer();
-      }
-      this._triggerLevelUpBurst();
+    // Cosmic backdrop
+    const bg = ctx.createRadialGradient(mx, my, 0, mx, my, Math.min(pw, ph) * 0.6);
+    bg.addColorStop(0, "rgba(124,58,237,0.18)"); bg.addColorStop(1, "rgba(10,14,39,0)");
+    ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(mx, my, Math.min(pw, ph) * 0.6, 0, Math.PI * 2); ctx.fill();
+    
+    // Mini stars
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    for (let i = 0; i < 20; i++) {
+      ctx.beginPath(); ctx.arc((i * 37.3) % pw, (i * 29.7) % ph, 0.8, 0, Math.PI * 2); ctx.fill();
     }
-  },
 
-  _updateHintState() {
-    const lv = this.level, prev = this.hintState;
-    if      (lv <= 3)  this.hintState = "full";
-    else if (lv <= 5)  this.hintState = "subtle";
-    else if (lv <= 8)  this.hintState = "none";
-    else if (lv <= 11) this.hintState = "decoy";
-    else               this.hintState = "chaos";
-    if (this.hintState !== prev) {
-      this._hintChangeTimer   = 2800;
-      this._hintChangeMessage = this._hintChangeMessages[this.hintState] || "";
-    }
-  },
+    // Portal (player)
+    const bobY = my + Math.sin(t * 2) * 5;
+    const pg = ctx.createRadialGradient(mx, bobY, 0, mx, bobY, 40);
+    pg.addColorStop(0, "rgba(124,58,237,0.5)"); pg.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = pg; ctx.beginPath(); ctx.arc(mx, bobY, 40, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(mx, bobY, 28, 0, Math.PI * 2);
+    ctx.fillStyle = "#1a1040"; ctx.shadowColor = "#7c3aed"; ctx.shadowBlur = 20; ctx.fill();
+    ctx.strokeStyle = "#a78bfa"; ctx.lineWidth = 2.5; ctx.stroke(); ctx.shadowBlur = 0;
+    ctx.fillStyle = "#fbbf24"; ctx.font = "bold 13px 'Fredoka', cursive";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("ST", mx, bobY);
 
-  _noteVisual(isCorrect, noteId) {
-    const h = this.hintState;
-    const t = this.noiseTime + noteId * 137.5;
-    const sh = Math.abs(Math.sin(t * 0.7));
-    if (h === "full")   return { showCorrect: isCorrect,  showWrong: !isCorrect, shimmerAmt: 0 };
-    if (h === "subtle") return { showCorrect: isCorrect,  showWrong: false,      shimmerAmt: 0 };
-    if (h === "none")   return { showCorrect: false,      showWrong: false,      shimmerAmt: 0 };
-    if (h === "decoy")  return { showCorrect: !isCorrect, showWrong: isCorrect,  shimmerAmt: 0 };
-    return { showCorrect: sh > 0.6, showWrong: sh < 0.25, shimmerAmt: sh };
-  },
-
-  _triggerLevelUpBurst() {
-    this.levelUpActive = true;
-    this.levelUpTimer  = this.levelUpDuration;
-    this.levelUpParticles = [];
-    const cols = [this.C.gold, this.C.correct, this.C.accent, "#ffffff"];
-    for (let i = 0; i < 28; i++) {
-      const a = Math.random() * Math.PI * 2, v = 180 + Math.random() * 220;
-      this.levelUpParticles.push({
-        x: this.centerX, y: this.centerY,
-        vx: Math.cos(a) * v, vy: Math.sin(a) * v,
-        r: 3 + Math.random() * 5,
-        color: cols[i % cols.length], life: 1,
-      });
-    }
-  },
-
-  _updateLevelUp(dt) {
-    if (!this.levelUpActive) return;
-    this.levelUpTimer -= dt * 1000;
-    if (this.xpPopFlash > 0) this.xpPopFlash = Math.max(0, this.xpPopFlash - dt * 3);
-    for (const p of this.levelUpParticles) {
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      p.vx *= 0.94; p.vy *= 0.94; p.vy += 120 * dt; p.life -= dt * 1.1;
-    }
-    this.levelUpParticles = this.levelUpParticles.filter(p => p.life > 0);
-    if (this.levelUpTimer <= 0) this.levelUpActive = false;
-  },
-
-  _drawLevelUpBurst(ctx) {
-    if (!this.levelUpActive) return;
-    const prog = 1 - this.levelUpTimer / this.levelUpDuration;
-    for (const p of this.levelUpParticles) {
-      ctx.globalAlpha = Math.max(0, p.life) * 0.9;
-      ctx.fillStyle = p.color; ctx.shadowColor = p.color; ctx.shadowBlur = 12;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-    if (prog > 0.05 && prog < 0.8) {
-      const alpha = Math.sin(prog / 0.8 * Math.PI);
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(this.centerX, this.centerY - 110);
-      ctx.scale(0.8 + alpha * 0.3, 0.8 + alpha * 0.3);
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = "bold 44px 'Trebuchet MS', sans-serif";
-      ctx.shadowColor = this.C.gold; ctx.shadowBlur = 28;
-      ctx.fillStyle = this.C.gold;
-      ctx.fillText("LEVEL " + this.level + "!", 0, 0);
-      ctx.font = "bold 22px 'Trebuchet MS', sans-serif";
-      ctx.fillStyle = this.tierColors[this.tier];
-      ctx.shadowColor = this.tierColors[this.tier]; ctx.shadowBlur = 14;
-      ctx.fillText(this.tierNames[this.tier], 0, 46);
+    // Number cards
+    const cards = [
+      { x: pw * 0.15, y: my - 28, num: 1,  c: true  },
+      { x: pw * 0.80, y: my - 20, num: 4,  c: false },
+      { x: pw * 0.22, y: my + 40, num: 21, c: true  },
+      { x: pw * 0.76, y: my + 42, num: 7,  c: false },
+    ];
+    for (const card of cards) {
+      const cr = 22;
+      ctx.save(); ctx.translate(card.x, card.y);
+      ctx.fillStyle = T.cardBg;
+      ctx.beginPath(); ctx.roundRect(-cr, -cr * 0.7, cr * 2, cr * 1.4, 8); ctx.fill();
+      ctx.strokeStyle = card.c ? T.correct : "rgba(255,255,255,0.18)"; ctx.lineWidth = card.c ? 2 : 1;
+      if (card.c) { ctx.shadowColor = T.correct; ctx.shadowBlur = 12; }
+      ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.fillStyle = "#fbbf24"; ctx.font = "bold 19px 'Fredoka', cursive";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(card.num, 0, 0);
       ctx.restore();
     }
-  },
 
-  _drawHintChangeAnnouncement(ctx, dt) {
-    if (this._hintChangeTimer <= 0 || !this._hintChangeMessage) return;
-    this._hintChangeTimer -= dt * 1000;
-    const total = 2800, progress = 1 - this._hintChangeTimer / total;
-    let alpha;
-    if      (progress < 0.14) alpha = progress / 0.14;
-    else if (progress < 0.72) alpha = 1;
-    else                       alpha = 1 - (progress - 0.72) / 0.28;
-    alpha = Math.max(0, Math.min(1, alpha));
-    const colors = { subtle: "#f5c842", none: "#8ecae6", decoy: "#e87c6d", chaos: "#c084fc" };
-    const col = colors[this.hintState] || "#ffffff";
-    const W = this.centerX * 2, bannerY = this.centerY * 0.38;
-    ctx.save(); ctx.globalAlpha = alpha;
-    const msg = this._hintChangeMessage;
-    ctx.font = "bold 30px 'Trebuchet MS', sans-serif";
-    const tw = ctx.measureText(msg).width;
-    const bw = tw + 56, bh = 56, bx = W / 2 - bw / 2, by = bannerY - bh / 2, br = bh / 2;
-    ctx.beginPath();
-    ctx.moveTo(bx + br, by); ctx.arcTo(bx + bw, by, bx + bw, by + bh, br);
-    ctx.arcTo(bx + bw, by + bh, bx, by + bh, br); ctx.arcTo(bx, by + bh, bx, by, br);
-    ctx.arcTo(bx, by, bx + bw, by, br); ctx.closePath();
-    ctx.fillStyle = "rgba(8,14,28,0.88)"; ctx.fill();
-    ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.shadowColor = col; ctx.shadowBlur = 16; ctx.stroke(); ctx.shadowBlur = 0;
-    ctx.fillStyle = col; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.shadowColor = col; ctx.shadowBlur = 10;
-    ctx.fillText(msg, W / 2, bannerY);
+    // Animated suction trail to first correct card
+    const sc = cards.find(c => c.c);
+    if (sc) {
+      const prog = (t * 0.5) % 1;
+      const lx = sc.x + (mx - sc.x) * prog, ly = sc.y + (bobY - sc.y) * prog;
+      ctx.strokeStyle = "rgba(52,211,153,0.38)"; ctx.lineWidth = 1.5; ctx.setLineDash([4, 6]);
+      ctx.beginPath(); ctx.moveTo(sc.x, sc.y); ctx.lineTo(mx, bobY); ctx.stroke(); ctx.setLineDash([]);
+      ctx.beginPath(); ctx.arc(lx, ly, 7, 0, Math.PI * 2); ctx.fillStyle = "#fbbf24"; ctx.fill();
+      ctx.fillStyle = "#000"; ctx.font = "bold 7px 'Fredoka', cursive";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("1", lx, ly);
+    }
+
+    ctx.font = "10px 'Fredoka', cursive"; ctx.fillStyle = "rgba(167,139,250,0.8)";
+    ctx.textAlign = "center"; ctx.fillText("Swallow only numbers ending in ST!", mx, ph - 8);
+
+    const legendY = ph + 10;
+
+    ctx.beginPath(); ctx.arc(mx - 46, legendY, 8, 0, Math.PI * 2); ctx.fillStyle = "rgba(124,58,237,0.35)"; ctx.fill();
+    ctx.beginPath(); ctx.arc(mx - 46, legendY, 4, 0, Math.PI * 2); ctx.fillStyle = "#c4b5fd"; ctx.fill();
+    ctx.fillStyle = "rgba(167,139,250,0.75)"; ctx.font = "11px 'Fredoka', cursive";
+    ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("= controls the portal", mx - 36, legendY);
+
     ctx.restore();
   },
 
-  _drawXPRing(ctx, cx, cy, radius) {
-    const fill = this.level >= this.maxLevel ? 1 : this.xp / this.xpToNext;
-    const tierColor = this.tierColors[this.tier];
-    const start = -Math.PI / 2;
-    ctx.beginPath(); ctx.arc(cx, cy, radius, 0, Math.PI * 2);
-    ctx.strokeStyle = this.C.xpTrack; ctx.lineWidth = 6; ctx.stroke();
-    if (fill > 0.01) {
-      ctx.beginPath(); ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
-      ctx.strokeStyle = tierColor; ctx.lineWidth = 6;
-      ctx.shadowColor = tierColor; ctx.shadowBlur = 12 + this.xpPopFlash * 20;
-      ctx.stroke(); ctx.shadowBlur = 0;
-    }
-    if (this.xpPopFlash > 0) {
-      ctx.beginPath(); ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
-      ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash * 0.55})`;
-      ctx.lineWidth = 5 * this.xpPopFlash; ctx.stroke();
-    }
-  },
-
-
-  /* ============================================================
-     HUD
-  ============================================================ */
-  _pill(ctx, x, y, w, h) {
-    const r = h / 2;
-    ctx.beginPath();
-    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r);
-    ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r);
-    ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
-    ctx.fillStyle = this.C.hudBg; ctx.fill();
-    ctx.strokeStyle = this.C.hudBorder; ctx.lineWidth = 1; ctx.stroke();
-  },
-
-  _drawHUD(ctx, isLauncher, dt) {
-    const W = this.centerX * 2, H = this.centerY * 2;
-    const f = "bold 20px 'Trebuchet MS', sans-serif";
-
-    if (isLauncher) {
-      ctx.fillStyle = this.C.hudBg; ctx.fillRect(0, 0, W, 50);
-      ctx.strokeStyle = this.C.hudBorder; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0, 50); ctx.lineTo(W, 50); ctx.stroke();
-      ctx.font = f; ctx.textBaseline = "middle";
-      ctx.fillStyle = "#e8f4ff"; ctx.textAlign = "left";
-      ctx.fillText("⭐ " + this.score, 16, 25);
-      ctx.fillStyle = this.C.gold; ctx.textAlign = "center";
-      ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
-      ctx.fillText(this.gameTitle, W / 2, 25);
-      ctx.textAlign = "right";
-      ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
-      ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
-      ctx.fillText("x" + this.combo + " combo", W - 16, 25);
-    } else {
-      this._pill(ctx, 14, 14, 155, 42);
-      ctx.font = f; ctx.fillStyle = "#e8f4ff"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      ctx.fillText("⭐ " + this.score, 28, 35);
-      this._pill(ctx, W - 174, 14, 160, 42);
-      ctx.textAlign = "right";
-      ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
-      ctx.fillText("🔥 " + this.combo + "  x" + this.multiplier, W - 28, 35);
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillStyle = this.C.gold; ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
-      ctx.shadowColor = "rgba(245,200,66,0.4)"; ctx.shadowBlur = 14;
-      ctx.fillText(this.gameTitle, W / 2, 34); ctx.shadowBlur = 0;
-    }
-
-    const ringCX = W / 2, ringCY = isLauncher ? H - 60 : H - 48, ringR = 26;
-    this._drawXPRing(ctx, ringCX, ringCY, ringR);
-    ctx.font = "bold 13px 'Trebuchet MS', sans-serif";
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillStyle = this.tierColors[this.tier];
-    ctx.shadowColor = this.tierColors[this.tier]; ctx.shadowBlur = 8;
-    ctx.fillText("Lv." + this.level, ringCX, ringCY); ctx.shadowBlur = 0;
-
-    const diffLabels = { full: "🟢 Training", subtle: "🟡 Subtle", none: "🔵 Blind", decoy: "🔴 Decoy", chaos: "🟣 Chaos" };
-    ctx.textAlign = "right"; ctx.textBaseline = "bottom"; ctx.font = "13px 'Trebuchet MS', sans-serif";
-    ctx.globalAlpha = 0.7;
-    ctx.fillStyle = this.tierColors[this.tier]; ctx.fillText(this.tierNames[this.tier], W - 12, H - 8);
-    ctx.fillStyle = "#c8dff0"; ctx.fillText(diffLabels[this.hintState] || "", W - 12, H - 26);
+  /* ── No-finger prompt (drawn on canvas) ─────────────────── */
+  _drawNoFingerPrompt(ctx) {
+    const fingers = window.fingerPositions || [];
+    if (fingers.length > 0) { this._tutNoFingerFrames = 0; return; }
+    this._tutNoFingerFrames++;
+    if (this._tutNoFingerFrames < this._tutNoFingerThreshold) return;
+    const W = this.cssWidth, H = this.cssHeight;
+    const copy  = "☝ Raise your index finger to navigate the galaxy!";
+    const blink = Math.sin(performance.now() * 0.003) > 0;
+    ctx.font = "bold 15px 'Fredoka', 'Trebuchet MS', sans-serif";
+    const tw = ctx.measureText(copy).width;
+    const bw = tw + 56, bh = 46, bx = W / 2 - bw / 2, by = H - 110;
+    ctx.globalAlpha = blink ? 0.95 : 0.55;
+    ctx.fillStyle = "rgba(18,12,46,0.92)";
+    ctx.beginPath(); ctx.roundRect(bx, by, bw, bh, bh / 2); ctx.fill();
+    ctx.strokeStyle = blink ? "#a78bfa" : "rgba(167,139,250,0.4)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = "#a78bfa"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(copy, W / 2, by + bh / 2);
     ctx.globalAlpha = 1;
   },
 
+  /* ── Mode 1 setup ────────────────────────────────────────── */
+  activateGameMode1() {
+    this.gameMode = 1;
+    const s = ["st","nd","rd","th"];
+    this.mode1TargetSuffix = s[Math.floor(Math.random() * 4)];
+    this.spawnMode1Numbers();
+  },
+
+  /* ── Suffix helpers ──────────────────────────────────────── */
+  getSuffix(num) {
+    const t = num % 100;
+    if (t >= 11 && t <= 13) return "th";
+    const l = num % 10;
+    if (l === 1) return "st"; if (l === 2) return "nd"; if (l === 3) return "rd";
+    return "th";
+  },
+  generateNumberWithSuffix(suffix, usedNumbers) {
+    usedNumbers = usedNumbers || new Set();
+    let n, attempts = 0;
+    do {
+      n = Math.floor(Math.random() * this.numberRange) + 1;
+      attempts++;
+      if (attempts > 200) {
+        for (let i = 1; i <= this.numberRange; i++) {
+          if (this.getSuffix(i) === suffix && !usedNumbers.has(i)) return i;
+        }
+        for (let i = 1; i <= this.numberRange; i++) {
+          if (this.getSuffix(i) === suffix) return i;
+        }
+        for (let i = 1; i <= 100; i++) {
+          if (this.getSuffix(i) === suffix && !usedNumbers.has(i)) return i;
+        }
+        return 1;
+      }
+    } while (this.getSuffix(n) !== suffix || usedNumbers.has(n));
+    return n;
+  },
+
+  /* ── Count valid numbers for suffix ── */
+  countValidNumbers(suffix) {
+    let count = 0;
+    for (let n = 1; n <= this.numberRange; n++) {
+      if (this.getSuffix(n) === suffix) count++;
+    }
+    return count;
+  },
+
+  /* ── Spawn numbers ───────────────────────────────────────── */
+  spawnMode1Numbers() {
+    this.mode1Numbers = [];
+    this.proximityGlow = [];
+
+    this.mode1SuctionActive = false;
+    this.mode1SuctionData = null;
+
+    this.mode1MergeActive = false;
+    this.mode1BreakActive = false;
+
+    const maxPossible = this.countValidNumbers(this.mode1TargetSuffix);
+    const safeMax = Math.max(1, Math.min(this.mode1MaxMatches, maxPossible));
+    const safeMin = Math.min(this.mode1MinMatches, safeMax);
+
+    const correctCount = safeMax > safeMin
+      ? Math.floor(Math.random() * (safeMax - safeMin + 1)) + safeMin
+      : safeMax;
+
+    this.mode1CorrectTotal = correctCount;
+    this.mode1CorrectCollected = 0;
+
+    this.mode1RoundActive = true;
+    this.mode1Confirming = false;
+
+    const MAX_NUMBERS = 5;
+    const MIN_DISTANCE = 220 * this.scale;
+
+    const count = Math.min(MAX_NUMBERS, 4 + this.level);
+
+    const margin = 140 * this.scale;
+    const safeR = 170 * this.scale;
+
+    // No-spawn zone is centered on the portal's CURRENT position (wherever
+    // the finger actually is right now), not the screen center — otherwise
+    // numbers can spawn under/near a portal that never recenters.
+    const originX = this.mascot.x;
+    const originY = this.mascot.y;
+
+    const used = [];
+    let correctSpawned = 0;
+
+    const usedNumbers = new Set();
+
+    for (let i = 0; i < count; i++) {
+
+      let x, y;
+      let attempts = 0;
+      let foundPosition = false;
+
+      while (attempts < 80 && !foundPosition) {
+        attempts++;
+        x = margin + Math.random() * (this.cssWidth - margin * 2);
+        y = margin + Math.random() * (this.cssHeight - margin * 2);
+
+        if (Math.hypot(x - originX, y - originY) < safeR) continue;
+
+        let tooClose = false;
+        for (const p of used) {
+          if (Math.hypot(x - p.x, y - p.y) < MIN_DISTANCE) { tooClose = true; break; }
+        }
+        if (!tooClose) foundPosition = true;
+      }
+
+      if (!foundPosition) {
+        x = margin + Math.random() * (this.cssWidth - margin * 2);
+        y = margin + Math.random() * (this.cssHeight - margin * 2);
+      }
+
+      used.push({ x, y });
+
+      let num;
+      if (correctSpawned < correctCount) {
+        num = this.generateNumberWithSuffix(this.mode1TargetSuffix, usedNumbers);
+        correctSpawned++;
+      } else {
+        let distAttempts = 0;
+        do {
+          num = Math.floor(Math.random() * this.numberRange) + 1;
+          distAttempts++;
+          if (distAttempts > 300) break;
+        } while (
+          (this.getSuffix(num) === this.mode1TargetSuffix || usedNumbers.has(num))
+        );
+      }
+
+      usedNumbers.add(num);
+
+      this.mode1Numbers.push({
+        number: num,
+        x, y,
+        baseX: x, baseY: y,
+        floatAmp: 6 * this.scale,
+        floatPeriod: 2500 + Math.random() * 1500,
+        floatOffset: Math.random() * Math.PI * 2,
+        renderScale: 1,
+        renderRotation: 0,
+        spawnAlpha: 0,
+        spawnDelay: i * 80
+      });
+
+      this.proximityGlow.push(0);
+    }
+  },
 
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
-  update(ctx, fingers, dt = 1 / 60) {
-    this._drawBg(ctx);
-    this._drawBgStars(ctx, dt);
-    this._updateLevelUp(dt);
-    this.noiseTime += dt * 1.8;
-    this._driftSpeed(dt);
+  update(ctx, _fp, dtArg) {
+    if (!this.running) return;
 
-    const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
+    const now = performance.now();
+    let delta;
+    if (typeof dtArg === "number" && dtArg > 0 && dtArg < 1) delta = dtArg * 1000;
+    else delta = now - this.lastTime;
+    delta = Math.min(Math.max(delta, 1), 50);
+    this.lastTime = now;
 
-    if (!isLauncher) this.drawRings(ctx, dt);
+    if (this.gameState === "tutorial") {
+      const fingers = window.fingerPositions || [];
+      this._updateTutorial(ctx, fingers, delta / 1000);
+      return;
+    }
 
-    if (this.mode === "cannon") {
-      this.updateCannonNotes(ctx, dt);
-      this.drawCannon(ctx, dt);
-      this.drawExplosions(ctx);
-      this.drawLauncherZone(ctx);
-      this.drawCharging(ctx);
-      this.updateCharging(dt);
-    } else if (this.mode === "orb") {
-      this.updateCannonNotes(ctx, dt);
-      this.drawOrbLauncher(ctx, dt);
-      this.drawExplosions(ctx);
-      this.drawLauncherZone(ctx);
-      this.drawCharging(ctx);
-      this.updateCharging(dt);
-    } else if (this.mode === "triple") {
-      this.updateCannonNotes(ctx, dt);
-      this.drawTripleCannons(ctx, dt);
-      this.drawExplosions(ctx);
-      this.drawLauncherZone(ctx);
+    this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
+    }
+
+    this.drawBackground(ctx);
+    if (this.theme === "space") {
+      this.updateStars(delta); this.drawStars(ctx);
+      this.updateShootingStars(delta); this.drawShootingStars(ctx);
     } else {
-      this.drawNotes(ctx, dt);
+      this.updateDustMotes(delta); this.drawDustMotes(ctx);
     }
 
-    if (this.mode === "triple" && this.previewTimer > 0) {
-      this.previewTimer -= dt;
-      if (this.previewTimer <= 0) this.executeTripleShot();
-    }
+    this.updateBigBang(delta);
+    this.updateFingerPosition(now);
+    this.updateMascot(delta);
+    this.updatePortalAnimation(delta);
+    this.updateNumberSpawns(delta);
+    this.updateMode1Logic(delta);
+    this.updateMode1Suction(delta);
+    this.updateMode1Merge(delta);
+    this.updateBlackHole(delta);
+    this.updateMode1Break(delta);
+    this.updateParticles(delta);
+    this.updateSparkBursts(delta);
+    this.updateFloatNumbers(delta);
+    this.updateToast(delta);
+    this.updateRoundReward(delta);
+    this.updateHUDTimers(delta);
 
-    this.drawPopEffects(ctx);
-
-    fingers.forEach((finger) => {
-      this.drawFinger(ctx, finger.x, finger.y);
-      if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
-      else            this.checkCollision(finger.x, finger.y);
-    });
-
-    this._drawHUD(ctx, isLauncher, dt);
-    this._drawLevelUpBurst(ctx);
-    this._drawHintChangeAnnouncement(ctx, dt);
-    this.drawHitText(ctx);
+    this.drawMode1PortalPlayer(ctx);
+    this.drawMode1Numbers(ctx);
+    this.drawMode1Merge(ctx);
+    this.drawBlackHole(ctx);
+    this.drawMode1Break(ctx);
+    this.drawParticles(ctx);
+    this.drawSparkBursts(ctx);
+    this.drawFloatNumbers(ctx);
+    this.drawRoundReward(ctx);
+    this.drawHUD(ctx);
+    this.drawInstruction(ctx);
+    this.drawToast(ctx);
+    this.drawBigBangFlash(ctx);
+    this.drawGameOver(ctx);
+    this._drawNoFingerPrompt(ctx);
   },
 
-  drawTitle(ctx) {},
-  drawScore(ctx) {},
-  drawCombo(ctx)  {},
+  /* ── Finger tracking with direct follow & anti-jitter deadzone ───────────────── */
+  updateFingerPosition(now) {
+    if (now - this._lastFingerUpdateTime < this.FINGER_UPDATE_INTERVAL) return;
+    this._lastFingerUpdateTime = now;
 
+    if (!window.fingerPositions || !Array.isArray(window.fingerPositions) || window.fingerPositions.length === 0) {
+      this.fingerX = null; this.fingerY = null;
+      return;
+    }
 
-  /* ============================================================
-     FINGER
-  ============================================================ */
-  drawFinger(ctx, x, y) {
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(x, y, this.baseOuterRadius * 0.065, 0, Math.PI * 2);
-    ctx.shadowColor = "rgba(126,207,179,0.7)"; ctx.shadowBlur = 28;
-    ctx.fillStyle = "rgba(94,180,150,0.45)"; ctx.fill();
-    ctx.beginPath();
-    ctx.arc(x, y, this.baseOuterRadius * 0.030, 0, Math.PI * 2);
-    ctx.shadowBlur = 12; ctx.fillStyle = "#b0f0da"; ctx.fill();
+    const fp = window.fingerPositions[0];
+
+    // Initialize position directly if unset
+    if (this.fingerX === null || this.fingerY === null) {
+      this.fingerX = fp.x;
+      this.fingerY = fp.y;
+      return;
+    }
+
+    // Deadzone threshold (in CSS pixels): ignore microscopic micro-movements to remove jitter
+    const JITTER_THRESHOLD = 2.5; 
+    const dist = Math.hypot(fp.x - this.fingerX, fp.y - this.fingerY);
+
+    // Only update portal position when reading movement exceeds the threshold
+    if (dist >= JITTER_THRESHOLD) {
+      this.fingerX = fp.x;
+      this.fingerY = fp.y;
+    }
+  },
+
+  /* ── Mascot / Portal Movement ───────────────────────────── */
+  updateMascot(delta) {
+    if (this.gameMode === 1 && this.mode1Confirming) {
+      // Round-complete pause: portal freezes exactly where it caught the
+      // last correct number (does NOT fly to center — that's what caused
+      // it to land on top of a number the instant the finger was re-read).
+      this.mode1ConfirmTimer -= delta;
+      this.mascot.vx = 0; this.mascot.vy = 0;
+      if (this.mode1ConfirmTimer <= 0) {
+        this.mode1Confirming = false;
+        this.startNewRound();
+      }
+      return;
+    }
+
+    // Follow finger position directly
+    if (this.fingerX !== null && this.fingerY !== null) {
+      this.mascot.x = this.fingerX;
+      this.mascot.y = this.fingerY;
+      this.mascot.vx = 0;
+      this.mascot.vy = 0;
+    }
+
+    const pad = 70 * this.scale;
+    this.mascot.x = Math.max(pad, Math.min(this.cssWidth  - pad, this.mascot.x));
+    this.mascot.y = Math.max(pad, Math.min(this.cssHeight - pad, this.mascot.y));
+  },
+
+  /* ── Sprites ─────────────────────────────────────────────── */
+  loadMascotSprites() {
+    this.mascotImages = { idle:[], happy:[], confused:[] };
+    for (let i=0;i<=4;i++){const img=new Image();img.src=`MID-I/0${i}_MID-I.png`;this.mascotImages.idle.push(img);}
+    for (let i=0;i<=3;i++){const img=new Image();img.src=`MID-H/0${i}_MID-H.png`;this.mascotImages.happy.push(img);}
+    for (let i=0;i<=2;i++){const img=new Image();img.src=`MID-C/0${i}_MID-C.png`;this.mascotImages.confused.push(img);}
+  },
+  loadPortalSprites() {
+    this.portalFrames = [];
+    for (let i=0;i<=8;i++){const img=new Image();img.src=`D-1/0${i}_D-1.png`;this.portalFrames.push(img);}
+  },
+  updatePortalAnimation(delta) {
+    this.portalFrameTimer += delta;
+    if (this.portalFrameTimer >= this.portalFrameSpeed) { this.portalFrameIndex = (this.portalFrameIndex+1)%Math.max(1,this.portalFrames.length); this.portalFrameTimer -= this.portalFrameSpeed; }
+  },
+
+  /* ── Background ──────────────────────────────────────────── */
+  drawBackground(ctx) {
+    const T=this.T,W=this.cssWidth,H=this.cssHeight;
+    const g=ctx.createLinearGradient(0,0,0,H);
+    g.addColorStop(0,T.bg1);g.addColorStop(0.5,T.bg2);g.addColorStop(1,T.bg3);
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+    const r=ctx.createRadialGradient(this.CENTER_X,this.CENTER_Y*0.7,0,this.CENTER_X,this.CENTER_Y*0.7,W*0.55);
+    r.addColorStop(0,"rgba(124,58,237,0.12)");r.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=r;ctx.fillRect(0,0,W,H);
+  },
+
+  initStarfield() {
+    this.stars=[];
+    for (let i=0;i<120;i++) this.stars.push({x:Math.random()*this.cssWidth,y:Math.random()*this.cssHeight,r:Math.random()*1.8+0.3,speed:0.008+Math.random()*0.025,twinkle:Math.random()*Math.PI*2,twinkleSpd:0.002+Math.random()*0.003,vx:0,vy:0});
+  },
+  updateStars(delta) { for(const s of this.stars){s.y+=s.speed*delta;s.twinkle+=s.twinkleSpd*delta;if(s.y>this.cssHeight){s.y=0;s.x=Math.random()*this.cssWidth;}} },
+  drawStars(ctx) { for(const s of this.stars){ctx.globalAlpha=Math.max(0,0.35+Math.sin(s.twinkle)*0.3);ctx.beginPath();ctx.arc(s.x,s.y,s.r*this.scale,0,Math.PI*2);ctx.fillStyle="#ffffff";ctx.fill();}ctx.globalAlpha=1; },
+
+  updateShootingStars(delta) {
+    this.shootingStarTimer += delta;
+    if (this.shootingStarTimer >= this.shootingStarInterval && this.shootingStars.length < 4) {
+      this.shootingStarTimer = 0; this.shootingStarInterval = 2500 + Math.random() * 3000;
+      const fl=Math.random()<0.5,spd=(7+Math.random()*5)*0.055;
+      this.shootingStars.push({x:fl?-60:this.cssWidth+60,y:Math.random()*this.cssHeight*0.5,vx:fl?spd:-spd,vy:(1.5+Math.random()*1.5)*0.055,life:0,maxLife:900});
+    }
+    for(let i=this.shootingStars.length-1;i>=0;i--){const s=this.shootingStars[i];s.x+=s.vx*delta;s.y+=s.vy*delta;s.life+=delta;if(s.life>s.maxLife)this.shootingStars.splice(i,1);}
+  },
+  drawShootingStars(ctx) {
+    for(const s of this.shootingStars){const alpha=Math.max(0,1-s.life/s.maxLife),tL=160,absVx=Math.abs(s.vx)||0.01,tx=s.x-s.vx*tL/absVx,ty=s.y-s.vy*tL/absVx;const grd=ctx.createLinearGradient(s.x,s.y,tx,ty);grd.addColorStop(0,`rgba(255,255,255,${alpha})`);grd.addColorStop(1,"rgba(255,255,255,0)");ctx.strokeStyle=grd;ctx.lineWidth=2*this.scale;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(tx,ty);ctx.stroke();}
+  },
+
+  initDustMotes() {
+    this.dustMotes=[];
+    for(let i=0;i<60;i++) this.dustMotes.push({x:Math.random()*this.cssWidth,y:Math.random()*this.cssHeight,r:Math.random()*3+1,vx:(Math.random()-0.5)*0.00006,vy:-(0.00004+Math.random()*0.00006),alpha:Math.random()*0.15+0.05});
+  },
+  updateDustMotes(delta) { for(const d of this.dustMotes){d.x+=d.vx*delta;d.y+=d.vy*delta;if(d.y<-10){d.y=this.cssHeight+10;d.x=Math.random()*this.cssWidth;}if(d.x<-10)d.x=this.cssWidth+10;if(d.x>this.cssWidth+10)d.x=-10;} },
+  drawDustMotes(ctx) { for(const d of this.dustMotes){ctx.globalAlpha=d.alpha;ctx.beginPath();ctx.arc(d.x,d.y,d.r*this.scale,0,Math.PI*2);ctx.fillStyle=this.T.accent;ctx.fill();}ctx.globalAlpha=1; },
+
+  /* ── Portal player ───────────────────────────────────────── */
+  drawMode1PortalPlayer(ctx) {
+    const T=this.T,px=this.mascot.x,py=this.mascot.y;
+    const sz=this.portalSize*this.scale,now=performance.now();
+    const spdN=Math.min(Math.hypot(this.mascot.vx,this.mascot.vy)/this.mascot.maxSpeed,1);
+    const scX=1+spdN*0.10,scY=1-spdN*0.07,bob=Math.sin(now*0.003)*5*this.scale;
+    ctx.save();ctx.translate(px,py+bob);ctx.scale(scX,scY);
+    const halo=ctx.createRadialGradient(0,0,sz*0.25,0,0,sz*0.75);
+    halo.addColorStop(0,T.accentGlow);halo.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=halo;ctx.beginPath();ctx.arc(0,0,sz*0.75,0,Math.PI*2);ctx.fill();
+    const frame=this.portalFrames[this.portalFrameIndex];
+    if(frame&&frame.complete&&frame.naturalWidth>0){ctx.drawImage(frame,-sz/2,-sz/2,sz,sz);}
+    else{ctx.beginPath();ctx.arc(0,0,sz*0.44,0,Math.PI*2);ctx.fillStyle=T.accent;ctx.globalAlpha=0.85;ctx.fill();ctx.globalAlpha=1;}
+    ctx.shadowColor=T.accentGlow;ctx.shadowBlur=20;
+    ctx.font=`bold ${Math.round(52*this.scale)}px 'Fredoka',cursive`;
+    ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.lineWidth=2*this.scale;ctx.strokeStyle="black";ctx.strokeText(this.mode1TargetSuffix.toUpperCase(),0,0);
+    ctx.fillStyle="#ffffff";ctx.fillText(this.mode1TargetSuffix.toUpperCase(),0,0);ctx.shadowBlur=0;
+    if(this.mascotState==="happy"){const rr=96*this.scale+Math.sin(now*0.01)*8;ctx.strokeStyle=T.correct;ctx.lineWidth=4*this.scale;ctx.globalAlpha=0.6;ctx.beginPath();ctx.arc(0,0,rr,0,Math.PI*2);ctx.stroke();ctx.globalAlpha=1;}
     ctx.restore();
   },
 
+  /* ── Number spawns ───────────────────────────────────────── */
+  updateNumberSpawns(delta) { for(const n of this.mode1Numbers){if(n.spawnDelay>0)n.spawnDelay-=delta;else n.spawnAlpha=Math.min(1,n.spawnAlpha+delta*0.003);} },
 
-  /* ============================================================
-     TORUS RINGS — single unified space-donut
-  
-     The two original radii (currentOuterRadius, currentInnerRadius)
-     now define the outer and inner edges of ONE torus. The tube's
-     midpoint is the average of the two; the tube's cross-section
-     radius is half the gap between them.
-  
-     Visual layers (drawn back-to-front):
-       1. Wide ambient nebula bloom under the whole donut
-       2. Bottom-half shadow arc  (dark, behind the hole)
-       3. Tube fill — angled gradient following the light angle
-       4. Top-half highlight arc  (bright, catches the "light")
-       5. Outer edge stroke (crisp gold rim)
-       6. Inner edge stroke (faint mint rim — the hole's near edge)
-       7. Animated specular highlight dot that orbits the ring
-       8. Thin iridescent shimmer band along the top arc
-  ============================================================ */
-  drawRings(ctx, dt) {
-    this.pulseTime += this.pulseSpeed * dt;
-    this.torusAngle = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
-
-    const outerOff = Math.sin(this.pulseTime) * this.pulseAmountOuter;
-    const innerOff = Math.sin(this.pulseTime) * this.pulseAmountInner;
-    this.currentOuterRadius = this.baseOuterRadius + Math.max(0, outerOff);
-    this.currentInnerRadius = this.baseInnerRadius + Math.max(0, innerOff);
-
-    const cx = this.centerX, cy = this.centerY;
-    const Ro = this.currentOuterRadius;   // outer edge of torus
-    const Ri = this.currentInnerRadius;   // inner edge of torus
-    const Rm = (Ro + Ri) / 2;             // tube centreline radius
-    const r  = (Ro - Ri) / 2;             // tube cross-section radius
-
-    // Light direction (orbits slowly)
-    const lx = Math.cos(this.torusAngle);
-    const ly = Math.sin(this.torusAngle);
-
-    ctx.save();
-    ctx.translate(cx, cy);
-
-    /* ── 1. Ambient nebula bloom ──────────────────────────── */
-    const bloom = ctx.createRadialGradient(0, 0, Ri - r * 2.5, 0, 0, Ro + r * 3.5);
-    bloom.addColorStop(0,    "rgba(0,0,0,0)");
-    bloom.addColorStop(0.30, "rgba(126,207,179,0.07)");
-    bloom.addColorStop(0.52, "rgba(201,147,58,0.14)");
-    bloom.addColorStop(0.70, "rgba(142,202,230,0.09)");
-    bloom.addColorStop(1,    "rgba(0,0,0,0)");
-    ctx.fillStyle = bloom;
-    ctx.beginPath();
-    ctx.arc(0, 0, Ro + r * 3.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    /* ── 2. Tube body — fill the annulus with a light-direction gradient ─
-       The gradient axis points from the shadow side toward the lit side,
-       giving the illusion that the tube is catching light at one angle   */
-    const gx0 = -lx * (Ro + r), gy0 = -ly * (Ro + r);
-    const gx1 =  lx * (Ro + r), gy1 =  ly * (Ro + r);
-
-    const tubeGrad = ctx.createLinearGradient(gx0, gy0, gx1, gy1);
-    tubeGrad.addColorStop(0,    "#0a1525");          // deep shadow
-    tubeGrad.addColorStop(0.22, "#1c3a2a");          // shadow-side dark mint
-    tubeGrad.addColorStop(0.40, "#5a3010");          // warm mid-tone (gold shadow)
-    tubeGrad.addColorStop(0.55, "#c9933a");          // main gold
-    tubeGrad.addColorStop(0.68, "#e8c87a");          // bright lit face
-    tubeGrad.addColorStop(0.80, "#7ecfb3");          // mint sheen on far side
-    tubeGrad.addColorStop(1,    "#0a1525");          // wrap back to shadow
-
-    // Draw annulus (evenodd rule creates the hole)
-    ctx.beginPath();
-    ctx.arc(0, 0, Ro, 0, Math.PI * 2);
-    ctx.arc(0, 0, Ri, 0, Math.PI * 2, true);
-    ctx.fillStyle = tubeGrad;
-    ctx.shadowColor = "rgba(201,147,58,0.4)";
-    ctx.shadowBlur  = 36;
-    ctx.fill("evenodd");
-    ctx.shadowBlur  = 0;
-
-    /* ── 3. Inner hole darkness — makes the hole look deep ── */
-    // A subtle radial fade from just inside Ri inward
-    const holeDark = ctx.createRadialGradient(0, 0, Ri * 0.65, 0, 0, Ri);
-    holeDark.addColorStop(0,   "rgba(4,10,20,0.82)");
-    holeDark.addColorStop(0.6, "rgba(4,10,20,0.45)");
-    holeDark.addColorStop(1,   "rgba(4,10,20,0.0)");
-    ctx.beginPath();
-    ctx.arc(0, 0, Ri, 0, Math.PI * 2);
-    ctx.fillStyle = holeDark;
-    ctx.fill();
-
-    /* ── 4. Outer edge stroke — crisp gold rim ───────────── */
-    ctx.beginPath();
-    ctx.arc(0, 0, Ro, 0, Math.PI * 2);
-    ctx.strokeStyle = "#d4a44a";
-    ctx.lineWidth   = 2.8;
-    ctx.shadowColor = "rgba(212,164,74,0.6)";
-    ctx.shadowBlur  = 18;
-    ctx.stroke();
-    ctx.shadowBlur  = 0;
-
-    /* ── 5. Inner edge stroke — faint mint ──────────────── */
-    ctx.beginPath();
-    ctx.arc(0, 0, Ri, 0, Math.PI * 2);
-    ctx.strokeStyle = "rgba(126,207,179,0.38)";
-    ctx.lineWidth   = 1.8;
-    ctx.shadowColor = "rgba(126,207,179,0.25)";
-    ctx.shadowBlur  = 10;
-    ctx.stroke();
-    ctx.shadowBlur  = 0;
-
-    /* ── 6. Iridescent shimmer band along lit arc ────────── */
-    //  A semi-transparent arc on the lit half — like the sheen
-    //  you see on a glossy torus where the surface curves away
-    const shimStart = this.torusAngle - Math.PI * 0.35;
-    const shimEnd   = this.torusAngle + Math.PI * 0.35;
-
-    ctx.beginPath();
-    ctx.arc(0, 0, Rm + r * 0.3, shimStart, shimEnd);
-    ctx.arc(0, 0, Rm - r * 0.3, shimEnd, shimStart, true);
-    ctx.closePath();
-    const shimGrad = ctx.createLinearGradient(
-      Math.cos(this.torusAngle) * (Rm - r * 0.3),
-      Math.sin(this.torusAngle) * (Rm - r * 0.3),
-      Math.cos(this.torusAngle) * (Rm + r * 0.3),
-      Math.sin(this.torusAngle) * (Rm + r * 0.3)
-    );
-    shimGrad.addColorStop(0,   "rgba(255,255,255,0.0)");
-    shimGrad.addColorStop(0.4, "rgba(255,240,200,0.18)");
-    shimGrad.addColorStop(0.7, "rgba(200,240,255,0.22)");
-    shimGrad.addColorStop(1,   "rgba(255,255,255,0.0)");
-    ctx.fillStyle = shimGrad;
-    ctx.fill();
-
-    /* ── 7. Specular highlight — small bright dot on rim ─── */
-    //  The dot orbits at the light angle, sitting on the outer edge
-    const sx = Math.cos(this.torusAngle) * Ro;
-    const sy = Math.sin(this.torusAngle) * Ro;
-    const specGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 1.8);
-    specGrad.addColorStop(0,   "rgba(255,250,230,0.95)");
-    specGrad.addColorStop(0.3, "rgba(245,215,140,0.55)");
-    specGrad.addColorStop(1,   "rgba(0,0,0,0)");
-    ctx.fillStyle = specGrad;
-    ctx.beginPath();
-    ctx.arc(sx, sy, r * 1.8, 0, Math.PI * 2);
-    ctx.fill();
-
-    /* ── 8. Secondary specular on inner rim (mint tint) ──── */
-    const sx2 = Math.cos(this.torusAngle + Math.PI * 0.18) * Ri;
-    const sy2 = Math.sin(this.torusAngle + Math.PI * 0.18) * Ri;
-    const specGrad2 = ctx.createRadialGradient(sx2, sy2, 0, sx2, sy2, r * 1.2);
-    specGrad2.addColorStop(0,   "rgba(180,255,230,0.55)");
-    specGrad2.addColorStop(0.5, "rgba(126,207,179,0.2)");
-    specGrad2.addColorStop(1,   "rgba(0,0,0,0)");
-    ctx.fillStyle = specGrad2;
-    ctx.beginPath();
-    ctx.arc(sx2, sy2, r * 1.2, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
+  /* ── Proximity glow ──────────────────────────────────────── */
+  updateProximityGlow(delta) {
+    if (this.level > 1) { for(let i=0;i<this.proximityGlow.length;i++)this.proximityGlow[i]=0; return; }
+    const px=this.mascot.x,py=this.mascot.y,maxD=270*this.scale;
+    const k=1-Math.pow(0.985,delta);
+    for(let i=0;i<this.mode1Numbers.length;i++){const n=this.mode1Numbers[i];const t=Math.max(0,1-Math.hypot(px-n.x,py-n.y)/maxD);this.proximityGlow[i]+=(t-this.proximityGlow[i])*k;}
   },
 
-
-  /* ============================================================
-     NOTES
-  ============================================================ */
-  spawnNote() {
-    const angle  = Math.random() * Math.PI * 2;
-    const minR   = this.currentOuterRadius + 150;
-    const maxR   = this.currentOuterRadius + 210;
-    const spawnR = Math.random() * (maxR - minR) + minR;
-    const num    = this.currentNumber++;
-    if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
-    this.notes.push({
-      x: this.centerX + Math.cos(angle) * spawnR,
-      y: this.centerY + Math.sin(angle) * spawnR,
-      radius: this.baseOuterRadius * 0.12,
-      value: num, id: num,
-    });
+  drawMode1Numbers(ctx) {
+    const T=this.T,now=performance.now();
+    for(let i=0;i<this.mode1Numbers.length;i++){
+      const n=this.mode1Numbers[i];
+      if(n.spawnAlpha<=0.01)continue;
+      const glow=this.level===1?(this.proximityGlow[i]||0):0;
+      const fY=Math.sin((now/n.floatPeriod)*Math.PI*2+n.floatOffset)*n.floatAmp;
+      const sc=(n.renderScale||1)*(1+glow*0.12);
+      const isC=this.getSuffix(n.number)===this.mode1TargetSuffix;
+      ctx.save();ctx.globalAlpha=n.spawnAlpha;ctx.translate(n.x,n.y+fY);ctx.rotate(n.renderRotation||0);ctx.scale(sc,sc);
+      if(glow>0.05){ctx.shadowColor=isC?T.correct:T.wrong;ctx.shadowBlur=22*glow;}
+      const cr=44*this.scale;
+      ctx.fillStyle=T.cardBg;ctx.strokeStyle=glow>0.1?(isC?T.correct:T.wrong):T.cardBorder;ctx.lineWidth=(2+glow*3)*this.scale;
+      this._rrect(ctx,-cr,-cr*0.72,cr*2,cr*1.44,16*this.scale);ctx.fill();ctx.stroke();
+      ctx.shadowColor=T.numberGlow;ctx.shadowBlur=12+glow*18;ctx.fillStyle=T.numberColor;
+      ctx.font=`bold ${Math.round(46*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
+      ctx.fillText(n.number,0,0);ctx.shadowBlur=0;ctx.restore();
+    }
   },
 
-  drawNotes(ctx, dt) {
-    for (let i = this.notes.length - 1; i >= 0; i--) {
-      const note = this.notes[i];
-      const dx = this.centerX - note.x;
-      const dy = this.centerY - note.y;
-      const len = Math.sqrt(dx * dx + dy * dy);
+  /* ── Mode 1 logic ────────────────────────────────────────── */
+  updateMode1Logic(delta) {
+    this.updateProximityGlow(delta);
+    if (!this.mode1RoundActive || this.mode1GameOver || this.mode1SuctionActive || 
+        this.mode1BreakActive || this.blackHoleActive || this.mode1Confirming) return;
 
-      // Cap step to remaining distance — prevents overshoot jitter
-      const step = Math.min(this.noteSpeed * dt, len);
-      note.x += (dx / len) * step;
-      note.y += (dy / len) * step;
+    const pullRadius = 160 * this.scale;
+    const catchRadius = 65 * this.scale;
 
-      this._drawNoteCircle(ctx, note);
+    for (let i = 0; i < this.mode1Numbers.length; i++) {
+      const n = this.mode1Numbers[i];
+      if (n.spawnAlpha < 0.5) continue;
 
-      if (len <= step + 1) {
-        this.notes.splice(i, 1);
+      const dx = this.mascot.x - n.x;
+      const dy = this.mascot.y - n.y;
+      const dist = Math.hypot(dx, dy);
+
+      // Magnetic pull when close
+      if (dist < pullRadius && dist > catchRadius) {
+        const pullForce = (1 - dist / pullRadius) * 0.12 * delta;
+        n.x += (dx / dist) * pullForce;
+        n.y += (dy / dist) * pullForce;
+      }
+
+      // Trigger absorption
+      if (dist <= catchRadius) {
+        this.startMode1Suction(i);
+        break;
       }
     }
   },
 
-  _drawNoteCircle(ctx, note) {
-    ctx.save();
-    const r = note.radius;
-    const isC = this.mode === "cannon" || this.mode === "orb" || this.mode === "triple"
-                ? this.shouldCollectCannon(note.value)
-                : this.shouldCollect(note.value);
+  /* ── Suction ─────────────────────────────────────────────── */
+  startMode1Suction(index) {
+    const n=this.mode1Numbers[index];
+    this.mode1SuctionActive=true;this.mode1SuctionData={index,startX:n.x,startY:n.y,targetX:this.mascot.x,targetY:this.mascot.y,time:0,duration:420};
+  },
+  updateMode1Suction(delta) {
+    if(!this.mode1SuctionActive)return;
+    const s=this.mode1SuctionData,n=this.mode1Numbers[s.index];
+    if(!n){this.mode1SuctionActive=false;return;}
+    s.targetX=this.mascot.x;s.targetY=this.mascot.y;s.time+=delta;
+    const p=Math.min(1,s.time/s.duration),ep=1-Math.pow(1-p,3);
+    n.x=s.startX+(s.targetX-s.startX)*ep;n.y=s.startY+(s.targetY-s.startY)*ep;n.renderScale=1-ep*0.4;
+    if(p>=1)this.finishMode1Suction();
+  },
+  finishMode1Suction() {
+    const s = this.mode1SuctionData, n = this.mode1Numbers[s.index];
+    if (!n) return;
+    const correct = this.getSuffix(n.number) === this.mode1TargetSuffix;
+    if (correct) {
+      this.streak++;
+      if (this.streak > this.bestStreak) this.bestStreak = this.streak;
+      
+      // Calculate multiplier bonus based on consecutive correct streak
+      let points = 10;
+      if (this.streak >= 10) points = 50;
+      else if (this.streak >= 5) points = 30;
+      else if (this.streak >= 3) points = 20;
 
-    const vis = this._noteVisual(isC, note.id || note.value);
-    const h   = this.hintState;
-    const isVisC = vis.showCorrect;
-    const isVisW = vis.showWrong;
-
-    if (isVisC || isVisW || vis.shimmerAmt > 0) {
-      let haloAlpha = isVisC ? 0.16 : isVisW ? 0.11 : vis.shimmerAmt * 0.12;
-      if (h === "subtle" && isVisC) haloAlpha = 0.07;
-      const haloColor = isVisC
-        ? `rgba(109,232,180,${haloAlpha})`
-        : isVisW ? `rgba(232,124,109,${haloAlpha})`
-                 : `rgba(140,180,220,${haloAlpha})`;
-      const grd = ctx.createRadialGradient(note.x, note.y, r * 0.2, note.x, note.y, r * 1.4);
-      grd.addColorStop(0, haloColor); grd.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = grd;
-      ctx.beginPath(); ctx.arc(note.x, note.y, r * 1.4, 0, Math.PI * 2); ctx.fill();
-    }
-
-    ctx.beginPath(); ctx.arc(note.x, note.y, r, 0, Math.PI * 2);
-    let bodyFill, rimColor, shadowCol;
-    if (isVisC && h !== "subtle") {
-      bodyFill = "#0e3028"; rimColor = this.C.correct; shadowCol = "rgba(109,232,180,0.45)";
-    } else if (isVisW) {
-      bodyFill = "#2a1010"; rimColor = this.C.wrong; shadowCol = "rgba(232,124,109,0.4)";
+      this.score += points;
+      this.streakPulse = 1;
+      this.mascotState = "happy";
+      this.startPortalMerge(n.number);
+      this.mode1Numbers.splice(s.index, 1);
+      this.proximityGlow.splice(s.index, 1);
+      this.showToast(`${this.getPositiveFeedback()} +${points}`, this.T.correct);
+      this.spawnCorrectParticles(this.mascot.x, this.mascot.y);
     } else {
-      bodyFill  = "#102140";
-      rimColor  = `rgba(${Math.round(100+vis.shimmerAmt*80)},${Math.round(160+vis.shimmerAmt*40)},${Math.round(200+vis.shimmerAmt*30)},${0.55+vis.shimmerAmt*0.35})`;
-      shadowCol = `rgba(90,150,200,${0.25+vis.shimmerAmt*0.2})`;
+      this.score -= 5
+      this.streak = 0;
+      this.hearts = Math.max(0, this.hearts - 1);
+      this.heartShakeTime = 520;
+      this.mascotState = "confused";
+      this.spawnHintFloater(n.number, n.x, n.y);
+      this.showToast(this.getWrongFeedback(n.number), this.T.wrong);
+      this.spawnWrongParticles(this.mascot.x, this.mascot.y);
+      this.mode1Numbers.splice(s.index, 1);
+      this.proximityGlow.splice(s.index, 1);
+      this.startNumberBreak(n.number);
+      if (this.hearts <= 0) setTimeout(() => this.startBlackHoleCollapse(), 600);
     }
-    ctx.shadowColor = shadowCol; ctx.shadowBlur = 20;
-    ctx.fillStyle = bodyFill; ctx.fill();
-    ctx.strokeStyle = rimColor; ctx.lineWidth = 2.5; ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    ctx.beginPath(); ctx.arc(note.x - r * 0.27, note.y - r * 0.27, r * 0.20, 0, Math.PI * 2);
-    ctx.fillStyle = isVisC && h !== "subtle" ? "rgba(200,255,230,0.30)" : "rgba(200,230,255,0.22)";
-    ctx.fill();
-
-    if (h === "subtle" && !isC) {
-      ctx.globalAlpha = 0.18; ctx.fillStyle = "#aac8e0";
-      ctx.font = `bold ${Math.round(r * 0.42)}px 'Trebuchet MS', sans-serif`;
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillText("?", note.x, note.y - r * 0.55); ctx.globalAlpha = 1;
-    }
-
-    ctx.fillStyle = this.C.noteText;
-    ctx.font = `bold ${Math.round(r * 0.72)}px 'Trebuchet MS', sans-serif`;
-    ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.fillText(note.value, note.x, note.y);
-    ctx.restore();
+    this.mode1SuctionActive = false;
+    this.mode1SuctionData = null;
+    setTimeout(() => { if (this.mascotState !== "idle") this.mascotState = "idle"; }, 1100);
   },
 
 
-  /* ============================================================
-     COLLISION
-  ============================================================ */
-  shouldCollect(number) {
-    if (this.mode === "default") return number % this.skipAmount === 0;
-    if (this.mode === "pattern") {
-      const cycle = this.pattern.skip + this.pattern.collect;
-      return (number - 1) % cycle >= this.pattern.skip;
-    }
-    return false;
-  },
 
-  shouldCollectCannon(number) { return number % this.skipAmount === 0; },
+  getPositiveFeedback(){if(this.streak>=5)return["🔥 You're on FIRE!","🌟 Unstoppable!","🚀 Total Genius!"][Math.floor(Math.random()*3)];if(this.streak>=3)return["⭐ Amazing streak!","💫 Keep going!","🎯 So good!"][Math.floor(Math.random()*3)];return["✅ That's right!","🎉 Correct!","👏 Great job!","💡 You got it!","🥳 Woohoo!"][Math.floor(Math.random()*5)];},
+  getWrongFeedback(num){return`💡 ${num} is ${num}${this.getSuffix(num)} — try again!`;},
 
-  checkCollision(fingerX, fingerY) {
-    this.notes.forEach((note, index) => {
-      const dx = fingerX - note.x, dy = fingerY - note.y;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      const dfc  = Math.sqrt((note.x - this.centerX)**2 + (note.y - this.centerY)**2);
-      const onRing = dfc + note.radius > this.currentInnerRadius &&
-                     dfc - note.radius < this.currentOuterRadius;
-      if (dist < note.radius + 20 && onRing) {
-        if (this.shouldCollect(note.value)) {
-          this.combo++;
-          if (this.combo % 5 === 0) this.multiplier++;
-          this.score += 10 * this.multiplier;
-          this.lastHitType = "CORRECT";
-          this._gainXP(1);
-          this._recoverSpeed();
-          this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.correct });
-        } else {
-          this.combo = 0; this.multiplier = 1;
-          this.score -= 5; this.lastHitType = "WRONG";
-          this._penalizeSpeed();
-          this.popEffects.push({ x: note.x, y: note.y, life: 0, color: this.C.wrong });
-        }
-        this.hitTextTimer = 30;
-        this.notes.splice(index, 1);
-      }
-    });
-  },
+  /* ── Hint floater ────────────────────────────────────────── */
+  spawnHintFloater(num,x,y){this.floatNumbers.push({text:`${num}${this.getSuffix(num)}`,x,y,vy:-0.06,alpha:1,life:1400,maxLife:1400});},
+  updateFloatNumbers(delta){for(let i=this.floatNumbers.length-1;i>=0;i--){const f=this.floatNumbers[i];f.y+=f.vy*delta;f.life-=delta;f.alpha=Math.max(0,f.life/f.maxLife);if(f.life<=0)this.floatNumbers.splice(i,1);}},
+  drawFloatNumbers(ctx){for(const f of this.floatNumbers){ctx.save();ctx.globalAlpha=f.alpha;ctx.fillStyle=this.T.wrong;ctx.font=`bold ${Math.round(38*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.T.wrong;ctx.shadowBlur=12;ctx.fillText(f.text,f.x,f.y);ctx.restore();}},
 
-  checkCannonCollision(fingerX, fingerY) {
-    for (let i = this.notes.length - 1; i >= 0; i--) {
-      const note = this.notes[i];
-      if (note.spawnProtected) continue;
-      const dx = fingerX - note.x, dy = fingerY - note.y;
-      if (Math.sqrt(dx*dx + dy*dy) < note.radius + 20) {
-        if (this.shouldCollectCannon(note.value)) {
-          this.score += 10; this.lastHitType = "CORRECT";
-          this._gainXP(1); this._recoverSpeed();
-          this.createExplosion(note.x, note.y, this.C.correct);
-        } else {
-          this.score -= 5; this.lastHitType = "WRONG";
-          this._penalizeSpeed();
-          this.createExplosion(note.x, note.y, this.C.wrong);
-        }
-        this.hitTextTimer = 30;
-        this.notes.splice(i, 1);
+  /* ── Merge animation ─────────────────────────────────────── */
+  startPortalMerge(number){this.mode1MergeActive=true;this.mode1MergeData={number,suffix:this.mode1TargetSuffix,angle:0,radius:80*this.scale,time:0,duration:800,scale:1};},
+  updateMode1Merge(delta){
+    if(!this.mode1MergeActive)return;
+    const m=this.mode1MergeData;
+    m.time+=delta;
+    const p=m.time/m.duration;
+    if(p<0.45)m.angle+=0.009*delta;
+    else if(p<0.78){m.angle+=0.017*delta;m.radius*=Math.pow(0.994,delta);}
+    else{m.radius*=Math.pow(0.978,delta);m.scale*=Math.pow(0.992,delta);}
+    if(p>=1){
+      this.spawnSparkBurst(this.mascot.x,this.mascot.y);
+      this.mode1MergeActive=false;
+      this.mode1CorrectCollected++;
+
+      const remainingCorrect = this.mode1Numbers.filter(
+        n => this.getSuffix(n.number) === this.mode1TargetSuffix
+      ).length;
+
+      if(this.mode1CorrectCollected >= this.mode1CorrectTotal || remainingCorrect === 0){
+        this.startMode1Confirmation();
       }
     }
   },
+  drawMode1Merge(ctx){
+    if(!this.mode1MergeActive)return;const m=this.mode1MergeData;
+    const x=this.mascot.x+Math.cos(m.angle)*m.radius,y=this.mascot.y+Math.sin(m.angle)*m.radius;
+    ctx.save();ctx.translate(x,y);ctx.scale(m.scale,m.scale);ctx.shadowColor=this.T.correct;ctx.shadowBlur=28;ctx.fillStyle="#ffffff";ctx.font=`bold ${Math.round(60*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(`${m.number}${m.suffix}`,0,0);ctx.restore();
+  },
 
+  /* ── Round confirmation ──────────────────────────────────── */
+  startMode1Confirmation(){
+    this.mode1RoundActive = false;
+    this.mode1Confirming = true;
+    // Portal stays exactly where it is — no travel to center. We just hold
+    // it in place for the reward animation, then spawn the next round
+    // around this same spot.
+    this.mode1ConfirmTimer = 1400;
+    this.mode1PortalTargetX = this.mascot.x;
+    this.mode1PortalTargetY = this.mascot.y;
+    this.startRoundReward();
+  },
+  startRoundReward(){
+    this.roundRewardActive=true;this.roundRewardTimer=1600;this.roundRewardStars=[];
+    for(let i=0;i<18;i++){const ang=(Math.PI*2/18)*i;this.roundRewardStars.push({angle:ang,radius:0,speed:(2.5+Math.random()*2)*0.055,size:(8+Math.random()*8)*this.scale,color:["#fbbf24","#34d399","#a78bfa","#f472b6"][Math.floor(Math.random()*4)]});}
+  },
+  updateRoundReward(delta){if(!this.roundRewardActive)return;this.roundRewardTimer-=delta;for(const s of this.roundRewardStars)s.radius+=s.speed*delta;if(this.roundRewardTimer<=0)this.roundRewardActive=false;},
+  drawRoundReward(ctx){
+    if(!this.roundRewardActive)return;const px=this.mascot.x,py=this.mascot.y,lf=Math.max(0,this.roundRewardTimer/1600);
+    for(const s of this.roundRewardStars){ctx.globalAlpha=lf*0.88;ctx.beginPath();ctx.arc(px+Math.cos(s.angle)*s.radius,py+Math.sin(s.angle)*s.radius,s.size,0,Math.PI*2);ctx.fillStyle=s.color;ctx.shadowColor=s.color;ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;}
+    ctx.globalAlpha=1;
+    const prog=1-lf;
+    if(prog>0.08&&prog<0.88){const a=Math.sin(prog*Math.PI);ctx.save();ctx.globalAlpha=a;ctx.translate(px,py-160*this.scale);ctx.scale(0.7+a*0.4,0.7+a*0.4);ctx.fillStyle=this.T.correct;ctx.font=`bold ${Math.round(56*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.T.correct;ctx.shadowBlur=20;ctx.fillText("⭐ Round Clear!",0,0);ctx.restore();}
+  },
 
-  /* ============================================================
-     POP EFFECTS
-  ============================================================ */
-  drawPopEffects(ctx) {
-  for (let i = this.popEffects.length - 1; i >= 0; i--) {
-    const p = this.popEffects[i];
+  /* ── Level progression ──────────────────────────────────── */
+  startNewRound() {
+    this.roundsCompleted++;
+    this._roundsInLevel = (this._roundsInLevel || 0) + 1;
 
-    // update life
-    p.life += 0.025;
-
-    // 🔥 remove BEFORE drawing (prevents flicker)
-    if (p.life >= 1) {
-      this.popEffects.splice(i, 1);
-      continue;
+    if (this._levelRoundTarget === undefined) {
+      this._levelRoundTarget = this._pickLevelRoundTarget();
     }
 
-    // smooth easing
-    const ease = 1 - Math.pow(1 - p.life, 2);
-
-    // 🔥 safe alpha (no negative flicker)
-    const alpha = Math.max(0, 1 - ease);
-
-    // scale animation
-    const scale = 1 + ease * 0.5;
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-
-    ctx.translate(p.x, p.y);
-    ctx.scale(scale, scale);
-
-    ctx.fillStyle = p.color;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 16;
-
-    ctx.beginPath();
-    ctx.arc(0, 0, 32, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-},
-
-  /* ============================================================
-     HIT TEXT
-  ============================================================ */
-  drawHitText(ctx) {
-    if (this.hitTextTimer <= 0 && this.missQueue.length > 0) {
-      this.missQueue.sort((a, b) => a - b);
-      this.lastHitType = "YOU SKIPPED NUMBER " + this.missQueue.shift();
-      this.hitTextTimer = 40;
-      this._penalizeSpeed();
+    if (this._roundsInLevel >= this._levelRoundTarget) {
+      this.level++;
+      this._roundsInLevel = 0;
+      this._levelRoundTarget = this._pickLevelRoundTarget();
+      this.numberRange = this._getNumberRangeForLevel(this.level);
+      this.showToast(`🎮 Level ${this.level}! Numbers get bigger!`, this.T.streakColor);
     }
-    if (this.hitTextTimer > 0) {
-      const alpha = Math.sin((this.hitTextTimer / 40) * Math.PI);
-      let color = "#ffffff";
-      if (this.lastHitType === "CORRECT")           color = this.C.correct;
-      else if (this.lastHitType === "WRONG")         color = this.C.wrong;
-      else if (this.lastHitType.includes("SKIPPED")) color = this.C.gold;
+
+    const s = ["st", "nd", "rd", "th"];
+    this.mode1TargetSuffix = s[Math.floor(Math.random() * 4)];
+    this.spawnMode1Numbers();
+  },
+
+  _getNumberRangeForLevel(level) {
+    const table = [10, 20, 30, 50, 70, 100];
+    if (level - 1 < table.length) return table[level - 1];
+    return 100 + (level - table.length) * 30;
+  },
+
+  _pickLevelRoundTarget() {
+    return 3 + Math.floor(Math.random() * 3);
+  },
+
+  /* ── Number break ────────────────────────────────────────── */
+  startNumberBreak(number){
+    const px=this.mascot.x,py=this.mascot.y;this.mode1BreakActive=true;this.mode1BreakData={number,x:px,y:py,pieces:[],time:0};
+    for(let i=0;i<10;i++){const a=Math.random()*Math.PI*2,v=(Math.random()*5+2)*0.055;this.mode1BreakData.pieces.push({x:px,y:py,vx:Math.cos(a)*v,vy:Math.sin(a)*v,rot:Math.random()*Math.PI,vr:(Math.random()-0.5)*0.014,alpha:1});}
+  },
+  updateMode1Break(delta){
+    if(!this.mode1BreakActive)return;const b=this.mode1BreakData;b.time+=delta;
+    for(const p of b.pieces){p.x+=p.vx*delta;p.y+=p.vy*delta;p.vx*=Math.pow(0.996,delta);p.vy*=Math.pow(0.996,delta);p.rot+=p.vr*delta;p.alpha=Math.max(0,1-b.time/700);}
+    if(b.time>700)this.mode1BreakActive=false;
+  },
+  drawMode1Break(ctx){
+    if(!this.mode1BreakActive)return;
+    for(const p of this.mode1BreakData.pieces){ctx.save();ctx.globalAlpha=p.alpha;ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.fillStyle=this.T.wrong;ctx.font=`bold ${Math.round(40*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(this.mode1BreakData.number,0,0);ctx.restore();}
+    ctx.globalAlpha=1;
+  },
+
+  /* ── Black hole ──────────────────────────────────────────── */
+  startBlackHoleCollapse(){this.blackHoleActive=true;this.blackHoleTime=0;this.blackHoleStrength=0;this.accretionAngle=0;},
+  updateBlackHole(delta){
+    this.accretionAngle+=(0.04+(this.blackHoleStrength||0)*0.004)*delta*0.05;
+    if(!this.blackHoleActive)return;
+    this.blackHoleTime+=delta;const prog=this.blackHoleTime/this.blackHoleDuration;this.blackHoleStrength=prog*20;
+    const cx=this.mascot.x,cy=this.mascot.y;
+    for(const s of this.stars){const dx=cx-s.x,dy=cy-s.y,d=Math.hypot(dx,dy)+0.1,f=0.0012*this.blackHoleStrength*delta;s.x+=(dx/d)*f*d+(-dy/d)*f*0.7*d;s.y+=(dy/d)*f*d+(dx/d)*f*0.7*d;}
+    for(const n of this.mode1Numbers){const dx=cx-n.x,dy=cy-n.y,f=0.0022*this.blackHoleStrength*delta;n.x+=dx*f;n.y+=dy*f;n.renderScale=(n.renderScale||1)*Math.pow(0.9985,delta);n.renderRotation=(n.renderRotation||0)+0.022*delta;}
+    if(prog>=1){this.blackHoleActive=false;this.mode1GameOver=true;}
+  },
+  drawBlackHole(ctx){
+    if(!this.blackHoleActive)return;const px=this.mascot.x,py=this.mascot.y;const r=(100+Math.sin(performance.now()*0.018)*18)*this.scale;
+    ctx.save();ctx.translate(px,py);ctx.rotate(this.accretionAngle);
+    const disk=ctx.createRadialGradient(0,0,r*0.28,0,0,r*1.15);
+    disk.addColorStop(0,"rgba(0,0,0,0)");disk.addColorStop(0.38,"rgba(255,180,60,0.55)");disk.addColorStop(0.74,"rgba(255,80,0,0.72)");disk.addColorStop(1,"rgba(180,0,120,0)");
+    ctx.fillStyle=disk;ctx.beginPath();ctx.ellipse(0,0,r*1.15,r*0.36,0,0,Math.PI*2);ctx.fill();ctx.restore();
+    const core=ctx.createRadialGradient(px,py,8,px,py,r);
+    core.addColorStop(0,"#000");core.addColorStop(0.5,"#050505");core.addColorStop(1,"rgba(0,0,0,0)");
+    ctx.fillStyle=core;ctx.beginPath();ctx.arc(px,py,r,0,Math.PI*2);ctx.fill();
+    const msgs=["🌀 Uh oh!","⚠️ Collapsing!","💀 Oh no!"];
+    ctx.globalAlpha=Math.min(1,this.blackHoleTime/400);ctx.fillStyle="#fbbf24";
+    ctx.font=`bold ${Math.round(44*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(msgs[Math.floor(this.blackHoleTime/900)%msgs.length],px,py-r-28*this.scale);ctx.globalAlpha=1;
+  },
+
+  /* ── Big Bang ────────────────────────────────────────────── */
+  startBigBang(){
+    this.bigBangActive=true;this.bigBangTime=0;this.bigBangFlash=1;
+    for(const s of this.stars){const a=Math.random()*Math.PI*2,v=(Math.random()*7+3)*0.065;s.x=this.CENTER_X;s.y=this.CENTER_Y;s.vx=Math.cos(a)*v;s.vy=Math.sin(a)*v;}
+  },
+  updateBigBang(delta){
+    if(!this.bigBangActive)return;this.bigBangTime+=delta;const p=this.bigBangTime/this.bigBangDuration;
+    for(const s of this.stars)if(s.vx!==undefined){s.x+=s.vx*delta;s.y+=s.vy*delta;s.vx*=Math.pow(0.998,delta);s.vy*=Math.pow(0.998,delta);}
+    this.bigBangFlash=Math.max(0,1-p*2.2);if(p>=1){this.bigBangActive=false;this.initStarfield();}
+  },
+  drawBigBangFlash(ctx){if(this.bigBangFlash<=0)return;ctx.fillStyle=`rgba(255,255,255,${this.bigBangFlash})`;ctx.fillRect(0,0,this.cssWidth,this.cssHeight);},
+
+  /* ── Particles ───────────────────────────────────────────── */
+  spawnCorrectParticles(x,y){const cols=["#34d399","#fbbf24","#a78bfa","#ffffff"];for(let i=0;i<20;i++){if(this.particles.length>=this.MAX_PARTICLES)break;const a=Math.random()*Math.PI*2,v=(Math.random()*6+3)*0.055;this.particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,color:cols[i%cols.length],size:(Math.random()*5+3)*this.scale,life:700,maxLife:700,type:"star"});}},
+  spawnWrongParticles(x,y){for(let i=0;i<12;i++){if(this.particles.length>=this.MAX_PARTICLES)break;const a=Math.random()*Math.PI*2,v=(Math.random()*4+2)*0.055;this.particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,color:"#f87171",size:(Math.random()*4+2)*this.scale,life:500,maxLife:500,type:"circle"});}},
+  updateParticles(delta){for(let i=this.particles.length-1;i>=0;i--){const p=this.particles[i];p.x+=p.vx*delta;p.y+=p.vy*delta;const fric=1-(1-0.994)*delta/16;p.vx*=fric;p.vy*=fric;p.vy+=0.00007*delta;p.life-=delta;if(p.life<=0)this.particles.splice(i,1);}},
+  drawParticles(ctx){for(const p of this.particles){ctx.globalAlpha=Math.max(0,p.life/p.maxLife);ctx.fillStyle=p.color;if(p.type==="star")this._star(ctx,p.x,p.y,p.size,5);else{ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();}}ctx.globalAlpha=1;},
+  _star(ctx,x,y,r,pts){ctx.save();ctx.translate(x,y);ctx.beginPath();for(let i=0;i<pts*2;i++){const a=(Math.PI/pts)*i-Math.PI/2,rr=i%2===0?r:r*0.44;i===0?ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr):ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);}ctx.closePath();ctx.fill();ctx.restore();},
+
+  /* ── Spark bursts ────────────────────────────────────────── */
+  spawnSparkBurst(x,y){
+    if(this.sparkBursts.length<this.MAX_SPARKS)this.sparkBursts.push({x,y,radius:0,maxRadius:130*this.scale,alpha:1,life:550,maxLife:550});
+    for(let i=0;i<16;i++){if(this.sparkBursts.length>=this.MAX_SPARKS)break;const a=Math.random()*Math.PI*2,v=(Math.random()*9+3)*0.055;this.sparkBursts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,size:(Math.random()*4+2)*this.scale,life:480,maxLife:480,type:"p"});}
+  },
+  updateSparkBursts(delta){for(let i=this.sparkBursts.length-1;i>=0;i--){const s=this.sparkBursts[i];s.life-=delta;if(s.type==="p"){s.x+=s.vx*delta;s.y+=s.vy*delta;const fric=1-(1-0.993)*delta/16;s.vx*=fric;s.vy*=fric;}else{s.radius=s.maxRadius*(1-s.life/s.maxLife);s.alpha=Math.max(0,s.life/s.maxLife);}if(s.life<=0)this.sparkBursts.splice(i,1);}},
+  drawSparkBursts(ctx){for(const s of this.sparkBursts){if(s.type==="p"){ctx.globalAlpha=Math.max(0,s.life/s.maxLife);ctx.fillStyle=this.T.correct;ctx.beginPath();ctx.arc(s.x,s.y,s.size,0,Math.PI*2);ctx.fill();}else{ctx.globalAlpha=Math.max(0,s.alpha);ctx.strokeStyle=this.T.correct;ctx.lineWidth=5*this.scale;ctx.beginPath();ctx.arc(s.x,s.y,s.radius,0,Math.PI*2);ctx.stroke();}}ctx.globalAlpha=1;},
+
+  /* ── HUD ─────────────────────────────────────────────────── */
+  updateHUDTimers(delta){if(this.heartShakeTime>0)this.heartShakeTime=Math.max(0,this.heartShakeTime-delta);if(this.streakPulse>0)this.streakPulse=Math.max(0,this.streakPulse-delta*0.003);},
+  drawHUD(ctx) {
+    const T=this.T,s=this.scale,W=this.cssWidth,H=this.cssHeight;
+    
+    // Top-Left Score Display Box
+    const sw=175*s,sh=54*s,sx=18*s,sy=16*s;
+    ctx.fillStyle=T.scoreBg;this._rrect(ctx,sx,sy,sw,sh,18*s);ctx.fill();
+    ctx.fillStyle=T.numberColor;ctx.font=`bold ${Math.round(26*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(`⭐ ${this.score}`,sx+sw/2,sy+sh/2);
+
+    // Top-Right Hearts
+    const hSz=32*s,hGap=8*s,totalHW=this.maxHearts*(hSz+hGap)-hGap;
+    const hx0=W-18*s-totalHW,hy0=18*s,shk=this.heartShakeTime>0?Math.sin(this.heartShakeTime*0.055)*5*s:0;
+    for(let i=0;i<this.maxHearts;i++){ctx.globalAlpha=i<this.hearts?1:0.2;ctx.font=`${Math.round(hSz)}px serif`;ctx.textAlign="left";ctx.textBaseline="top";ctx.fillText("❤️",hx0+i*(hSz+hGap),hy0+(i<this.hearts?shk:0));}
+    ctx.globalAlpha=1;
+
+    // Top-Left Streak Counter (position matching Game 9)
+    if(this.streak>=2){
+      const ps=1+this.streakPulse*0.15;
+      const streakY=sy+sh+12*s;
       ctx.save();
-      ctx.globalAlpha = alpha; ctx.fillStyle = color;
-      ctx.font = "bold 34px 'Trebuchet MS', sans-serif";
-      ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.shadowColor = color; ctx.shadowBlur = 18;
-      ctx.fillText(this.lastHitType, this.centerX, this.centerY - 130);
-      ctx.restore();
-      this.hitTextTimer--;
-    }
-  },
-
-
-  /* ============================================================
-     MODE ACTIVATORS
-  ============================================================ */
-  activatePatternMode() {
-    this.mode = "pattern";
-    this.pattern.skip    = Math.floor(Math.random() * 5) + 1;
-    this.pattern.collect = Math.floor(Math.random() * 5) + 1;
-    this.gameTitle = "SKIP " + this.pattern.skip + " COLLECT " + this.pattern.collect;
-  },
-
-  activateCannonMode() {
-    this.mode = "cannon"; this._resetLauncherState();
-    this.gameTitle = "CANNON SKIP " + this.skipAmount;
-  },
-
-  activateOrbMode() {
-    this.mode = "orb"; this._resetLauncherState();
-    this.orbAngle = 0; this.orbTargetAngle = 0;
-    this.gameTitle = "ORB SKIP " + this.skipAmount;
-  },
-
-  activateTripleCannonMode() {
-    this.mode = "triple"; this._resetLauncherState();
-    this.tripleBaseAngle = 0; this.tripleTargetAngle = 0;
-    this.tripleCannons = [];
-    const sp = (Math.PI * 2) / this.tripleCount;
-    for (let i = 0; i < this.tripleCount; i++) this.tripleCannons.push({ offset: i * sp });
-    this.gameTitle = "TRIPLE CANNON SKIP " + this.skipAmount;
-  },
-
-  _resetLauncherState() {
-    this.notes = []; this.explosions = [];
-    this.combo = 0; this.multiplier = 1;
-    this.cannonAngle = 0; this.cannonTargetAngle = 0;
-    this.pendingShot = null; this.lastCannonNote = null;
-    this.previewCannons = []; this.previewTimer = 0;
-    this.skipAmount = this.getRandomSkip();
-    this.noteSpeed = this.speedCap;
-  },
-
-
-  /* ============================================================
-     CANNON
-  ============================================================ */
-  spawnCannonNote() {
-    if (this.pendingShot) return;
-    const angle = Math.random() * Math.PI * 2;
-    const num   = this.currentNumber++;
-    if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
-    this.pendingShot = { angle, speed: this.noteSpeed, value: num, id: num };
-    this.cannonTargetAngle = angle + Math.PI / 2;
-    this.startCharging();
-  },
-
-  updateCannonNotes(ctx, dt) {
-    for (let i = this.notes.length - 1; i >= 0; i--) {
-      const note = this.notes[i];
-      note.x += note.vx * dt; note.y += note.vy * dt;
-      this.updateLauncherProtection(note);
-      this._drawNoteCircle(ctx, note);
-      const m = 120;
-      const off = note.x < -m || note.x > this.centerX*2+m || note.y < -m || note.y > this.centerY*2+m;
-      if (off) {
-        if (this.shouldCollectCannon(note.value)) {
-          this.score -= 10; this.combo = 0; this.multiplier = 1;
-          this.missQueue.push(note.value);
-          this._penalizeSpeed();
-          this.createExplosion(note.x, note.y, "#e8a06d");
-        }
-        this.notes.splice(i, 1);
-      }
-    }
-  },
-
-  drawCannon(ctx, dt = 1 / 60) {
-    const size = this.baseOuterRadius * 0.35;
-    this.cannonLength = size * 1.4;
-    let diff = this.cannonTargetAngle - this.cannonAngle;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    this.cannonAngle += diff * 0.18;
-    if (this.pendingShot && Math.abs(diff) < 0.05) this.fireCannon();
-
-    ctx.save(); ctx.translate(this.centerX, this.centerY); ctx.rotate(this.cannonAngle);
-    const bg = ctx.createRadialGradient(0, 0, size*0.1, 0, 0, size*0.6);
-    bg.addColorStop(0, "#2a4a6e"); bg.addColorStop(1, "#152035");
-    ctx.beginPath(); ctx.arc(0, 0, size * 0.6, 0, Math.PI * 2);
-    ctx.fillStyle = bg; ctx.shadowColor = this.C.accent; ctx.shadowBlur = 18;
-    ctx.fill(); ctx.shadowBlur = 0;
-    ctx.fillStyle = "#3a6080";
-    ctx.beginPath();
-    const bx = -size * 0.13, by = -this.cannonLength, bw = size * 0.26, bh = this.cannonLength;
-    ctx.moveTo(bx + 6, by); ctx.lineTo(bx + bw - 6, by);
-    ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + 6);
-    ctx.lineTo(bx + bw, by + bh); ctx.lineTo(bx, by + bh);
-    ctx.lineTo(bx, by + 6); ctx.quadraticCurveTo(bx, by, bx + 6, by);
-    ctx.closePath(); ctx.fill();
-    ctx.strokeStyle = this.C.accent; ctx.lineWidth = 1.5; ctx.stroke();
-    ctx.restore();
-  },
-
-  fireCannon() {
-    if (!this.pendingShot) return;
-    const { angle, speed, value, id } = this.pendingShot;
-    this.notes.push({
-      x: this.centerX, y: this.centerY,
-      radius: this.baseOuterRadius * 0.12, value, id: id || value,
-      vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-      spawnProtected: true,
-    });
-    this.pendingShot = null; this.isCharging = false; this.charge = 0; this.chargeParticles = [];
-  },
-
-
-  /* ============================================================
-     ORB LAUNCHER
-  ============================================================ */
-  spawnOrbNote() {
-    const angle = Math.random() * Math.PI * 2;
-    this.orbTargetAngle = angle + Math.PI / 2;
-    const num = this.currentNumber++;
-    if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
-    const speed = this.noteSpeed;
-    setTimeout(() => {
-      this.notes.push({
-        x: this.centerX, y: this.centerY,
-        radius: this.baseOuterRadius * 0.12, value: num, id: num,
-        vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed,
-        spawnProtected: true,
-      });
-    }, 120);
-  },
-
-  drawOrbLauncher(ctx, dt = 1 / 60) {
-    const sz = this.baseOuterRadius * 0.6;
-    let diff = this.orbTargetAngle - this.orbAngle;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    this.orbAngle += diff * 0.18;
-    ctx.save(); ctx.translate(this.centerX, this.centerY); ctx.rotate(this.orbAngle);
-    if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth > 0) {
-      const img = this.orbImage, sc = sz / Math.max(img.width, img.height);
-      ctx.scale(1, -1);
-      ctx.drawImage(img, -img.width*sc/2, -img.height*sc/2, img.width*sc, img.height*sc);
-    } else {
-      const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz / 2);
-      g.addColorStop(0, "#8ecae6"); g.addColorStop(0.55, "#1a3a5c"); g.addColorStop(1, "rgba(14,30,50,0)");
-      ctx.fillStyle = g; ctx.shadowColor = this.C.accent; ctx.shadowBlur = 28;
-      ctx.beginPath(); ctx.arc(0, 0, sz / 2, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
-    }
-    ctx.restore();
-  },
-
-
-  /* ============================================================
-     TRIPLE CANNON
-  ============================================================ */
-  spawnTripleNote() {
-    if (this.pendingShot) return;
-    const angle = Math.random() * Math.PI * 2;
-    this.pendingShot = { angle, speed: this.noteSpeed };
-    this.tripleTargetAngle = angle + Math.PI / 2;
-    this.startCharging();
-  },
-
-  drawTripleCannons(ctx, dt = 1 / 60) {
-    const sz = this.baseOuterRadius * 0.6;
-    let diff = this.tripleTargetAngle - this.tripleBaseAngle;
-    diff = Math.atan2(Math.sin(diff), Math.cos(diff));
-    this.tripleBaseAngle += diff * 0.18;
-
-    if (this.pendingShot && this.previewTimer <= 0 && this.previewCannons.length === 0 && Math.abs(diff) < 0.05)
-      this.fireTriple();
-
-    for (let i = 0; i < this.tripleCannons.length; i++) {
-      const cannon = this.tripleCannons[i];
-      const angle  = this.tripleBaseAngle + cannon.offset;
-      ctx.save(); ctx.translate(this.centerX, this.centerY); ctx.rotate(angle);
-      if (this.orbImage && this.orbImage.complete && this.orbImage.naturalWidth > 0) {
-        const img = this.orbImage, sc = sz / Math.max(img.width, img.height);
-        ctx.scale(1, -1);
-        ctx.drawImage(img, -img.width*sc/2, -img.height*sc/2, img.width*sc, img.height*sc);
-      } else {
-        const g = ctx.createRadialGradient(0, 0, 0, 0, 0, sz/2);
-        g.addColorStop(0, "#8ecae6"); g.addColorStop(1, "rgba(14,30,50,0)");
-        ctx.fillStyle = g;
-        ctx.beginPath(); ctx.arc(0, 0, sz * 0.8, 0, Math.PI * 2 * 0.8); ctx.fill();
-      }
-      if (this.previewCannons.includes(i) && this.previewTimer > 0) {
-        const pulse = 0.8 + Math.sin(Date.now() * 0.01) * 0.2;
-        const miniR = sz * 0.18, offY = -sz * 0.6;
-        ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.scale(1, -1);
-        const g2 = ctx.createRadialGradient(0, offY, 0, 0, offY, miniR);
-        g2.addColorStop(0, "rgba(245,200,66,1)"); g2.addColorStop(0.4, "rgba(245,200,66,0.55)"); g2.addColorStop(1, "rgba(245,200,66,0)");
-        ctx.fillStyle = g2;
-        ctx.beginPath(); ctx.arc(0, offY, miniR * pulse, 0, Math.PI * 2); ctx.fill();
-        ctx.restore();
-      }
+      ctx.translate(sx+sw/2, streakY);
+      ctx.scale(ps,ps);
+      ctx.globalAlpha=0.9+this.streakPulse*0.1;
+      ctx.fillStyle=T.streakColor;
+      ctx.font=`bold ${Math.round(18*s)}px 'Fredoka',cursive`;
+      ctx.textAlign="center";ctx.textBaseline="middle";
+      ctx.shadowColor=T.streakColor;ctx.shadowBlur=8;
+      ctx.fillText(`🔥 ${this.streak} in a row!`,0,0);
+      ctx.shadowBlur=0;
       ctx.restore();
     }
+
+    // Bottom Level Tracker Badge
+    const lw=200*s,lh=40*s,lx=W/2-lw/2,ly=H-58*s;
+    ctx.fillStyle=T.scoreBg;this._rrect(ctx,lx,ly,lw,lh,13*s);ctx.fill();
+    ctx.fillStyle=T.textAccent;ctx.font=`bold ${Math.round(18*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(`Level ${this.level}  ·  ${this.roundsCompleted} round${this.roundsCompleted!==1?"s":""}`,lx+lw/2,ly+lh/2);
   },
 
-  fireTriple() {
-    if (!this.pendingShot) return;
-    const pool = [1,1,1,1,1,1,2,2,2,2,2,2,2,3,3];
-    const fc   = pool[Math.floor(Math.random() * pool.length)];
-    this.previewCannons = [];
-    while (this.previewCannons.length < fc) {
-      const ri = Math.floor(Math.random() * this.tripleCount);
-      if (!this.previewCannons.includes(ri)) this.previewCannons.push(ri);
-    }
-    this.previewTimer = this.previewDuration;
+  drawInstruction(ctx) {
+    if(this.mode1GameOver||this.blackHoleActive)return;
+    const T=this.T,s=this.scale,W=this.cssWidth;
+    const suf=this.mode1TargetSuffix,maxW=Math.min(W-44*s,700*s),bh=48*s,bx=W/2-maxW/2,by=20*s;
+    ctx.fillStyle=T.cardBg;this._rrect(ctx,bx,by,maxW,bh,13*s);ctx.fill();
+    ctx.strokeStyle=T.cardBorder;ctx.lineWidth=1.5*s;this._rrect(ctx,bx,by,maxW,bh,13*s);ctx.stroke();
+    ctx.fillStyle=T.textPrimary;ctx.font=`bold ${Math.round(19*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillText(`You are the ${suf.toUpperCase()} Galaxy! Collect numbers ending in "${suf}"`,W/2,by+bh/2);
   },
 
-executeTripleShot() {
-  if (!this.pendingShot) return;
+  /* ── Toast ───────────────────────────────────────────────── */
+  showToast(text,color){this.toast={text,color,timer:1600,maxTimer:1600,y:this.CENTER_Y-220*this.scale,alpha:1};},
+  updateToast(delta){if(this.toast.timer<=0)return;this.toast.timer-=delta;this.toast.alpha=Math.min(1,this.toast.timer/350);this.toast.y-=0.022*delta;},
+  drawToast(ctx){if(this.toast.timer<=0||this.toast.alpha<=0)return;ctx.save();ctx.globalAlpha=this.toast.alpha;ctx.fillStyle=this.toast.color;ctx.font=`bold ${Math.round(36*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.toast.color;ctx.shadowBlur=14;ctx.fillText(this.toast.text,this.CENTER_X,this.toast.y);ctx.restore();},
 
-  const speed = this.pendingShot.speed;
-  const delayBetweenShots = 180; // 🔥 KEY: spacing (ms)
-
-  this.previewCannons.forEach((i, index) => {
-    setTimeout(() => {
-      const angle = this.tripleBaseAngle + this.tripleCannons[i].offset - Math.PI / 2;
-
-      const value = this.currentNumber++;
-      if (this.currentNumber > this.maxNumber) this.currentNumber = 1;
-
-      this.notes.push({
-        x: this.centerX,
-        y: this.centerY,
-        radius: this.baseOuterRadius * 0.12,
-        value,
-        id: value,
-        vx: Math.cos(angle) * speed,
-        vy: Math.sin(angle) * speed,
-        spawnProtected: true,
-      });
-
-    }, index * delayBetweenShots); // ⬅️ staggered timing
-  });
-
-  // reset AFTER last shot
-  setTimeout(() => {
-    this.previewCannons = [];
-    this.pendingShot = null;
-    this.isCharging = false;
-    this.charge = 0;
-    this.chargeParticles = [];
-  }, this.previewCannons.length * delayBetweenShots);
-},
-  /* ============================================================
-     LAUNCHER SHARED
-  ============================================================ */
-  updateLauncherProtection(note) {
-    const dx = note.x - this.centerX, dy = note.y - this.centerY;
-    if (Math.sqrt(dx*dx + dy*dy) > this.launcherSafeRadius) note.spawnProtected = false;
+  /* ── Game over ───────────────────────────────────────────── */
+  drawGameOver(ctx) {
+    if(!this.mode1GameOver)return;const W=this.cssWidth,H=this.cssHeight,s=this.scale;
+    ctx.fillStyle="rgba(0,0,0,0.78)";ctx.fillRect(0,0,W,H);
+    const cw=Math.min(Math.max(W*0.52,320*s),620*s),ch=290*s,cx=W/2-cw/2,cy=H/2-ch/2;
+    ctx.fillStyle="rgba(18,12,46,0.97)";this._rrect(ctx,cx,cy,cw,ch,24*s);ctx.fill();
+    ctx.strokeStyle=this.T.wrong;ctx.lineWidth=3*s;this._rrect(ctx,cx,cy,cw,ch,24*s);ctx.stroke();
+    const mx=W/2;ctx.textAlign="center";ctx.textBaseline="middle";
+    ctx.fillStyle=this.T.wrong;ctx.font=`bold ${Math.round(Math.min(50*s,50))}px 'Fredoka',cursive`;ctx.shadowColor=this.T.wrong;ctx.shadowBlur=14;ctx.fillText("💥 Oops! Try Again!",mx,cy+ch*0.24);ctx.shadowBlur=0;
+    ctx.fillStyle=this.T.textPrimary;ctx.font=`bold ${Math.round(Math.min(28*s,28))}px 'Fredoka',cursive`;ctx.fillText(`⭐ Score: ${this.score}   |   🔥 Best Streak: ${this.bestStreak}`,mx,cy+ch*0.52);
+    const pulse=0.82+Math.sin(performance.now()*0.004)*0.18;ctx.globalAlpha=pulse;ctx.fillStyle=this.T.correct;ctx.font=`bold ${Math.round(Math.min(24*s,24))}px 'Fredoka',cursive`;ctx.fillText("👆 Tap anywhere to rebuild the galaxy!",mx,cy+ch*0.8);ctx.globalAlpha=1;
   },
 
-  drawLauncherZone(ctx) {
-    ctx.save(); ctx.setLineDash([6, 9]);
-    ctx.strokeStyle = "rgba(140,180,220,0.18)"; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(this.centerX, this.centerY, this.launcherSafeRadius, 0, Math.PI * 2);
-    ctx.stroke(); ctx.setLineDash([]); ctx.restore();
-  },
-
-  startCharging() {
-    this.charge = 0; this.isCharging = true; this.chargeParticles = [];
-  },
-
-  updateCharging(dt) {
-    if (!this.isCharging) return;
-    this.charge = Math.min(1, this.charge + this.chargeSpeed * dt);
-    if (Math.random() < 0.35) {
-      const a = Math.random() * Math.PI * 2;
-      this.chargeParticles.push({
-        x: this.centerX + Math.cos(a) * this.launcherSafeRadius,
-        y: this.centerY + Math.sin(a) * this.launcherSafeRadius,
-        life: 1,
-      });
-    }
-    for (let i = this.chargeParticles.length - 1; i >= 0; i--) {
-      const p = this.chargeParticles[i];
-      p.x += (this.centerX - p.x) * 0.08; p.y += (this.centerY - p.y) * 0.08;
-      p.life -= dt * 1.2;
-      if (p.life <= 0) this.chargeParticles.splice(i, 1);
-    }
-  },
-
-  drawCharging(ctx) {
-    if (!this.isCharging) return;
-    ctx.save(); ctx.globalCompositeOperation = "lighter";
-    for (const p of this.chargeParticles) {
-      ctx.globalAlpha = p.life * 0.7; ctx.fillStyle = this.C.gold;
-      ctx.shadowColor = this.C.gold; ctx.shadowBlur = 12;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 5, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.restore();
-    const gr = this.baseOuterRadius * 0.18 * (0.5 + this.charge * 0.8);
-    const g  = ctx.createRadialGradient(this.centerX, this.centerY, 0, this.centerX, this.centerY, gr);
-    g.addColorStop(0, `rgba(245,200,66,${0.65 * this.charge})`); g.addColorStop(1, "rgba(245,200,66,0)");
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(this.centerX, this.centerY, gr, 0, Math.PI * 2); ctx.fill();
-  },
-
-
-  /* ============================================================
-     EXPLOSIONS
-  ============================================================ */
-  createExplosion(x, y, color) {
-    for (let i = 0; i < 14; i++) {
-      const a = Math.random() * Math.PI * 2, v = Math.random() * 200 + 100;
-      this.explosions.push({ x, y, vx: Math.cos(a)*v, vy: Math.sin(a)*v, life: 0, color });
-    }
-  },
-
-  drawExplosions(ctx) {
-  for (let i = this.explosions.length - 1; i >= 0; i--) {
-    const p = this.explosions[i];
-
-    // update
-    p.life += 0.03;
-
-    // 🔥 FIX 1: remove EARLY before drawing
-    if (p.life >= 1) {
-      this.explosions.splice(i, 1);
-      continue;
+  retryMode1(){
+    this._noHandDuration = 0;
+    const pauseBtn = document.getElementById("pauseBtn");
+    if (pauseBtn) {
+      pauseBtn.style.display = "none";
+      pauseBtn.style.opacity = "0";
     }
 
-    p.x += p.vx * 0.016;
-    p.y += p.vy * 0.016;
-
-    // 🔥 FIX 2: clamp alpha
-    const alpha = Math.max(0, 1 - p.life);
-
-    ctx.save();
-    ctx.globalAlpha = alpha;
-
-    ctx.fillStyle = p.color;
-    ctx.shadowColor = p.color;
-    ctx.shadowBlur = 10;
-
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, this.baseOuterRadius * 0.038, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.restore();
-  }
-},
-
-
-  /* ============================================================
-     UTILITY
-  ============================================================ */
-  getRandomSkip() {
-    const w = [2,2,2,2,3,3,3,3,3,3,4,4,4,5,5,6,7,8,9];
-    return w[Math.floor(Math.random() * w.length)];
+    this.mode1GameOver=false;this.hearts=3;this.streak=0;this.score=0;this.level=1;this.numberRange=10;this.roundsCompleted=0;
+    this.particles=[];this.sparkBursts=[];this.floatNumbers=[];this.shootingStars=[];this.heartShakeTime=0;this.streakPulse=0;
+    const s=["st","nd","rd","th"];this.mode1TargetSuffix=s[Math.floor(Math.random()*4)];
+    this.startBigBang();this.spawnMode1Numbers();
   },
+
+  /* ── Utility ─────────────────────────────────────────────── */
+  _rrect(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();},
 };
