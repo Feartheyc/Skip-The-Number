@@ -458,7 +458,7 @@ const RingSpriteSystem = (() => {
 
 
 
-/*/* ============================================================
+/* ============================================================
    skip-number.js  (Game1) — v4  [Ring Sprite Edition]
    Changes vs v3:
    • Depends on ring-sprite-system.js (must be loaded first)
