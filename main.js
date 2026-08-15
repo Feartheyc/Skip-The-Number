@@ -239,12 +239,23 @@ window.startGame = function (gameName) {
 
 
 /* ── Game loop ────────────────────────────────────────────── */
+/* ── Game loop ────────────────────────────────────────────── */
 function gameLoop(currentTime) {
   requestAnimationFrame(gameLoop);
 
   let dt = (currentTime - lastTime) / 1000;
-  if (dt > 0.05) dt = 0.05;
-  if (dt < 0)    dt = 0;
+
+  // ── Skip Number (Game1) gets a looser dt clamp ──
+  // Camera capture + hand-tracking inference can push single-frame times
+  // well past 50ms on slower/Android devices. The old blanket 0.05s clamp
+  // silently discarded that "extra" real time every such frame, which is
+  // why Game1's round timer (200s) and tutorial hold (3s) were taking
+  // noticeably longer in real seconds than intended on those devices.
+  // All other games keep the original 0.05s cap, unchanged — this only
+  // widens the window for Game1 specifically.
+  const dtCap = (window.currentGame === Game1) ? 0.25 : 0.05;
+  if (dt > dtCap) dt = dtCap;
+  if (dt < 0)      dt = 0;
   lastTime = currentTime;
 
   if (window.isPaused) return;
