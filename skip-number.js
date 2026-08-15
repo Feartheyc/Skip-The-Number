@@ -2982,8 +2982,18 @@ _hexToRgb(hex) {
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
+/* ============================================================
+     MAIN UPDATE
+  ============================================================ */
   update(ctx, fingers, dt = 1/60) {
-  dt = Math.min(dt, 1 / 20);
+  // ── WAS: dt = Math.min(dt, 1 / 20) — i.e. hard-capped at 50ms no
+  //    matter what main.js passed in. That silently re-imposed the
+  //    exact same "lost time" bug we just fixed in main.js's gameLoop,
+  //    since this clamp runs before timeRemaining/tutorial-hold ever
+  //    see dt. Raised to match the 0.25s ceiling used in main.js for
+  //    Game1, so real elapsed time on slower/Android devices survives
+  //    all the way through to the timer and tutorial countdown. ──
+  dt = Math.min(dt, 0.25);
 
   if (this.gameState === "tutorial") {
     this._updateTutorial(ctx, fingers, dt);
@@ -3089,7 +3099,6 @@ _hexToRgb(hex) {
   this.drawHitText(ctx);
   this._drawNoFingerPrompt(ctx, dt);
 },
-
   /* ── Finger ─────────────────────────────────────────────── */
   drawFinger(ctx, x, y) {
     ctx.shadowColor = "rgba(126,207,179,0.55)";
