@@ -755,6 +755,9 @@ _spawnAccumulator: 0,
    /* ============================================================
       INIT
   ============================================================ */
+  /* ============================================================
+   INIT
+============================================================ */
   init(modeKey = "default") {
     const rect = document.getElementById("container").getBoundingClientRect();
     this._applyResize(rect.width, rect.height);
@@ -777,7 +780,7 @@ _spawnAccumulator: 0,
     this.currentNumber = 1;
     this.xp = 0;
     this.level = 1;
-    this.levelThreshold = this._getCumulativeThreshold(this.level); // was _getLevelThreshold
+    this.levelThreshold = this._getCumulativeThreshold(this.level);
     this.tier = 0;
     this.levelUpActive = false;
     this.xpPopFlash = 0;
@@ -812,11 +815,8 @@ _spawnAccumulator: 0,
     this.overlayData = null;
     this.torusAngle = 0;
     this._spriteFrame = 0;
-    this.showSkillDebug = false; // Reset debug toggles across hard reboots
+    this.showSkillDebug = false;
 
-    // ── FIXED: use the actual chosen mode (not a hardcoded "default")
-    //    so _buildRoundPlan() below generates the correct type of plan
-    //    (pattern skip/collect vs. plain skip amount) right from the start. ──
     this.mode = modeKey || "default";
     this.skipAmount = this.getRandomSkip();
     this.gameTitle = "COLLECT MULTIPLES OF "+ this.skipAmount;
@@ -839,8 +839,6 @@ _spawnAccumulator: 0,
     this._tutNoFingerFrames = 0;
     this._syncDifficultyScalars();
 
-    // ── FIXED: this plan is now generated ONCE, using the correct mode,
-    //    and will be reused verbatim when the round actually starts. ──
     this.nextRoundPlan = this._buildRoundPlan();
 
     this._initTutStars();
@@ -858,10 +856,8 @@ _spawnAccumulator: 0,
         this._resizeTimer = setTimeout(() => this._onResize(), 300);
       });
 
-      // ── Unified Double Click / Double Tap Interaction Listener ──
       this._lastTapTime = 0;
       window.addEventListener("pointerdown", (e) => {
-        // Only allow freezing actions inside the live execution gameplay loop
         if (this.gameState !== "playing") return;
         
         const now = performance.now();
@@ -899,14 +895,27 @@ _spawnAccumulator: 0,
           return;
         }
 
-        // ── KEY 3 Toggles Interactive UI Skill Point Overlay Debug Display ──
+        // Key 3: Toggle Debug Skill UI
         if (e.key === "3") {
           this.showSkillDebug = !this.showSkillDebug;
           return;
         }
         
+        // Key 4: Get and set skill points required for Level - 1
+        if (e.key === "4") {
+          const targetLevel = Math.max(0, this.level - 1);
+          const pointsNeeded = this._getCumulativeThreshold(targetLevel);
+
+          console.log(`[DEBUG Key 4] Current Level: ${this.level} | Points needed for Level ${targetLevel}: ${pointsNeeded}`);
+
+          if (this.gameState === "playing") {
+            // Set running skill points directly and update system XP
+            this._adjustSkill(pointsNeeded - this.skillPoints);
+          }
+          return;
+        }
+
         if (e.key === "5") this._setMode("orb");
-        if (e.key === "4") this._setMode("triple");
       });
     }
   },

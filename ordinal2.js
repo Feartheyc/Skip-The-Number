@@ -670,11 +670,42 @@ const Game10 = {
         num = this.generateNumberWithSuffix(this.mode1TargetSuffix, usedNumbers);
         correctSpawned++;
       } else {
+        // Generate a DISTRACTOR number — must NOT match the target suffix.
         let distAttempts = 0;
         do {
           num = Math.floor(Math.random() * this.numberRange) + 1;
           distAttempts++;
-          if (distAttempts > 300) break;
+          if (distAttempts > 300) {
+            // FIX: previously this just broke out and kept whatever `num`
+            // was last rolled — which could still match the target suffix,
+            // producing a visually-"correct" distractor that was never
+            // counted in mode1CorrectTotal. That let players finish a round
+            // after catching only ONE of two identical-looking numbers,
+            // leaving a duplicate uncollected on screen.
+            //
+            // Instead, explicitly search for a guaranteed non-matching,
+            // unused number before giving up.
+            let fallback = null;
+            for (let n = 1; n <= this.numberRange; n++) {
+              if (this.getSuffix(n) !== this.mode1TargetSuffix && !usedNumbers.has(n)) {
+                fallback = n;
+                break;
+              }
+            }
+            // If the range is too small/saturated to find an unused one,
+            // fall back to ANY non-matching number (allow reuse) rather
+            // than risking a number that matches the target suffix.
+            if (fallback === null) {
+              for (let n = 1; n <= this.numberRange; n++) {
+                if (this.getSuffix(n) !== this.mode1TargetSuffix) {
+                  fallback = n;
+                  break;
+                }
+              }
+            }
+            num = fallback !== null ? fallback : num;
+            break;
+          }
         } while (
           (this.getSuffix(num) === this.mode1TargetSuffix || usedNumbers.has(num))
         );
