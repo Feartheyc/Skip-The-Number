@@ -20,7 +20,7 @@ const Game3 = {
 
   currentGrade: 1,
   currentLevel: 1, 
-  targetPromptText: "Point at the BIGGER number!", 
+  targetPromptText: "Aim at the BIGGER number!", 
 
   winHoldTime: 0,
   winHoldThreshold: 1.0,
@@ -84,6 +84,7 @@ const Game3 = {
   fpsTimer: 0,
 
   _lastFingerUpdateTime: 0,
+  _lastHandDetectedTime: 0,
   FINGER_UPDATE_INTERVAL: 33, 
   _cachedLandmarks: null,
 
@@ -117,6 +118,8 @@ const Game3 = {
     this.gestureGraceTimer = 0;
     this._lastDetectedSymbol = "None";
     this.handResetRequired = false;
+    this._cachedLandmarks = null;
+    window.fingerPositions = null;
 
     if (!this.eventsBound) {
       this.eventsBound = true;
@@ -238,25 +241,25 @@ const Game3 = {
     this.handResetRequired = true;
 
     if (this.currentGrade === 1) {
-      if (this.currentLevel === 1) this.targetPromptText = "Point at the BIGGER number!";
-      else if (this.currentLevel === 2) this.targetPromptText = "Point at the SMALLER number!";
+      if (this.currentLevel === 1) this.targetPromptText = "Aim at the BIGGER number!";
+      else if (this.currentLevel === 2) this.targetPromptText = "Point finger at the SMALLER number!";
       else if (this.currentLevel >= 3) {
         const askBigger = Math.random() > 0.5;
-        this.targetPromptText = askBigger ? "Point at the BIGGER number!" : "Point at the SMALLER number!";
+        this.targetPromptText = askBigger ? "Aim at the BIGGER number!" : "Point finger at the SMALLER number!";
       }
       this.spawnIntegers(1, 20);
     }
     else if (this.currentGrade === 2) {
-      this.targetPromptText = "Point at the BIGGER number!";
+      this.targetPromptText = "Aim at the BIGGER number!";
       this.spawnIntegers(-50, 50);
     }
     else if (this.currentGrade === 3) {
-      this.targetPromptText = "Point at the BIGGER number!";
+      this.targetPromptText = "Aim at the BIGGER number!";
       if (Math.random() > 0.5) this.spawnIntegers(100, 999);
       else this.spawnLikeFractions();
     }
     else if (this.currentGrade === 4) {
-      this.targetPromptText = "Point at the BIGGER number!";
+      this.targetPromptText = "Aim at the BIGGER number!";
       this.spawnIrregularFractions();
     }
 
@@ -305,6 +308,30 @@ const Game3 = {
     this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
   },
 
+  drawSciFiCameraOverlay(ctx) {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    ctx.save();
+
+    const innerRadius = Math.min(w, h) * 0.22;
+    const outerRadius = Math.max(w, h) * 0.55;
+
+    const vignette = ctx.createRadialGradient(
+      this.centerX, this.centerY, innerRadius,
+      this.centerX, this.centerY, outerRadius
+    );
+    vignette.addColorStop(0, "rgba(0, 0, 0, 0)");
+    vignette.addColorStop(0.45, "rgba(0, 0, 0, 0.45)");
+    vignette.addColorStop(0.85, "rgba(0, 0, 0, 0.88)");
+    vignette.addColorStop(1, "rgba(0, 0, 0, 0.96)");
+
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.restore();
+  },
+
   update(ctx, landmarks, dt = 1 / 60) {
     const isPaused = typeof PauseArea !== 'undefined' && PauseArea.isPaused;
     if (isPaused) dt = 0;
@@ -314,7 +341,11 @@ const Game3 = {
     if (this.fpsTimer >= 1) { this.fps = this.frameCounter; this.frameCounter = 0; this.fpsTimer = 0; }
 
     const now = performance.now();
-    if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
+    // Invalidate stale landmarks if no frame has arrived in over 200ms
+    if (now - this._lastHandDetectedTime > 200) {
+      this._cachedLandmarks = null;
+      window.fingerPositions = null;
+    } else if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
       this._lastFingerUpdateTime = now;
       this._cachedLandmarks = (landmarks && landmarks.length >= 3) ? landmarks : null;
     }
@@ -326,6 +357,8 @@ const Game3 = {
       this.shakeTime -= dt;
       ctx.translate((Math.random() - 0.5) * this.shakeMag, (Math.random() - 0.5) * this.shakeMag);
     }
+
+    this.drawSciFiCameraOverlay(ctx);
 
     if (this.combo > 0 && this.gameState === "PLAYING" && !this.showTutorial && !this.difficultyMenuOpen) {
       this.comboTimer -= dt;
@@ -350,7 +383,7 @@ const Game3 = {
     if (this.gameState === "PLAYING" || this.showTutorial) {
       if (!activeLandmarks || activeLandmarks.length < 3) {
         this.handResetRequired = false;
-        if (isPlaying) this.drawFeedback(ctx, "Lower hand between questions!", "rgba(255, 255, 255, 0.7)");
+        if (isPlaying) this.drawFeedback(ctx, "Show One Hand!", "orange");
         else if (this.showTutorial) this.tutorialHoldTime = Math.max(0, this.tutorialHoldTime - dt);
       } else {
         const [indexTip, thumbTip, wrist] = activeLandmarks;
@@ -428,7 +461,7 @@ const Game3 = {
     ctx.fillText("COMPARATORS: HOW TO PLAY!", this.centerX, boxY + 35 * this.scale);
 
     ctx.font = `${14 * this.scale}px Arial`; ctx.fillStyle = "rgba(240,244,255,0.6)";
-    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Hand Controls & Placement' : 'Timers & Scoring Multipliers'}`, this.centerX, boxY + 80 * this.scale);
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Gameplay & Gestures' : 'Timers & Multipliers'}`, this.centerX, boxY + 80 * this.scale);
 
     const visX = boxX + 40 * this.scale, visY = boxY + 120 * this.scale;
     const visW = 320 * this.scale, visH = 260 * this.scale;
@@ -443,11 +476,11 @@ const Game3 = {
     const contentRows = [];
     if (this._tutPage === 1) {
       contentRows.push(
-        { isHeader: true, text: "🎮 Hand Placement & Rules" },
+        { isHeader: true, text: "🎮 Challenge Rules & Gestures" },
         { icon: "👀", text: "Read the prompt at the bottom of screen." },
-        { icon: "☝️", text: "Point directly at the correct number card." },
-        { icon: "🖐️", text: "LOWER HAND after answering to start next Q!" },
-        { icon: "⏱️", text: "Hold point for 1s Response Timer to submit." }
+        { icon: "✌️", text: "Bigger number: Make a wide 'V' crocodile mouth." },
+        { icon: "☝️", text: "Smaller number: Point directly at the card." },
+        { icon: "🖐️", text: "LOWER HAND after answering to start next Q!" }
       );
     } else {
       contentRows.push(
@@ -455,7 +488,7 @@ const Game3 = {
         { icon: "⚡", text: "Combo Timer (5s): Starts as question appears." },
         { icon: "📈", text: "Answer fast to stack score multipliers!" },
         { icon: "📉", text: "If Combo Timer drains to 0, multiplier resets." },
-        { icon: "🎯", text: "Response Bar (1s): Fills as you hold point." },
+        { icon: "🎯", text: "Response Bar (1s): Fills as you hold gesture." },
         { icon: "❌", text: "Wrong choice deducts -5 (Score cap at 0)." }
       );
     }
@@ -493,7 +526,6 @@ const Game3 = {
     ctx.restore();
   },
 
-  // ⚡ UPDATED DIAGRAM: Clean single-finger pointing vector illustration
   _drawTutSandboxDiagram(ctx, x, y, w, h) {
     const cx = x + w / 2, cy = y + h / 2;
     
@@ -511,16 +543,17 @@ const Game3 = {
     if (this._tutPage === 1) {
       ctx.strokeStyle = "#00FFCC"; ctx.lineWidth = 6 * this.scale; ctx.lineCap = "round";
       ctx.beginPath();
-      ctx.moveTo(cx + waveOffset, baseDrawingY + 45 * this.scale);
-      ctx.lineTo(cx - 30 * this.scale + waveOffset, baseDrawingY - 15 * this.scale);
+      ctx.moveTo(cx - 50 * this.scale + waveOffset, baseDrawingY - 15 * this.scale);
+      ctx.lineTo(cx + waveOffset, baseDrawingY + 45 * this.scale);
+      ctx.lineTo(cx - 10 * this.scale + waveOffset, baseDrawingY - 20 * this.scale);
       ctx.stroke();
 
       ctx.fillStyle = "#fff";
       ctx.beginPath(); ctx.arc(cx + waveOffset, baseDrawingY + 45 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(cx - 30 * this.scale + waveOffset, baseDrawingY - 15 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx - 50 * this.scale + waveOffset, baseDrawingY - 15 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
       
       ctx.font = `bold ${12 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
-      ctx.fillText("Point Finger to Select", cx, baseDrawingY + 75 * this.scale);
+      ctx.fillText("Wide V = Bigger / Point = Smaller", cx, baseDrawingY + 75 * this.scale);
     } else {
       const barW = 160 * this.scale, barH = 8 * this.scale;
       const bx = cx - barW / 2, by = baseDrawingY + 20 * this.scale;
@@ -549,13 +582,33 @@ const Game3 = {
   },
 
   checkPose(ctx, indexTip, thumbTip, wrist, dt) {
-    const deadzone = 40 * this.scale;
+    const isSmallerNumberChallenge = this.targetPromptText.includes("SMALLER");
+    
+    if (!isSmallerNumberChallenge) {
+      const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
+      if (angle < 20) { this.resetHolds(dt); return; }
+      
+      const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
+      if (overlap < 0.5) { this.resetHolds(dt); return; }
+    }
 
     let targetDetected = "Center";
-    if (indexTip.x < this.centerX - deadzone) {
-      targetDetected = ">"; // Left Card
-    } else if (indexTip.x > this.centerX + deadzone) {
-      targetDetected = "<"; // Right Card
+    if (isSmallerNumberChallenge) {
+      const deadzone = 40 * this.scale;
+      if (indexTip.x < this.centerX - deadzone) {
+        targetDetected = ">";
+      } else if (indexTip.x > this.centerX + deadzone) {
+        targetDetected = "<";
+      }
+    } else {
+      const tipsX = (indexTip.x + thumbTip.x) / 2;
+      const threshold = 30 * this.scale;
+
+      if (tipsX < wrist.x - threshold) {
+        targetDetected = ">";
+      } else if (tipsX > wrist.x + threshold) {
+        targetDetected = "<";
+      }
     }
 
     if (this.handResetRequired) {
@@ -751,6 +804,7 @@ const Game3 = {
   drawArmSymbol(ctx, indexTip, thumbTip, wrist) {
     if (this.showTutorial) return; 
 
+    const isSmallerNumberChallenge = this.targetPromptText.includes("SMALLER");
     const isCorrect = this.detectedSymbol === this.currentRelation;
     const isWrong = this.detectedSymbol !== "None" && this.detectedSymbol !== this.currentRelation;
 
@@ -760,8 +814,16 @@ const Game3 = {
 
     ctx.strokeStyle = color; ctx.lineWidth = 10 * this.scale; ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.stroke();
-    ctx.fillStyle = "white"; [indexTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
+    
+    if (isSmallerNumberChallenge) {
+      ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.stroke();
+      ctx.fillStyle = "white"; [indexTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
+    } else {
+      const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
+      if (angle < 20) return;
+      ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.lineTo(thumbTip.x, thumbTip.y); ctx.stroke();
+      ctx.fillStyle = "white"; [indexTip, thumbTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
+    }
   },
 
   drawUI(ctx) {
@@ -925,8 +987,14 @@ const Game3 = {
 
   processHandResults(results) {
     const canvas = document.getElementById("game_canvas");
-    if (!results.multiHandLandmarks || results.multiHandLandmarks.length === 0) return;
+    if (!results || !results.multiHandLandmarks || results.multiHandLandmarks.length === 0) {
+      this._cachedLandmarks = null;
+      window.fingerPositions = null;
+      return;
+    }
+
     const hand = results.multiHandLandmarks[0];
+    this._lastHandDetectedTime = performance.now();
     
     window.isLeftHand = results.multiHandedness && results.multiHandedness[0].label === "Left";
 
