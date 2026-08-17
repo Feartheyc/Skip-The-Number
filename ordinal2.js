@@ -27,6 +27,7 @@ const Game10 = {
   theme: "space",
   themes: {
     space: {
+
       bg1: "#0a0e27", bg2: "#1a1040", bg3: "#0d1f3c",
       accent: "#7c3aed", accentGlow: "rgba(124,58,237,0.4)",
       textPrimary: "#e2e8f0", textAccent: "#a78bfa",
@@ -101,7 +102,7 @@ const Game10 = {
 
   /* ── Finger throttle ─────────────────────────────────────── */
   _lastFingerUpdateTime: 0,
-  FINGER_UPDATE_INTERVAL: 33, // ~30 FPS
+  FINGER_UPDATE_INTERVAL: 50, 
 
   /* ============================================================
      INIT
@@ -226,6 +227,9 @@ const Game10 = {
     this.scale    = Math.min(w / this.BASE_WIDTH, h / this.BASE_HEIGHT) || 1;
     this.CENTER_X = w / 2;
     this.CENTER_Y = h / 2;
+    // Invalidate cached gradients/canvases that depend on size/scale
+    this._bgCanvas = null;
+    this._portalHaloCache = null;
   },
 
   /* ── Tutorial stars ─────────────────────────────────────── */
@@ -249,6 +253,9 @@ const Game10 = {
     this.gameState = "playing";
   },
 
+  /* ============================================================
+     TUTORIAL DRAW
+  ============================================================ */
   /* ============================================================
      TUTORIAL DRAW
   ============================================================ */
@@ -308,7 +315,7 @@ const Game10 = {
     
     ctx.font = `${isMob ? 12 : 14}px 'Fredoka', 'Trebuchet MS', sans-serif`;
     ctx.fillStyle = "rgba(226,232,240,0.68)";
-    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Core Mechanics & Target UI' : 'Time Metrics & Risk Parameters'}`, cx, cardY + 65);
+    ctx.fillText(`Page ${this._tutPage} of 2 — ${this._tutPage === 1 ? 'Core Mechanics & Target UI' : 'Hearts & Streak Bonus'}`, cx, cardY + 65);
 
     /* Left Side Mini-Diagram Box Frame */
     const visX = cardX + 12, visY = cardY + 76;
@@ -328,24 +335,26 @@ const Game10 = {
         { icon: "🌌", text: "Move portal around to absorb numbers" },
         { icon: "✅", text: "Swallow numbers matching portal suffix" },
         { isHeader: true,  text: "⭐ Score Parameters" },
-        { icon: "✨", text: "Correct match grants +10 score instantly" },
+        { icon: "✨", text: "Absorb matching numbers to earn points" },
         { icon: "🔥", text: "Consecutive matches multiply total scores" }
       );
     } else {
       contentRows.push(
         { isHeader: true,  text: "⏱️ Round Vital Metrics" },
         { icon: "❤️", text: "You begin with 3 full structural hearts" },
-        { icon: "⏳", text: "absorbing incorrect numbers drops 1 heart" },
-        { isHeader: true,  text: "⚙️ Cosmic Dynamic Scales" },
-        { icon: "❌", text: "Errors drop points and collapse black holes" },
-        { icon: "🌟", text: "Clearing all targets triggers a Big Bang" }
+        { icon: "⏳", text: "Absorbing incorrect numbers drops 1 heart" },
+        { isHeader: true,  text: "🔥 Streak Bonus Points" },
+        { icon: "✅", text: "0-2 in a row = +10 points" },
+        { icon: "✨", text: "3-4 in a row = +20 points" },
+        { icon: "⭐", text: "5-9 in a row = +30 points" },
+        { icon: "🔥", text: "10+ in a row = +50 points!" }
       );
     }
 
     const rulesX = isMob ? cardX + 12 : cardX + visW + 24;
     const rulesY = isMob ? visY + visH + 10 : cardY + 76;
     const rulesW = isMob ? cardW - 24 : cardW - visW - 36;
-    const dynamicRowH = isMob ? (this._tutPage === 1 ? 30 : 34) : (this._tutPage === 1 ? 36 : 42);
+    const dynamicRowH = isMob ? (this._tutPage === 1 ? 30 : 27) : (this._tutPage === 1 ? 36 : 33);
 
     for (let i = 0; i < contentRows.length; i++) {
       const item = contentRows[i];
@@ -365,7 +374,7 @@ const Game10 = {
         ctx.fillStyle = T.textPrimary; ctx.textAlign = "left"; ctx.textBaseline = "middle";
         ctx.fillText(item.icon, rulesX + 10, currentY + dynamicRowH / 2 - 2);
         
-        ctx.font = `${isMob ? 11.5 : 13.5}px 'Fredoka', 'Trebuchet MS', sans-serif`;
+        ctx.font = `${isMob ? 11.5 : 13}px 'Fredoka', 'Trebuchet MS', sans-serif`;
         ctx.fillStyle = `rgba(226,232,240,0.85)`;
         ctx.fillText(item.text, rulesX + 36, currentY + dynamicRowH / 2 - 2);
       }
@@ -523,7 +532,11 @@ const Game10 = {
     const copy  = "☝ Raise your index finger to navigate the galaxy!";
     const blink = Math.sin(performance.now() * 0.003) > 0;
     ctx.font = "bold 15px 'Fredoka', 'Trebuchet MS', sans-serif";
-    const tw = ctx.measureText(copy).width;
+    // Cache text width — string and font never change, measureText is a layout op
+    if (this._noFingerTextWidth === undefined) {
+      this._noFingerTextWidth = ctx.measureText(copy).width;
+    }
+    const tw = this._noFingerTextWidth;
     const bw = tw + 56, bh = 46, bx = W / 2 - bw / 2, by = H - 110;
     ctx.globalAlpha = blink ? 0.95 : 0.55;
     ctx.fillStyle = "rgba(18,12,46,0.92)";
@@ -614,6 +627,12 @@ const Game10 = {
     const margin = 140 * this.scale;
     const safeR = 170 * this.scale;
 
+    // No-spawn zone is centered on the portal's CURRENT position (wherever
+    // the finger actually is right now), not the screen center — otherwise
+    // numbers can spawn under/near a portal that never recenters.
+    const originX = this.mascot.x;
+    const originY = this.mascot.y;
+
     const used = [];
     let correctSpawned = 0;
 
@@ -630,7 +649,7 @@ const Game10 = {
         x = margin + Math.random() * (this.cssWidth - margin * 2);
         y = margin + Math.random() * (this.cssHeight - margin * 2);
 
-        if (Math.hypot(x - this.CENTER_X, y - this.CENTER_Y) < safeR) continue;
+        if (Math.hypot(x - originX, y - originY) < safeR) continue;
 
         let tooClose = false;
         for (const p of used) {
@@ -781,15 +800,16 @@ const Game10 = {
   /* ── Mascot / Portal Movement ───────────────────────────── */
   updateMascot(delta) {
     if (this.gameMode === 1 && this.mode1Confirming) {
-      const dx = this.mode1PortalTargetX - this.mascot.x, dy = this.mode1PortalTargetY - this.mascot.y;
-      if (Math.hypot(dx, dy) > 4) {
-        const f = 1 - Math.pow(0.92, delta / 16.67);
-        this.mascot.x += dx * f; this.mascot.y += dy * f;
-      } else {
-        this.mascot.x = this.mode1PortalTargetX; this.mascot.y = this.mode1PortalTargetY;
-        this.mode1Confirming = false; this.startNewRound();
+      // Round-complete pause: portal freezes exactly where it caught the
+      // last correct number (does NOT fly to center — that's what caused
+      // it to land on top of a number the instant the finger was re-read).
+      this.mode1ConfirmTimer -= delta;
+      this.mascot.vx = 0; this.mascot.vy = 0;
+      if (this.mode1ConfirmTimer <= 0) {
+        this.mode1Confirming = false;
+        this.startNewRound();
       }
-      this.mascot.vx = 0; this.mascot.vy = 0; return;
+      return;
     }
 
     // Follow finger position directly
@@ -822,14 +842,40 @@ const Game10 = {
   },
 
   /* ── Background ──────────────────────────────────────────── */
+  /* Pre-render the (static) background gradient stack to an offscreen
+     canvas once, then just blit it every frame. Avoids rebuilding two
+     gradients from scratch 60x/sec — same pixels, far cheaper draw call.
+     Cache is invalidated on resize (_applyResize clears _bgCanvas) and
+     rebuilt automatically if theme changes at runtime. */
+  _buildBgCache() {
+    const W = this.cssWidth, H = this.cssHeight, T = this.T;
+    const dpr = window.devicePixelRatio || 1;
+    const off = document.createElement("canvas");
+    off.width = Math.max(1, Math.round(W * dpr));
+    off.height = Math.max(1, Math.round(H * dpr));
+    const octx = off.getContext("2d");
+    octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const g = octx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, T.bg1); g.addColorStop(0.5, T.bg2); g.addColorStop(1, T.bg3);
+    octx.fillStyle = g; octx.fillRect(0, 0, W, H);
+
+    const r = octx.createRadialGradient(this.CENTER_X, this.CENTER_Y * 0.7, 0, this.CENTER_X, this.CENTER_Y * 0.7, W * 0.55);
+    r.addColorStop(0, "rgba(124,58,237,0.12)"); r.addColorStop(1, "rgba(0,0,0,0)");
+    octx.fillStyle = r; octx.fillRect(0, 0, W, H);
+
+    this._bgCanvas = off;
+    this._bgCanvasTheme = this.theme;
+    this._bgCanvasCssW = W;
+    this._bgCanvasCssH = H;
+  },
   drawBackground(ctx) {
-    const T=this.T,W=this.cssWidth,H=this.cssHeight;
-    const g=ctx.createLinearGradient(0,0,0,H);
-    g.addColorStop(0,T.bg1);g.addColorStop(0.5,T.bg2);g.addColorStop(1,T.bg3);
-    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
-    const r=ctx.createRadialGradient(this.CENTER_X,this.CENTER_Y*0.7,0,this.CENTER_X,this.CENTER_Y*0.7,W*0.55);
-    r.addColorStop(0,"rgba(124,58,237,0.12)");r.addColorStop(1,"rgba(0,0,0,0)");
-    ctx.fillStyle=r;ctx.fillRect(0,0,W,H);
+    const W = this.cssWidth, H = this.cssHeight;
+    if (!this._bgCanvas || this._bgCanvasTheme !== this.theme ||
+        this._bgCanvasCssW !== W || this._bgCanvasCssH !== H) {
+      this._buildBgCache();
+    }
+    ctx.drawImage(this._bgCanvas, 0, 0, W, H);
   },
 
   initStarfield() {
@@ -846,7 +892,15 @@ const Game10 = {
       const fl=Math.random()<0.5,spd=(7+Math.random()*5)*0.055;
       this.shootingStars.push({x:fl?-60:this.cssWidth+60,y:Math.random()*this.cssHeight*0.5,vx:fl?spd:-spd,vy:(1.5+Math.random()*1.5)*0.055,life:0,maxLife:900});
     }
-    for(let i=this.shootingStars.length-1;i>=0;i--){const s=this.shootingStars[i];s.x+=s.vx*delta;s.y+=s.vy*delta;s.life+=delta;if(s.life>s.maxLife)this.shootingStars.splice(i,1);}
+    // Swap-and-pop removal (order doesn't matter for rendering) — avoids
+    // O(n) element shifting that splice() does inside a loop.
+    for(let i=this.shootingStars.length-1;i>=0;i--){
+      const s=this.shootingStars[i];s.x+=s.vx*delta;s.y+=s.vy*delta;s.life+=delta;
+      if(s.life>s.maxLife){
+        this.shootingStars[i]=this.shootingStars[this.shootingStars.length-1];
+        this.shootingStars.pop();
+      }
+    }
   },
   drawShootingStars(ctx) {
     for(const s of this.shootingStars){const alpha=Math.max(0,1-s.life/s.maxLife),tL=160,absVx=Math.abs(s.vx)||0.01,tx=s.x-s.vx*tL/absVx,ty=s.y-s.vy*tL/absVx;const grd=ctx.createLinearGradient(s.x,s.y,tx,ty);grd.addColorStop(0,`rgba(255,255,255,${alpha})`);grd.addColorStop(1,"rgba(255,255,255,0)");ctx.strokeStyle=grd;ctx.lineWidth=2*this.scale;ctx.beginPath();ctx.moveTo(s.x,s.y);ctx.lineTo(tx,ty);ctx.stroke();}
@@ -860,14 +914,27 @@ const Game10 = {
   drawDustMotes(ctx) { for(const d of this.dustMotes){ctx.globalAlpha=d.alpha;ctx.beginPath();ctx.arc(d.x,d.y,d.r*this.scale,0,Math.PI*2);ctx.fillStyle=this.T.accent;ctx.fill();}ctx.globalAlpha=1; },
 
   /* ── Portal player ───────────────────────────────────────── */
+  /* Halo gradient only depends on sz (i.e. scale) and theme accent color —
+     cache it per scale value instead of building a fresh radial gradient
+     every single frame. */
+  _getPortalHalo(ctx, sz) {
+    const key = sz.toFixed(2) + "|" + this.theme;
+    if (this._portalHaloCache && this._portalHaloCache.key === key) {
+      return this._portalHaloCache.gradient;
+    }
+    const T = this.T;
+    const halo = ctx.createRadialGradient(0, 0, sz * 0.25, 0, 0, sz * 0.75);
+    halo.addColorStop(0, T.accentGlow); halo.addColorStop(1, "rgba(0,0,0,0)");
+    this._portalHaloCache = { key, gradient: halo };
+    return halo;
+  },
   drawMode1PortalPlayer(ctx) {
     const T=this.T,px=this.mascot.x,py=this.mascot.y;
     const sz=this.portalSize*this.scale,now=performance.now();
     const spdN=Math.min(Math.hypot(this.mascot.vx,this.mascot.vy)/this.mascot.maxSpeed,1);
     const scX=1+spdN*0.10,scY=1-spdN*0.07,bob=Math.sin(now*0.003)*5*this.scale;
     ctx.save();ctx.translate(px,py+bob);ctx.scale(scX,scY);
-    const halo=ctx.createRadialGradient(0,0,sz*0.25,0,0,sz*0.75);
-    halo.addColorStop(0,T.accentGlow);halo.addColorStop(1,"rgba(0,0,0,0)");
+    const halo=this._getPortalHalo(ctx, sz);
     ctx.fillStyle=halo;ctx.beginPath();ctx.arc(0,0,sz*0.75,0,Math.PI*2);ctx.fill();
     const frame=this.portalFrames[this.portalFrameIndex];
     if(frame&&frame.complete&&frame.naturalWidth>0){ctx.drawImage(frame,-sz/2,-sz/2,sz,sz);}
@@ -894,6 +961,10 @@ const Game10 = {
 
   drawMode1Numbers(ctx) {
     const T=this.T,now=performance.now();
+    // Shadow blur is one of the most expensive canvas ops on weak/Android
+    // GPUs. Only pay for it once glow is visually meaningful — below this
+    // threshold the blur was imperceptible anyway (radius < ~1px).
+    const SHADOW_GLOW_THRESHOLD = 0.12;
     for(let i=0;i<this.mode1Numbers.length;i++){
       const n=this.mode1Numbers[i];
       if(n.spawnAlpha<=0.01)continue;
@@ -902,11 +973,14 @@ const Game10 = {
       const sc=(n.renderScale||1)*(1+glow*0.12);
       const isC=this.getSuffix(n.number)===this.mode1TargetSuffix;
       ctx.save();ctx.globalAlpha=n.spawnAlpha;ctx.translate(n.x,n.y+fY);ctx.rotate(n.renderRotation||0);ctx.scale(sc,sc);
-      if(glow>0.05){ctx.shadowColor=isC?T.correct:T.wrong;ctx.shadowBlur=22*glow;}
+      if(glow>SHADOW_GLOW_THRESHOLD){ctx.shadowColor=isC?T.correct:T.wrong;ctx.shadowBlur=22*glow;}
       const cr=44*this.scale;
       ctx.fillStyle=T.cardBg;ctx.strokeStyle=glow>0.1?(isC?T.correct:T.wrong):T.cardBorder;ctx.lineWidth=(2+glow*3)*this.scale;
       this._rrect(ctx,-cr,-cr*0.72,cr*2,cr*1.44,16*this.scale);ctx.fill();ctx.stroke();
-      ctx.shadowColor=T.numberGlow;ctx.shadowBlur=12+glow*18;ctx.fillStyle=T.numberColor;
+      if (glow>SHADOW_GLOW_THRESHOLD) { ctx.shadowBlur=0; }
+      ctx.shadowColor=T.numberGlow;
+      ctx.shadowBlur=glow>SHADOW_GLOW_THRESHOLD ? (12+glow*18) : 0;
+      ctx.fillStyle=T.numberColor;
       ctx.font=`bold ${Math.round(46*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
       ctx.fillText(n.number,0,0);ctx.shadowBlur=0;ctx.restore();
     }
@@ -959,31 +1033,62 @@ const Game10 = {
     if(p>=1)this.finishMode1Suction();
   },
   finishMode1Suction() {
-    const s=this.mode1SuctionData,n=this.mode1Numbers[s.index];
-    if(!n)return;
-    const correct=this.getSuffix(n.number)===this.mode1TargetSuffix;
-    if(correct){
-      this.score+=10;this.streak++;if(this.streak>this.bestStreak)this.bestStreak=this.streak;
-      this.streakPulse=1;this.mascotState="happy";this.startPortalMerge(n.number);
-      this.mode1Numbers.splice(s.index,1);this.proximityGlow.splice(s.index,1);
-      this.showToast(this.getPositiveFeedback(),this.T.correct);this.spawnCorrectParticles(this.mascot.x,this.mascot.y);
+    const s = this.mode1SuctionData, n = this.mode1Numbers[s.index];
+    if (!n) return;
+    const correct = this.getSuffix(n.number) === this.mode1TargetSuffix;
+    if (correct) {
+      this.streak++;
+      if (this.streak > this.bestStreak) this.bestStreak = this.streak;
+      
+      // Calculate multiplier bonus based on consecutive correct streak
+      let points = 10;
+      if (this.streak >= 10) points = 50;
+      else if (this.streak >= 5) points = 30;
+      else if (this.streak >= 3) points = 20;
+
+      this.score += points;
+      this.streakPulse = 1;
+      this.mascotState = "happy";
+      this.startPortalMerge(n.number);
+      this.mode1Numbers.splice(s.index, 1);
+      this.proximityGlow.splice(s.index, 1);
+      this.showToast(`${this.getPositiveFeedback()} +${points}`, this.T.correct);
+      this.spawnCorrectParticles(this.mascot.x, this.mascot.y);
     } else {
-      this.score=Math.max(0,this.score-5);this.streak=0;this.hearts=Math.max(0,this.hearts-1);
-      this.heartShakeTime=520;this.mascotState="confused";
-      this.spawnHintFloater(n.number,n.x,n.y);this.showToast(this.getWrongFeedback(n.number),this.T.wrong);
-      this.spawnWrongParticles(this.mascot.x,this.mascot.y);
-      this.mode1Numbers.splice(s.index,1);this.proximityGlow.splice(s.index,1);
-      this.startNumberBreak(n.number);if(this.hearts<=0)setTimeout(()=>this.startBlackHoleCollapse(),600);
+      this.score -= 5
+      this.streak = 0;
+      this.hearts = Math.max(0, this.hearts - 1);
+      this.heartShakeTime = 520;
+      this.mascotState = "confused";
+      this.spawnHintFloater(n.number, n.x, n.y);
+      this.showToast(this.getWrongFeedback(n.number), this.T.wrong);
+      this.spawnWrongParticles(this.mascot.x, this.mascot.y);
+      this.mode1Numbers.splice(s.index, 1);
+      this.proximityGlow.splice(s.index, 1);
+      this.startNumberBreak(n.number);
+      if (this.hearts <= 0) setTimeout(() => this.startBlackHoleCollapse(), 600);
     }
-    this.mode1SuctionActive=false;this.mode1SuctionData=null;
-    setTimeout(()=>{if(this.mascotState!=="idle")this.mascotState="idle";},1100);
+    this.mode1SuctionActive = false;
+    this.mode1SuctionData = null;
+    setTimeout(() => { if (this.mascotState !== "idle") this.mascotState = "idle"; }, 1100);
   },
+
+
+
   getPositiveFeedback(){if(this.streak>=5)return["🔥 You're on FIRE!","🌟 Unstoppable!","🚀 Total Genius!"][Math.floor(Math.random()*3)];if(this.streak>=3)return["⭐ Amazing streak!","💫 Keep going!","🎯 So good!"][Math.floor(Math.random()*3)];return["✅ That's right!","🎉 Correct!","👏 Great job!","💡 You got it!","🥳 Woohoo!"][Math.floor(Math.random()*5)];},
   getWrongFeedback(num){return`💡 ${num} is ${num}${this.getSuffix(num)} — try again!`;},
 
   /* ── Hint floater ────────────────────────────────────────── */
   spawnHintFloater(num,x,y){this.floatNumbers.push({text:`${num}${this.getSuffix(num)}`,x,y,vy:-0.06,alpha:1,life:1400,maxLife:1400});},
-  updateFloatNumbers(delta){for(let i=this.floatNumbers.length-1;i>=0;i--){const f=this.floatNumbers[i];f.y+=f.vy*delta;f.life-=delta;f.alpha=Math.max(0,f.life/f.maxLife);if(f.life<=0)this.floatNumbers.splice(i,1);}},
+  updateFloatNumbers(delta){
+    for(let i=this.floatNumbers.length-1;i>=0;i--){
+      const f=this.floatNumbers[i];f.y+=f.vy*delta;f.life-=delta;f.alpha=Math.max(0,f.life/f.maxLife);
+      if(f.life<=0){
+        this.floatNumbers[i]=this.floatNumbers[this.floatNumbers.length-1];
+        this.floatNumbers.pop();
+      }
+    }
+  },
   drawFloatNumbers(ctx){for(const f of this.floatNumbers){ctx.save();ctx.globalAlpha=f.alpha;ctx.fillStyle=this.T.wrong;ctx.font=`bold ${Math.round(38*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.T.wrong;ctx.shadowBlur=12;ctx.fillText(f.text,f.x,f.y);ctx.restore();}},
 
   /* ── Merge animation ─────────────────────────────────────── */
@@ -1017,20 +1122,55 @@ const Game10 = {
   },
 
   /* ── Round confirmation ──────────────────────────────────── */
-  startMode1Confirmation(){this.mode1RoundActive=false;this.mode1Confirming=true;this.mode1PortalTargetX=this.CENTER_X;this.mode1PortalTargetY=this.CENTER_Y-40*this.scale;this.startRoundReward();},
+  startMode1Confirmation() {
+    this.mode1RoundActive = false;
+    this.mode1Confirming = true;
+    // Portal stays exactly where it is — hold in place for the reward animation
+    this.mode1ConfirmTimer = 1400;
+    this.mode1PortalTargetX = this.CENTER_X;
+    this.mode1PortalTargetY = this.CENTER_Y;
+    this.startRoundReward();
+  },
   startRoundReward(){
     this.roundRewardActive=true;this.roundRewardTimer=1600;this.roundRewardStars=[];
     for(let i=0;i<18;i++){const ang=(Math.PI*2/18)*i;this.roundRewardStars.push({angle:ang,radius:0,speed:(2.5+Math.random()*2)*0.055,size:(8+Math.random()*8)*this.scale,color:["#fbbf24","#34d399","#a78bfa","#f472b6"][Math.floor(Math.random()*4)]});}
   },
   updateRoundReward(delta){if(!this.roundRewardActive)return;this.roundRewardTimer-=delta;for(const s of this.roundRewardStars)s.radius+=s.speed*delta;if(this.roundRewardTimer<=0)this.roundRewardActive=false;},
-  drawRoundReward(ctx){
-    if(!this.roundRewardActive)return;const px=this.mascot.x,py=this.mascot.y,lf=Math.max(0,this.roundRewardTimer/1600);
-    for(const s of this.roundRewardStars){ctx.globalAlpha=lf*0.88;ctx.beginPath();ctx.arc(px+Math.cos(s.angle)*s.radius,py+Math.sin(s.angle)*s.radius,s.size,0,Math.PI*2);ctx.fillStyle=s.color;ctx.shadowColor=s.color;ctx.shadowBlur=10;ctx.fill();ctx.shadowBlur=0;}
-    ctx.globalAlpha=1;
-    const prog=1-lf;
-    if(prog>0.08&&prog<0.88){const a=Math.sin(prog*Math.PI);ctx.save();ctx.globalAlpha=a;ctx.translate(this.CENTER_X,this.CENTER_Y-160*this.scale);ctx.scale(0.7+a*0.4,0.7+a*0.4);ctx.fillStyle=this.T.correct;ctx.font=`bold ${Math.round(56*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.T.correct;ctx.shadowBlur=20;ctx.fillText("⭐ Round Clear!",0,0);ctx.restore();}
-  },
+  /* ── Round reward draw ────────────────────────────────────── */
+  drawRoundReward(ctx) {
+    if (!this.roundRewardActive) return;
+    const px = this.CENTER_X, py = this.CENTER_Y;
+    const lf = Math.max(0, this.roundRewardTimer / 1600);
 
+    for (const s of this.roundRewardStars) {
+      ctx.globalAlpha = lf * 0.88;
+      ctx.beginPath();
+      ctx.arc(px + Math.cos(s.angle) * s.radius, py + Math.sin(s.angle) * s.radius, s.size, 0, Math.PI * 2);
+      ctx.fillStyle = s.color;
+      ctx.shadowColor = s.color;
+      ctx.shadowBlur = 10;
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.globalAlpha = 1;
+
+    const prog = 1 - lf;
+    if (prog > 0.08 && prog < 0.88) {
+      const a = Math.sin(prog * Math.PI);
+      ctx.save();
+      ctx.globalAlpha = a;
+      ctx.translate(px, py);
+      ctx.scale(0.7 + a * 0.4, 0.7 + a * 0.4);
+      ctx.fillStyle = this.T.correct;
+      ctx.font = `bold ${Math.round(56 * this.scale)}px 'Fredoka',cursive`;
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.shadowColor = this.T.correct;
+      ctx.shadowBlur = 20;
+      ctx.fillText("⭐ Round Clear!", 0, 0);
+      ctx.restore();
+    }
+  },
   /* ── Level progression ──────────────────────────────────── */
   startNewRound() {
     this.roundsCompleted++;
@@ -1120,7 +1260,15 @@ const Game10 = {
   /* ── Particles ───────────────────────────────────────────── */
   spawnCorrectParticles(x,y){const cols=["#34d399","#fbbf24","#a78bfa","#ffffff"];for(let i=0;i<20;i++){if(this.particles.length>=this.MAX_PARTICLES)break;const a=Math.random()*Math.PI*2,v=(Math.random()*6+3)*0.055;this.particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,color:cols[i%cols.length],size:(Math.random()*5+3)*this.scale,life:700,maxLife:700,type:"star"});}},
   spawnWrongParticles(x,y){for(let i=0;i<12;i++){if(this.particles.length>=this.MAX_PARTICLES)break;const a=Math.random()*Math.PI*2,v=(Math.random()*4+2)*0.055;this.particles.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,color:"#f87171",size:(Math.random()*4+2)*this.scale,life:500,maxLife:500,type:"circle"});}},
-  updateParticles(delta){for(let i=this.particles.length-1;i>=0;i--){const p=this.particles[i];p.x+=p.vx*delta;p.y+=p.vy*delta;const fric=1-(1-0.994)*delta/16;p.vx*=fric;p.vy*=fric;p.vy+=0.00007*delta;p.life-=delta;if(p.life<=0)this.particles.splice(i,1);}},
+  updateParticles(delta){
+    for(let i=this.particles.length-1;i>=0;i--){
+      const p=this.particles[i];p.x+=p.vx*delta;p.y+=p.vy*delta;const fric=1-(1-0.994)*delta/16;p.vx*=fric;p.vy*=fric;p.vy+=0.00007*delta;p.life-=delta;
+      if(p.life<=0){
+        this.particles[i]=this.particles[this.particles.length-1];
+        this.particles.pop();
+      }
+    }
+  },
   drawParticles(ctx){for(const p of this.particles){ctx.globalAlpha=Math.max(0,p.life/p.maxLife);ctx.fillStyle=p.color;if(p.type==="star")this._star(ctx,p.x,p.y,p.size,5);else{ctx.beginPath();ctx.arc(p.x,p.y,p.size,0,Math.PI*2);ctx.fill();}}ctx.globalAlpha=1;},
   _star(ctx,x,y,r,pts){ctx.save();ctx.translate(x,y);ctx.beginPath();for(let i=0;i<pts*2;i++){const a=(Math.PI/pts)*i-Math.PI/2,rr=i%2===0?r:r*0.44;i===0?ctx.moveTo(Math.cos(a)*rr,Math.sin(a)*rr):ctx.lineTo(Math.cos(a)*rr,Math.sin(a)*rr);}ctx.closePath();ctx.fill();ctx.restore();},
 
@@ -1129,21 +1277,53 @@ const Game10 = {
     if(this.sparkBursts.length<this.MAX_SPARKS)this.sparkBursts.push({x,y,radius:0,maxRadius:130*this.scale,alpha:1,life:550,maxLife:550});
     for(let i=0;i<16;i++){if(this.sparkBursts.length>=this.MAX_SPARKS)break;const a=Math.random()*Math.PI*2,v=(Math.random()*9+3)*0.055;this.sparkBursts.push({x,y,vx:Math.cos(a)*v,vy:Math.sin(a)*v,size:(Math.random()*4+2)*this.scale,life:480,maxLife:480,type:"p"});}
   },
-  updateSparkBursts(delta){for(let i=this.sparkBursts.length-1;i>=0;i--){const s=this.sparkBursts[i];s.life-=delta;if(s.type==="p"){s.x+=s.vx*delta;s.y+=s.vy*delta;const fric=1-(1-0.993)*delta/16;s.vx*=fric;s.vy*=fric;}else{s.radius=s.maxRadius*(1-s.life/s.maxLife);s.alpha=Math.max(0,s.life/s.maxLife);}if(s.life<=0)this.sparkBursts.splice(i,1);}},
+  updateSparkBursts(delta){
+    for(let i=this.sparkBursts.length-1;i>=0;i--){
+      const s=this.sparkBursts[i];s.life-=delta;
+      if(s.type==="p"){s.x+=s.vx*delta;s.y+=s.vy*delta;const fric=1-(1-0.993)*delta/16;s.vx*=fric;s.vy*=fric;}
+      else{s.radius=s.maxRadius*(1-s.life/s.maxLife);s.alpha=Math.max(0,s.life/s.maxLife);}
+      if(s.life<=0){
+        this.sparkBursts[i]=this.sparkBursts[this.sparkBursts.length-1];
+        this.sparkBursts.pop();
+      }
+    }
+  },
   drawSparkBursts(ctx){for(const s of this.sparkBursts){if(s.type==="p"){ctx.globalAlpha=Math.max(0,s.life/s.maxLife);ctx.fillStyle=this.T.correct;ctx.beginPath();ctx.arc(s.x,s.y,s.size,0,Math.PI*2);ctx.fill();}else{ctx.globalAlpha=Math.max(0,s.alpha);ctx.strokeStyle=this.T.correct;ctx.lineWidth=5*this.scale;ctx.beginPath();ctx.arc(s.x,s.y,s.radius,0,Math.PI*2);ctx.stroke();}}ctx.globalAlpha=1;},
 
   /* ── HUD ─────────────────────────────────────────────────── */
   updateHUDTimers(delta){if(this.heartShakeTime>0)this.heartShakeTime=Math.max(0,this.heartShakeTime-delta);if(this.streakPulse>0)this.streakPulse=Math.max(0,this.streakPulse-delta*0.003);},
   drawHUD(ctx) {
     const T=this.T,s=this.scale,W=this.cssWidth,H=this.cssHeight;
+    
+    // Top-Left Score Display Box
     const sw=175*s,sh=54*s,sx=18*s,sy=16*s;
     ctx.fillStyle=T.scoreBg;this._rrect(ctx,sx,sy,sw,sh,18*s);ctx.fill();
     ctx.fillStyle=T.numberColor;ctx.font=`bold ${Math.round(26*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(`⭐ ${this.score}`,sx+sw/2,sy+sh/2);
+
+    // Top-Right Hearts
     const hSz=32*s,hGap=8*s,totalHW=this.maxHearts*(hSz+hGap)-hGap;
     const hx0=W-18*s-totalHW,hy0=18*s,shk=this.heartShakeTime>0?Math.sin(this.heartShakeTime*0.055)*5*s:0;
     for(let i=0;i<this.maxHearts;i++){ctx.globalAlpha=i<this.hearts?1:0.2;ctx.font=`${Math.round(hSz)}px serif`;ctx.textAlign="left";ctx.textBaseline="top";ctx.fillText("❤️",hx0+i*(hSz+hGap),hy0+(i<this.hearts?shk:0));}
     ctx.globalAlpha=1;
-    if(this.streak>=2){const ps=1+this.streakPulse*0.3,instrTop=20*s,instrH=48*s,gap=20*s,sY=instrTop+instrH+gap;ctx.save();ctx.translate(W/2,sY);ctx.scale(ps,ps);ctx.globalAlpha=0.88+this.streakPulse*0.12;ctx.fillStyle=T.streakColor;ctx.font=`bold ${Math.round(24*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=T.streakColor;ctx.shadowBlur=10;ctx.fillText(`🔥 ${this.streak} in a row!`,0,0);ctx.shadowBlur=0;ctx.restore();}
+
+    // Top-Left Streak Counter (position matching Game 9)
+    if(this.streak>=2){
+      const ps=1+this.streakPulse*0.15;
+      const streakY=sy+sh+12*s;
+      ctx.save();
+      ctx.translate(sx+sw/2, streakY);
+      ctx.scale(ps,ps);
+      ctx.globalAlpha=0.9+this.streakPulse*0.1;
+      ctx.fillStyle=T.streakColor;
+      ctx.font=`bold ${Math.round(18*s)}px 'Fredoka',cursive`;
+      ctx.textAlign="center";ctx.textBaseline="middle";
+      ctx.shadowColor=T.streakColor;ctx.shadowBlur=8;
+      ctx.fillText(`🔥 ${this.streak} in a row!`,0,0);
+      ctx.shadowBlur=0;
+      ctx.restore();
+    }
+
+    // Bottom Level Tracker Badge
     const lw=200*s,lh=40*s,lx=W/2-lw/2,ly=H-58*s;
     ctx.fillStyle=T.scoreBg;this._rrect(ctx,lx,ly,lw,lh,13*s);ctx.fill();
     ctx.fillStyle=T.textAccent;ctx.font=`bold ${Math.round(18*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
@@ -1154,8 +1334,10 @@ const Game10 = {
     if(this.mode1GameOver||this.blackHoleActive)return;
     const T=this.T,s=this.scale,W=this.cssWidth;
     const suf=this.mode1TargetSuffix,maxW=Math.min(W-44*s,700*s),bh=48*s,bx=W/2-maxW/2,by=20*s;
-    ctx.fillStyle=T.cardBg;this._rrect(ctx,bx,by,maxW,bh,13*s);ctx.fill();
-    ctx.strokeStyle=T.cardBorder;ctx.lineWidth=1.5*s;this._rrect(ctx,bx,by,maxW,bh,13*s);ctx.stroke();
+    ctx.fillStyle=T.cardBg;
+    ctx.beginPath(); this._rrectPath(ctx,bx,by,maxW,bh,13*s); ctx.fill();
+    ctx.strokeStyle=T.cardBorder;ctx.lineWidth=1.5*s;
+    ctx.beginPath(); this._rrectPath(ctx,bx,by,maxW,bh,13*s); ctx.stroke();
     ctx.fillStyle=T.textPrimary;ctx.font=`bold ${Math.round(19*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";
     ctx.fillText(`You are the ${suf.toUpperCase()} Galaxy! Collect numbers ending in "${suf}"`,W/2,by+bh/2);
   },
@@ -1193,5 +1375,8 @@ const Game10 = {
   },
 
   /* ── Utility ─────────────────────────────────────────────── */
-  _rrect(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();},
+  // Path-only builder (no beginPath) so callers that fill+stroke the same
+  // shape don't have to rebuild the rounded-rect path twice.
+  _rrectPath(ctx,x,y,w,h,r){r=Math.min(r,w/2,h/2);ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();},
+  _rrect(ctx,x,y,w,h,r){ctx.beginPath();this._rrectPath(ctx,x,y,w,h,r);},
 };

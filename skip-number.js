@@ -456,86 +456,8 @@ const RingSpriteSystem = (() => {
 
 })();
 
-/* ============================================================
-   HOW TO INTEGRATE INTO skip-number.js / Game1
-   ============================================================
 
-  1. Include this file BEFORE skip-number.js in your HTML.
 
-  2. In Game1._startPlaying(), BEFORE the switch(m) statement, add:
-
-       _startPlaying() {
-         this.gameState = "loading";          // ← new intermediate state
-         this._spriteFrame = 0;               // frame counter
-
-         RingSpriteSystem.init(this, () => {
-           // Called once sprites are ready & loading screen fades
-           this.gameState = "playing";
-           const m = this._pendingMode || "default";
-           switch (m) {
-             case "pattern": this.activatePatternMode();      break;
-             case "cannon":  this.activateCannonMode();       break;
-             case "orb":     this.activateOrbMode();          break;
-             case "triple":  this.activateTripleCannonMode(); break;
-             default: this._restartSpawnTimer(); break;
-           }
-         });
-       },
-
-  3. In Game1.drawRings(ctx, dt), replace the ENTIRE method body with:
-
-       drawRings(ctx, dt) {
-         if (RingSpriteSystem.isReady()) {
-           // ── Sprite path (fast) ────────────────────────
-           this.pulseTime  += this.pulseSpeed * dt;
-           this.torusAngle  = (this.torusAngle + dt * 0.28) % (Math.PI * 2);
-
-           // Advance frame at 60fps → 1 full animation cycle per ~28 frames
-           this._spriteFrame = (this._spriteFrame || 0) + dt * 60;
-
-           RingSpriteSystem.drawFrame(
-             ctx,
-             this._spriteFrame,
-             this.centerX,
-             this.centerY
-           );
-         } else {
-           // ── Fallback: original procedural path ────────
-           // (paste the original drawRings body here as a safety net)
-           this._drawRingsProcedural(ctx, dt);
-         }
-       },
-
-       // Rename original drawRings content to _drawRingsProcedural:
-       _drawRingsProcedural(ctx, dt) {
-         // ... original drawRings code ...
-       },
-
-  4. In Game1.update(), guard the "loading" state so it's a no-op
-     (the loading screen DOM sits on top, so nothing needs to be drawn):
-
-       update(ctx, fingers, dt = 1/60) {
-         if (this.gameState === "tutorial") { ... return; }
-         if (this.gameState === "loading")  { return; }   // ← add this line
-         // ... rest of playing logic
-       },
-
-  NOTE ON SCALING:
-  The sprites are rendered at 512×512 with Ro_base=180.
-  If your game canvas is a different size the ring POSITION is always correct
-  (it's centered via cx/cy in drawFrame), but the RADIUS will differ from the
-  procedural version.  To match exactly, pass your actual outer radius when
-  calling RingSpriteSystem.init() and the renderer will use it.
-  A simpler workaround: use ctx.save()/scale()/restore() around drawFrame:
-
-      const scale = this.baseOuterRadius / 180;   // 180 = sprite's Ro_base
-      ctx.save();
-      ctx.translate(this.centerX, this.centerY);
-      ctx.scale(scale, scale);
-      RingSpriteSystem.drawFrame(ctx, this._spriteFrame, 0, 0);
-      ctx.restore();
-
-============================================================ */
 /* ============================================================
    skip-number.js  (Game1) — v4  [Ring Sprite Edition]
    Changes vs v3:
@@ -588,8 +510,8 @@ const Game1 = {
   roundNumber: 1,
   nextRoundNumber: 1,
   roundCycleGoal: 100,
-  timeLimit: 300,
-  timeRemaining: 300,
+  timeLimit: 200  ,
+  timeRemaining: 200,
   skillPoints: 0,
   levelThreshold: 90,
   bestCombo: 0,
@@ -609,8 +531,8 @@ const Game1 = {
   nextRoundPlan: null,
   roundWrapPending: false,
   roundWrapDelay: 0,
-  roundEndBonus: 20,
-  levelUpBonus: 180,
+  roundEndBonus: 10,
+  levelUpBonus: 100,
   roundHoldSec: 3.0,
   overlayHoldProgress: 0,
   levelCongratsTapHold: 0,
@@ -687,6 +609,10 @@ const Game1 = {
   _hintChangeTimer: 0,
   _hintChangeMessage: "",
 
+  // Hoisted out of _drawHUD — was being reallocated as a fresh object
+  // literal every single frame just to look up one string.
+  _DIFF_LABELS: { full:"🟢 Training", subtle:"🟡 Subtle", none:"🔵 Blind", decoy:"🔴 Decoy", chaos:"🟣 Chaos" },
+
   MAX_POP:  80,
   MAX_EXPL: 80,
   maxNotesOnScreen: 6,
@@ -717,7 +643,7 @@ const Game1 = {
       tagline:"Like Mario coins — only collect every Nth one!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -736,7 +662,7 @@ const Game1 = {
       tagline:"Like Guitar Hero — hit the right notes in rhythm!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -756,7 +682,7 @@ const Game1 = {
       tagline:"Like Space Invaders — zap right ones before escape!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -772,7 +698,7 @@ const Game1 = {
       tagline:"Like Metroid — intercept numbers mid-flight!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -789,7 +715,7 @@ const Game1 = {
       tagline:"Like Galaga with 3 ships — pure chaos, total skill!",
       rules:[
         {icon:"👆",text:"Your index finger IS the green dot on screen"},
-        {icon:"⏱️",text:"You start with 300 seconds"},
+        {icon:"⏱️",text:"You start with 200 seconds"},
         {icon:"⏳",text:"The time bar keeps going down"},
         {icon:"🔁",text:"Numbers reset to 1 after 100"},
         {icon:"➕",text:"Finish a round = +20 seconds"},
@@ -812,8 +738,14 @@ _spawnAccumulator: 0,
 
 
 /* ── Sprite state ───────────────────────────────────────── */
-  _spriteFrame: 0,   // accumulates at dt*60 per game tick
   showSkillDebug: false, // UI Debug flag for rendering tracking values
+
+  /* ── Cached DOM refs (avoid per-frame getElementById) ─────── */
+  _pauseBtnEl: undefined,
+
+  /* ── Note glow/body sprite cache (avoid per-frame gradients) ── */
+  _noteSpriteCache: null,   // Map<radiusKey, {normal:canvas, glow:canvas}>
+  _noteFontCache: null,     // {key, font}
 
 
   /* ============================================================
@@ -829,11 +761,7 @@ _spawnAccumulator: 0,
 
     // ── Fixed Tracking Property Initializer ──
     this._noHandDuration = 0;
-    const pauseBtn = document.getElementById("pauseBtn");
-    if (pauseBtn) {
-      pauseBtn.style.display = "none";
-      pauseBtn.style.opacity = "0";
-    }
+    this._hidePauseButton();
 
     this.notes = [];
     this.popEffects = [];
@@ -856,7 +784,7 @@ _spawnAccumulator: 0,
     this.hintState = "full";
     this.noiseTime = 0;
     this.spawnInterval = 1800;
-    this.timeLimit = 300;
+    this.timeLimit = 200;
     this.timeRemaining = this.timeLimit;
     this.skillPoints = 0;
     this.bestCombo = 0;
@@ -942,12 +870,7 @@ _spawnAccumulator: 0,
         if (timespan > 0 && timespan < 300) {
           e.preventDefault();
           this._noHandDuration = 0;
-          
-          const pBtn = document.getElementById("pauseBtn");
-          if (pBtn) {
-            pBtn.style.display = "none";
-            pBtn.style.opacity = "0";
-          }
+          this._hidePauseButton();
           window.pauseGame();
         }
         this._lastTapTime = now;
@@ -987,6 +910,22 @@ _spawnAccumulator: 0,
       });
     }
   },
+
+  /* ── Cached pause-button hider (was: document.getElementById every frame) ──
+     Called every frame during "playing" in the original code, which forced
+     a DOM lookup AND two style writes 60x/sec even when nothing changed.
+     Now the element is queried once and writes are skipped once already hidden. ── */
+  _hidePauseButton() {
+    if (this._pauseBtnEl === undefined) {
+      this._pauseBtnEl = document.getElementById("pauseBtn");
+    }
+    const btn = this._pauseBtnEl;
+    if (btn && btn.style.display !== "none") {
+      btn.style.display = "none";
+      btn.style.opacity = "0";
+    }
+  },
+
   /* ── Resize — layout only, never resets gameplay ────────── */
   _onResize() {
     const w = window.innerWidth, h = window.innerHeight;
@@ -1008,6 +947,9 @@ _spawnAccumulator: 0,
     this.speedMin = this.speedCap * 0.15;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
+    // Background gradient key changes with size, so it'll rebuild lazily.
+    // Note glow/body sprites are keyed by radius already, so no explicit
+    // invalidation is required here — new radii just get their own cache entry.
   },
 
    /* ── Mode switching ─────────────────────────────────────── */
@@ -1190,39 +1132,42 @@ _startPlaying() {
     ctx.stroke();
     this._drawTutVisual(ctx, td.visual, visX, visY, visW, visH, this._tutOrbT, tColor);
 
-    // ── Mode-specific gameplay descriptions (Page 1) — now driven by previewPlan ──
-    const gameplayByMode = {
-      skip: [
-        { icon: "🎯", text: "Numbers fly from the ring toward the center." },
-        { icon: "✅", text: `Collect multiples of ${previewSkip}.` },
-        { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
-        { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
-      ],
-      pattern: [
-        { icon: "🎶", text: "Numbers cycle: skip a set, then collect a set." },
-        { icon: "🧠", text: `Skip ${previewSkip}, Collect ${previewCollect} — then repeat.` },
-        { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
-        { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
-      ],
-      cannon: [
-        { icon: "💥", text: "The cannon fires numbers straight across the screen." },
-        { icon: "✅", text: `Touch correct multiples of ${previewSkip} before they fly off.` },
-        { icon: "🚀", text: "Numbers travel in one direction until they escape." },
-        { icon: "🛡️", text: "Safe Zone: Right by the cannon is safe! No tapping here. ⭕" },
-      ],
-      orb: [
-        { icon: "🌀", text: "A spinning orb launches numbers outward." },
-        { icon: "✅", text: `Catch correct multiples of ${previewSkip} as they fly past.` },
-        { icon: "💜", text: "The orb turns to aim — watch closely." },
-        { icon: "🛡️", text: "Safe Zone: Right by the orb is safe! No tapping here. ⭕" },
-      ],
-      triple: [
-        { icon: "🔴", text: "THREE cannons fire in random order." },
-        { icon: "👀", text: "A gold glow shows which cannon fires next." },
-        { icon: "✅", text: `Intercept correct multiples of ${previewSkip} from any direction.` },
-        { icon: "🛡️", text: "Safe Zone: Right by the cannons is safe! No tapping here. ⭕" },
-      ],
-    };
+    // ── Mode-specific gameplay descriptions (Page 1) — generic wording
+//    folded into the same line (no extra rows added), since the
+//    target number changes every round and shouldn't be implied
+//    as fixed on the one-time tutorial screen. ──
+const gameplayByMode = {
+  skip: [
+    { icon: "🎯", text: "Numbers fly from the ring toward the center." },
+    { icon: "✅", text: `Collect multiples of ${previewSkip} this round (changes each round!)` },
+    { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
+    { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+  ],
+  pattern: [
+    { icon: "🎶", text: "Numbers cycle: skip a set, then collect a set." },
+    { icon: "🧠", text: `Skip ${previewSkip}, collect ${previewCollect} this round (changes each round!)` },
+    { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
+    { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+  ],
+  cannon: [
+    { icon: "💥", text: "The cannon fires numbers straight across the screen." },
+    { icon: "✅", text: `Touch multiples of ${previewSkip} this round (changes each round!)` },
+    { icon: "🚀", text: "Numbers travel in one direction until they escape." },
+    { icon: "🛡️", text: "Safe Zone: Right by the cannon is safe! No tapping here. ⭕" },
+  ],
+  orb: [
+    { icon: "🌀", text: "A spinning orb launches numbers outward." },
+    { icon: "✅", text: `Catch multiples of ${previewSkip} this round (changes each round!)` },
+    { icon: "💜", text: "The orb turns to aim — watch closely." },
+    { icon: "🛡️", text: "Safe Zone: Right by the orb is safe! No tapping here. ⭕" },
+  ],
+  triple: [
+    { icon: "🔴", text: "THREE cannons fire in random order." },
+    { icon: "👀", text: "A gold glow shows which cannon fires next." },
+    { icon: "✅", text: `Intercept multiples of ${previewSkip} this round (changes each round!)` },
+    { icon: "🛡️", text: "Safe Zone: Right by the cannons is safe! No tapping here. ⭕" },
+  ],
+};
 
     // ── Mode-specific dynamics descriptions (Page 2) ──
     const dynamicsByMode = {
@@ -1273,7 +1218,7 @@ _startPlaying() {
     } else {
       contentRows.push(
         { isHeader: true,  text: "⏱️ Time Metrics" },
-        { icon: "⏱️", text: "You begin with a clean 300 seconds." },
+        { icon: "⏱️", text: "You begin with a clean 200 seconds." },
         { icon: "⏳", text: "The countdown bar depletes continuously." },
         { icon: "➕", text: "Completing a round adds bonus time." },
         { icon: "🚀", text: "Leveling up grants a big time bonus." },
@@ -1708,12 +1653,26 @@ _getLevelThresholdDelta(level) {
   return Math.round(65 + (level - 5) * 30);
 },
 
+/* ── OPTIMIZED ──
+   This was re-summing the whole level-threshold table from level 1
+   every single time it was called — and it's called from
+   _getCurrentLevelFloor(), which _computeProgressPercent() calls up
+   to 3x per frame (assist-time check, HUD ring, overlay screens).
+   At higher levels that's a real O(level) loop running dozens of
+   times a second for no reason, since the table never changes at
+   runtime. Now results are memoized in a small array — each level's
+   cumulative total is computed once, ever, and reused after that. ── */
+_cumulativeThresholdCache: null,
+
 _getCumulativeThreshold(level) {
-  let total = 0;
-  for (let l = 1; l <= level; l++) {
-    total += this._getLevelThresholdDelta(l);
+  if (level <= 0) return 0;
+  if (!this._cumulativeThresholdCache) this._cumulativeThresholdCache = [0];
+  const cache = this._cumulativeThresholdCache;
+  while (cache.length <= level) {
+    const l = cache.length;
+    cache.push(cache[l - 1] + this._getLevelThresholdDelta(l));
   }
-  return total;
+  return cache[level];
 },
 
   _difficultyLabelForLevel(level = this.level) {
@@ -1801,96 +1760,97 @@ _getCumulativeThreshold(level) {
   },
 
   _resetRoundTransientState() {
-    this._noHandDuration = 0; 
-    const pauseBtn = document.getElementById("pauseBtn");
-    if (pauseBtn) {
-      pauseBtn.style.display = "none";
-      pauseBtn.style.opacity = "0";
-    }
+  this._noHandDuration = 0; 
+  this._hidePauseButton();
 
-    this.notes = [];
-    this.popEffects = [];
-    this.explosions = [];
-    this.missQueue = [];
-    this.pendingShot = null;
-    this.previewCannons = [];
-    this.previewTimer = 0;
-    this.isCharging = false;
-    this.charge = 0;
-    this.chargeParticles = [];
-    this.combo = 0;
-    this.multiplier = 1;
-    this.lastHitType = "";
-    this.hitTextTimer = 0;
-    this.currentNumber = 1;
-    this.roundCorrectTouches = 0;
-    this.roundWrongTouches = 0;
-    this.roundMissedCorrect = 0;
-    this.roundMaxCombo = 0;
-    this.roundWrongStreakPeak = 0;
-    this.roundMissStreakPeak = 0;
-    this.wrongTouchStreak = 0;
-    this.missedCorrectStreak = 0;
-    this.roundScoreStart = this.score;
-    this.roundWrapPending = false;
-    this.roundWrapDelay = 0;
-    this.overlayHoldProgress = 0;
-    this.levelCongratsTapHold = 0;
-    this.gameOverFade = 0;
-    this.assistTimeBonus = 0;
-    this.assistAppliedThisRound = false;
-    if (this.mode === "triple" && (!this.tripleCannons || this.tripleCannons.length === 0)) {
-        this.tripleCannons = [
-            { offset: 0 },
-            { offset: (Math.PI * 2) / 3 },
-            { offset: (Math.PI * 4) / 3 }
-        ];
-        this.tripleCount = 3;
-    }
-  },
+  this.notes = [];
+  this.popEffects = [];
+  this.explosions = [];
+  this.missQueue = [];
+  this.pendingShot = null;
+  this.previewCannons = [];
+  this.previewTimer = 0;
+  this.isCharging = false;
+  this.charge = 0;
+  this.chargeParticles = [];
+  this.combo = 0;
+  this.multiplier = 1;
+  this.lastHitType = "";
+  this.hitTextTimer = 0;
+  this.currentNumber = 1;
+  this.roundCorrectTouches = 0;
+  this.roundWrongTouches = 0;
+  this.roundMissedCorrect = 0;
+  this.roundMaxCombo = 0;
+  this.roundWrongStreakPeak = 0;
+  this.roundMissStreakPeak = 0;
+  this.wrongTouchStreak = 0;
+  this.missedCorrectStreak = 0;
+  this.roundScoreStart = this.score;
+  this.roundWrapPending = false;
+  this.roundWrapDelay = 0;
+  this.overlayHoldProgress = 0;
+  this.levelCongratsTapHold = 0;
+  this.gameOverFade = 0;
+  this.assistTimeBonus = 0;
+  this.assistAppliedThisRound = false;
+  // ── NEW: reset the instant-level-up trigger for this round ──
+  this._instantLevelUpFired = false;
+  this._instantBurstActive = false;
+  this._instantBurstT = 0;
+  if (this.mode === "triple" && (!this.tripleCannons || this.tripleCannons.length === 0)) {
+      this.tripleCannons = [
+          { offset: 0 },
+          { offset: (Math.PI * 2) / 3 },
+          { offset: (Math.PI * 4) / 3 }
+      ];
+      this.tripleCount = 3;
+  }
+},
 
 
 
 
   _resetSessionFlow(modeKey) {
-    this.recentSkips = []; // Clear history on new session
-    this.mode = modeKey || "default";
-    this.roundNumber = 1;
-    this.nextRoundNumber = 1;
-    this.timeLimit = 300; // ── FIXED: reset the time-bar ceiling too, or a
-                           //    prior session's inflated ceiling would carry
-                           //    over and make the bar start under-filled.
-    this.timeRemaining = this.timeLimit;
-    this.score = 0;
-    this.skillPoints = 0;
-    this.bestCombo = 0;
-    this.totalCorrectTouches = 0;
-    this.totalWrongTouches = 0;
-    this.totalMissedCorrect = 0;
-    this.level = 1;
-    this.levelThreshold = this._getCumulativeThreshold(this.level);
-    this.xp = 0;
-    this.xpToNext = this.levelThreshold;
-    this.tier = 0;
-    this.levelUpActive = false;
-    this.levelUpTimer = 0;
-    this.levelUpParticles = [];
-    this.xpPopFlash = 0;
-    this.hintState = "full";
-    this.noiseTime = 0;
-    this.overlayData = null;
+  this.recentSkips = []; // Clear history on new session
+  this.mode = modeKey || "default";
+  this.roundNumber = 1;
+  this.nextRoundNumber = 1;
+  this.timeLimit = 200;
+  this.timeRemaining = this.timeLimit;
+  this.score = 0;
+  this.skillPoints = 0;
+  this.bestCombo = 0;
+  this.totalCorrectTouches = 0;
+  this.totalWrongTouches = 0;
+  this.totalMissedCorrect = 0;
+  this.level = 1;
+  this.levelThreshold = this._getCumulativeThreshold(this.level);
+  this.xp = 0;
+  this.xpToNext = this.levelThreshold;
+  this.tier = 0;
+  this.levelUpActive = false;
+  this.levelUpTimer = 0;
+  this.levelUpParticles = [];
+  this.xpPopFlash = 0;
+  this.hintState = "full";
+  this.noiseTime = 0;
+  this.overlayData = null;
+  // ── NEW ──
+  this._instantLevelUpFired = false;
+  this._instantBurstActive = false;
+  this._instantBurstT = 0;
 
-    if (!this.nextRoundPlan || this.nextRoundPlan.mode !== this.mode) {
-      this.nextRoundPlan = this._buildRoundPlan();
-    }
+  if (!this.nextRoundPlan || this.nextRoundPlan.mode !== this.mode) {
+    this.nextRoundPlan = this._buildRoundPlan();
+  }
 
-    this.currentRoundPlan = null;
-    this._syncDifficultyScalars();
-    this.noteSpeed = this.speedCap;
-    this.assistTimeBonus = 0;
-    this.assistAppliedThisRound = false;
-  },
-
+  this.currentRoundPlan = null;
+  this._syncDifficultyScalars();
+  this.noteSpeed = this.speedCap;
+  this.assistTimeBonus = 0;
+  this.assistAppliedThisRound = false;
+},
   // ── FIXED: only floor-clamp at 0. Do NOT ceiling-clamp at levelThreshold —
 //    that was causing correct hits to silently stop registering once the
 //    player hit the cap mid-round, while mistakes could still subtract
@@ -1924,19 +1884,39 @@ _getCurrentLevelFloor(level = this.level) {
   return this._getCumulativeThreshold(level - 1);
 },
 
- // ── FIXED: cap displayed percent at 100 even though skillPoints can
-//    technically sit anywhere relative to the ever-rising cumulative
-//    target — avoids visual overflow past a "full" bar. ──
+/* ============================================================
+   UPDATED FUNCTIONS FOR ILLUSION & LEVEL-UP PROGRESSION
+   ============================================================ */
+
+/**
+ * Computes the progress percentage for UI/ring display.
+ * Applies an illusion cap: if the target criteria is met mid-round,
+ * it caps visually at 99% so the ring does not fully close until round end.
+ */
 _computeProgressPercent(useLiveRound = false) {
   const liveBonus = useLiveRound ? this._computeRoundSkillDelta() : 0;
   const points = Math.max(0, this.skillPoints + liveBonus);
-  return Math.min(100, Math.round((points / this.levelThreshold) * 100));
+  const floor = this._getCurrentLevelFloor();
+  const target = this.levelThreshold;
+  const levelRange = Math.max(1, target - floor);
+
+  const raw = ((points - floor) / levelRange) * 100;
+  const clamped = Math.max(-100, Math.min(100, Math.round(raw)));
+
+  // ILLUSION: Mid-round progress visually caps at 99% if criteria met
+  if (this.gameState === "playing" && points >= target) {
+    return 99;
+  }
+
+  return clamped;
 },
 
-
-  _maybeGrantAssistTime() {
+  /* ── OPTIMIZED: accepts an optional precomputed progress value so callers
+     that already computed it this frame (see update()) don't force a
+     second calculation of the exact same thing a few lines later. ── */
+  _maybeGrantAssistTime(precomputedProgress) {
   if (this.assistAppliedThisRound || this.gameState !== "playing" || this.roundWrapPending) return 0;
-  const progress = this._computeProgressPercent(false);
+  const progress = precomputedProgress != null ? precomputedProgress : this._computeProgressPercent(false);
   if (progress < 72 || this.timeRemaining > 42) return 0;
   const bonus = 2 + Math.floor(Math.random() * 4);
   this.timeRemaining += bonus;
@@ -1984,107 +1964,107 @@ _computeProgressPercent(useLiveRound = false) {
   // spawn timer no longer exists — spawning stops automatically because
   // _updateSpawning() checks roundWrapPending
 },
- _resolveRoundEnd() {
-    if (this.gameState !== "playing") return;
+ /**
+ * Handles the end of a round and resolves level progression.
+ * Fully fills the ring and completes the actual level transition here.
+ */
+_resolveRoundEnd() {
+  if (this.gameState !== "playing") return;
 
-    // roundSkillDelta is kept ONLY for the overlay summary text —
-    // it is NOT added to skillPoints. skillPoints is now purely fed
-    // by live _gainXP() calls during play and never gets a second
-    // add-on at round-end (that was the double-counting bug).
-    const roundSkillDelta = this._computeRoundSkillDelta();
-    const progressBefore = this.skillPoints;
+  const roundSkillDelta = this._computeRoundSkillDelta();
+  const progressBefore = this.skillPoints;
 
-    const qualified = this.skillPoints >= this.levelThreshold;
-    const canLevelUp = qualified && this.level < this.maxLevel;
-    const currentRound = this.roundNumber;
-    
-    let nextRound;
-    const nextLevel = canLevelUp ? this.level + 1 : this.level;
-    
-    if (canLevelUp) {
-      nextRound = 1;
-    } else {
-      nextRound = currentRound + 1;
-    }
+  const qualified = this.skillPoints >= this.levelThreshold;
+  const canLevelUp = qualified && this.level < this.maxLevel;
+  const currentRound = this.roundNumber;
 
-    let dynamicBonusTime = canLevelUp ? 250 : this.roundEndBonus;
+  let nextRound;
+  const nextLevel = canLevelUp ? this.level + 1 : this.level;
 
-    this.nextRoundPlan = this._buildRoundPlan();
+  if (canLevelUp) {
+    nextRound = 1;
+  } else {
+    nextRound = currentRound + 1;
+  }
 
-    const summary = {
-      roundNumber: currentRound,
-      nextRoundNumber: nextRound,
-      levelBefore: this.level,
-      levelAfter: nextLevel,
-      roundSkillDelta,
-      progressBefore,
-      progressAfter: this.skillPoints,
-      progressPercent: this._computeProgressPercent(false),
-      timeBeforeBonus: Math.max(0, Math.ceil(this.timeRemaining)),
-      bonusTime: dynamicBonusTime,
-      totalScore: this.score,
-      maxCombo: this.bestCombo,
-      roundMaxCombo: this.roundMaxCombo,
-      totalWrong: this.totalWrongTouches,
-      totalMissed: this.totalMissedCorrect,
-      assistTimeBonus: this.assistTimeBonus,
-      nextRoundLabel: this.nextRoundPlan.label,
-      nextRoundTitle: this.nextRoundPlan.title,
-      nextRoundMode: this.nextRoundPlan.mode,
-      difficultyLabel: this._difficultyLabelForLevel(nextLevel),
-      qualified: canLevelUp,
-    };
+  let dynamicBonusTime = canLevelUp ? 100 : this.roundEndBonus;
 
-    this.overlayData = summary;
-    this.roundWrapPending = false;
-    this.roundWrapDelay = 0;
-    this.overlayHoldProgress = 0;
-    this.levelCongratsTapHold = 0;
-    this.notes = [];
-    this.popEffects = [];
-    this.explosions = [];
-    this.missQueue = [];
-    this.pendingShot = null;
-    this.previewCannons = [];
-    this.previewTimer = 0;
-    this.isCharging = false;
-    this.charge = 0;
-    this.chargeParticles = [];
-    this.combo = 0;
-    this.multiplier = 1;
-    this.lastHitType = "";
+  this.nextRoundPlan = this._buildRoundPlan();
 
-    this.timeRemaining = Math.max(0, this.timeRemaining + dynamicBonusTime);
-    this._bumpTimeCeiling();
-    this.assistTimeBonus = 0;
-    this.assistAppliedThisRound = false;
+  const summary = {
+    roundNumber: currentRound,
+    nextRoundNumber: nextRound,
+    levelBefore: this.level,
+    levelAfter: nextLevel,
+    roundSkillDelta,
+    progressBefore,
+    progressAfter: this.skillPoints,
+    // ILLUSION BREAK: Explicitly show 100% completion on summary screens
+    progressPercent: canLevelUp ? 100 : this._computeProgressPercent(false),
+    timeBeforeBonus: Math.max(0, Math.ceil(this.timeRemaining)),
+    bonusTime: dynamicBonusTime,
+    totalScore: this.score,
+    maxCombo: this.bestCombo,
+    roundMaxCombo: this.roundMaxCombo,
+    totalWrong: this.totalWrongTouches,
+    totalMissed: this.totalMissedCorrect,
+    assistTimeBonus: this.assistTimeBonus,
+    nextRoundLabel: this.nextRoundPlan.label,
+    nextRoundTitle: this.nextRoundPlan.title,
+    nextRoundMode: this.nextRoundPlan.mode,
+    difficultyLabel: this._difficultyLabelForLevel(nextLevel),
+    qualified: canLevelUp,
+  };
 
-    if (canLevelUp) {
-      this.level = nextLevel;
-      this.roundNumber = nextRound;
-      this.nextRoundNumber = nextRound + 1;
+  this.overlayData = summary;
+  this.roundWrapPending = false;
+  this.roundWrapDelay = 0;
+  this.overlayHoldProgress = 0;
+  this.levelCongratsTapHold = 0;
+  this.notes = [];
+  this.popEffects = [];
+  this.explosions = [];
+  this.missQueue = [];
+  this.pendingShot = null;
+  this.previewCannons = [];
+  this.previewTimer = 0;
+  this.isCharging = false;
+  this.charge = 0;
+  this.chargeParticles = [];
+  this.combo = 0;
+  this.multiplier = 1;
+  this.lastHitType = "";
 
-      // ── FIXED: skillPoints is NO LONGER reset on level-up.
-      //    It keeps climbing continuously — only the target
-      //    (levelThreshold) rises, by summing in the new level's
-      //    delta on top of the cumulative total.
-      //    e.g. level1 threshold=22, player reaches 33 → levels up,
-      //    skillPoints stays 33, level2 delta=36 → new threshold=58.
-      this.levelThreshold = this._getCumulativeThreshold(this.level);
-      this.xp = this.skillPoints;
-      this.xpToNext = this.levelThreshold;
+  this.timeRemaining = Math.max(0, this.timeRemaining + dynamicBonusTime);
+  this._bumpTimeCeiling();
+  this.assistTimeBonus = 0;
+  this.assistAppliedThisRound = false;
 
-      this._syncDifficultyScalars();
-      this._syncTierForLevel();
-      this._updateHintState();
-      this._triggerLevelUpBurst();
-      this.gameState = "levelCongrats";
-    } else {
-      this.roundNumber = currentRound;
-      this.nextRoundNumber = nextRound;
-      this.gameState = "roundBreak";
-    }
-  },
+  if (canLevelUp) {
+    this.level = nextLevel;
+    this.roundNumber = nextRound;
+    this.nextRoundNumber = nextRound + 1;
+
+    const overflow = Math.max(0, this.skillPoints - this.levelThreshold);
+    this.skillPoints = this.levelThreshold + overflow * 0.1;
+
+    this.levelThreshold = this._getCumulativeThreshold(this.level);
+    this.xp = this.skillPoints;
+    this.xpToNext = this.levelThreshold;
+
+    summary.progressAfter = this.skillPoints;
+
+    this._syncDifficultyScalars();
+    this._syncTierForLevel();
+    this._updateHintState();
+    this._triggerLevelUpBurst();
+    this.gameState = "levelCongrats";
+  } else {
+    this.roundNumber = currentRound;
+    this.nextRoundNumber = nextRound;
+    this.gameState = "roundBreak";
+  }
+},
 
   _enterGameOver() {
   if (this.gameState === "gameOver") return;
@@ -2146,6 +2126,19 @@ _updateSpawning(dt) {
 
   /* ============================================================
      ADAPTIVE SPEED
+     ── FIXED (perf + correctness pass): the speed adapter now has
+     exactly TWO trigger points in the whole file, called at the
+     moment the event actually happens (not delayed via the hit-text
+     queue, which used to double-fire the penalty for cannon/orb/
+     triple modes and made the timing feel arbitrary):
+       • _penalizeSpeed() → (a) a correct number reaches center /
+         leaves the screen WITHOUT being touched (missed correct),
+         or (b) the player touches a WRONG number.
+       • _recoverSpeed()  → the player touches a CORRECT number.
+     Successfully leaving a WRONG number untouched does NOT call
+     either function — it only resets missedCorrectStreak. Passive
+     _driftSpeed() recovery (while a finger is present) is separate
+     from these triggers and was left as-is on purpose.
   ============================================================ */
   _penalizeSpeed() { this.noteSpeed = Math.max(this.speedMin, this.noteSpeed - this.speedCap * this.speedPenaltyStep); },
   _recoverSpeed()  { this.noteSpeed = Math.min(this.speedCap, this.noteSpeed + this.speedCap * this.speedRecoveryStep); },
@@ -2189,21 +2182,40 @@ _updateSpawning(dt) {
     ctx.fillRect(0, 0, W, H);
   },
 
+  /* ── OPTIMIZED ──
+     The original version allocated a brand-new plain object every single
+     frame (one per alpha bucket), built string keys via toFixed(), and
+     then ran Object.entries() over it — all pure GC churn for something
+     that's drawn 60x/sec throughout the whole game, tutorial included.
+     Now a small set of fixed-size arrays are allocated ONCE and just
+     have their .length reset to 0 each frame (cheap, no reallocation),
+     and bucket indices are plain integers instead of string keys. ── */
+  _bgStarBuckets: null,
+  _BG_STAR_BUCKET_COUNT: 13, // covers alpha 0.0–1.2 in steps of 0.1 (plenty of headroom)
+
   _drawBgStars(ctx) {
-    // Group stars by quantised alpha to minimise state changes.
-    // We bucket into 6 alpha levels; within each bucket draw one path.
-    const buckets = {};
+    const N = this._BG_STAR_BUCKET_COUNT;
+    if (!this._bgStarBuckets) {
+      this._bgStarBuckets = [];
+      for (let i = 0; i < N; i++) this._bgStarBuckets.push([]);
+    }
+    const buckets = this._bgStarBuckets;
+    for (let i = 0; i < N; i++) buckets[i].length = 0;
+
     for (const s of this.bgStars) {
       s.tw += s.ts;
       const a = Math.max(0, s.a + Math.sin(s.tw) * 0.12);
-      // quantise to 6 levels (0.00, 0.10, 0.20, 0.30, 0.40, 0.50)
-      const key = (Math.round(a * 10) / 10).toFixed(1);
-      if (!buckets[key]) buckets[key] = [];
-      buckets[key].push(s);
+      let idx = Math.round(a * 10);
+      if (idx >= N) idx = N - 1;
+      if (idx < 0) idx = 0;
+      buckets[idx].push(s);
     }
+
     ctx.fillStyle = "#c8dff0";
-    for (const [alpha, stars] of Object.entries(buckets)) {
-      ctx.globalAlpha = parseFloat(alpha);
+    for (let idx = 0; idx < N; idx++) {
+      const stars = buckets[idx];
+      if (stars.length === 0) continue;
+      ctx.globalAlpha = idx / 10;
       ctx.beginPath();
       for (const s of stars) {
         ctx.moveTo(s.x + s.r, s.y);
@@ -2260,19 +2272,29 @@ _updateSpawning(dt) {
     }
   },
 
+  /* ── OPTIMIZED ──
+     .filter() allocated a brand-new array every frame for the ~1.4s
+     the level-up burst plays. Since instant level-ups now fire mid-round
+     (not just at round boundaries), this runs far more often than before.
+     Swapped for an in-place compaction (classic swap-and-truncate) —
+     zero allocations, same particles, same visual result. ── */
   _updateLevelUp(dt) {
     if (!this.levelUpActive) return;
     this.levelUpTimer -= dt * 1000;
     if (this.xpPopFlash > 0) this.xpPopFlash = Math.max(0, this.xpPopFlash - dt * 3);
-    for (const p of this.levelUpParticles) {
+    const arr = this.levelUpParticles;
+    let w = 0;
+    for (let i = 0; i < arr.length; i++) {
+      const p = arr[i];
       p.x += p.vx * dt;
       p.y += p.vy * dt;
       p.vx *= 0.94;
       p.vy *= 0.94;
       p.vy += 120 * dt;
       p.life -= dt * 1.1;
+      if (p.life > 0) arr[w++] = p;
     }
-    this.levelUpParticles = this.levelUpParticles.filter(p => p.life > 0);
+    arr.length = w;
     if (this.levelUpTimer <= 0) this.levelUpActive = false;
   },
 
@@ -2353,38 +2375,51 @@ _updateSpawning(dt) {
     ctx.restore();
   },
 
-  _drawXPRing(ctx, cx, cy, radius) {
-    // ── FIXED: clamp fill at 1 — xp (skillPoints) can now legitimately
-    //    equal or momentarily approach xpToNext without ever being
-    //    force-reset, so guard against any float overshoot drawing
-    //    past a full circle. ──
-    const fill = this.level >= this.maxLevel ? 1 : Math.min(1, this.xp / this.xpToNext);
-    const tc   = this.tierColors[this.tier];
-    const start = -Math.PI / 2;
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, Math.PI*2);
-    ctx.strokeStyle = this.C.xpTrack;
-    ctx.lineWidth = 6;
-    ctx.stroke();
-    if (fill > 0.01) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius, start, start + Math.PI*2*fill);
-      ctx.strokeStyle = tc;
-      ctx.lineWidth = 6;
-      ctx.shadowColor = tc;
-      ctx.shadowBlur = 12 + this.xpPopFlash*20;
-      ctx.stroke();
-      ctx.shadowBlur = 0;
-    }
-    if (this.xpPopFlash > 0) {
-      ctx.beginPath();
-      ctx.arc(cx, cy, radius + 12*this.xpPopFlash, 0, Math.PI*2);
-      ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash*0.55})`;
-      ctx.lineWidth = 5*this.xpPopFlash;
-      ctx.stroke();
-    }
-  },
+  /**
+ * Renders the circular XP ring HUD element.
+ * Respects the illusion percentage and suppresses premature level-up visual flashes.
+ */
+_drawXPRing(ctx, cx, cy, radius) {
+  const percent = this.level >= this.maxLevel ? 100 : this._computeProgressPercent(false);
+  const fill = Math.abs(percent) / 100;
+  const isDeficit = percent < 0;
 
+  const tc = isDeficit ? this.C.wrong : this.tierColors[this.tier];
+  const start = -Math.PI / 2;
+
+  // Outer Track
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.strokeStyle = this.C.xpTrack;
+  ctx.lineWidth = 6;
+  ctx.stroke();
+
+  // Active Fill Segment
+  if (fill > 0.01) {
+    ctx.beginPath();
+    if (isDeficit) {
+      ctx.arc(cx, cy, radius, start, start - Math.PI * 2 * fill, true);
+    } else {
+      ctx.arc(cx, cy, radius, start, start + Math.PI * 2 * fill);
+    }
+    ctx.strokeStyle = tc;
+    ctx.lineWidth = 6;
+    ctx.shadowColor = tc;
+    // Suppress heavy flash intensity while holding at 99% illusion
+    const flashIntensity = percent >= 99 && this.gameState === "playing" ? 0 : this.xpPopFlash;
+    ctx.shadowBlur = 12 + flashIntensity * 20;
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+
+  if (this.xpPopFlash > 0 && this.gameState !== "playing") {
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius + 12 * this.xpPopFlash, 0, Math.PI * 2);
+    ctx.strokeStyle = `rgba(245,200,66,${this.xpPopFlash * 0.55})`;
+    ctx.lineWidth = 5 * this.xpPopFlash;
+    ctx.stroke();
+  }
+},
   /* ── HUD ─────────────────────────────────────────────────── */
   _pill(ctx, x, y, w, h) {
     const r = h / 2;
@@ -2480,7 +2515,7 @@ _updateSpawning(dt) {
     ctx.shadowBlur = 8;
     ctx.fillText("Lv."+this.level, ringCX, ringCY);
     ctx.shadowBlur = 0;
-    const diffLabels = { full:"🟢 Training", subtle:"🟡 Subtle", none:"🔵 Blind", decoy:"🔴 Decoy", chaos:"🟣 Chaos" };
+    const diffLabels = this._DIFF_LABELS;
     ctx.textAlign = "right";
     ctx.textBaseline = "bottom";
     ctx.font = "13px 'Trebuchet MS', sans-serif";
@@ -2848,13 +2883,106 @@ _bumpTimeCeiling() {
     this._drawHoldPrompt(ctx, "Hold your finger still for 3 seconds to play again", this.C.correct, box.cardY + box.cardH - 54, this.overlayHoldProgress);
   },
 
+
+
+
+  /**
+ * Called every frame while playing. If the player's skillPoints have
+ * already crossed the level threshold (progress bar effectively at 100%),
+ * don't make them keep collecting numbers until the round's natural
+ * 100-number cycle ends — cut the round short right now.
+ */
+_checkInstantLevelUp() {
+  if (this.gameState !== "playing") return;
+  if (this.roundWrapPending) return;
+  if (this._instantLevelUpFired) return;
+  if (this.level >= this.maxLevel) return;
+  if (this.skillPoints < this.levelThreshold) return;
+
+  this._instantLevelUpFired = true;
+  this._triggerInstantLevelUp();
+},
+
+/**
+ * Stops spawning immediately, quick-fades any live notes off screen,
+ * and kicks off a short celebratory flash before handing off to
+ * _resolveRoundEnd() (which pops the normal "You leveled up!" card).
+ */
+_triggerInstantLevelUp() {
+  this.roundWrapPending = true;   // _updateSpawning() already halts spawning when this is true
+  this.roundWrapDelay   = 0;
+  this._instantBurstActive = true;
+  this._instantBurstT = 0;
+  this._instantBurstDuration = 0.5;
+
+  // Quick-fade any notes still in flight instead of letting them
+  // finish their normal travel/despawn animation.
+  for (const note of this.notes) {
+    if (!note.despawning) {
+      note.despawning = true;
+      note.despawnT = 0;
+      note.despawnDuration = 0.16;
+      note.despawnWasCorrect = false;
+      note._despawnParticles = null;
+    }
+  }
+},
+
+
+/**
+ * Full-screen celebratory flash shown for the ~0.5s between the moment
+ * skillPoints crosses the threshold and the "You leveled up!" overlay
+ * card appears. Cheap (gradients only, no shadowBlur-per-particle spam).
+ */
+_drawInstantLevelFlash(ctx, progress) {
+  const p = Math.max(0, Math.min(1, progress));
+  const W = this.centerX * 2, H = this.centerY * 2;
+  const tc = this.tierColors[this.tier] || this.C.gold;
+
+  // Draw any notes still fading out
+  for (let i = this.notes.length - 1; i >= 0; i--) {
+    const note = this.notes[i];
+    if (note.despawning) this._drawDespawnEffect(ctx, note, 1 / 60);
+  }
+
+  // Radial white-gold flash that blooms then fades
+  const bloomEase = p < 0.3 ? (p / 0.3) : 1 - ((p - 0.3) / 0.7);
+  const bloomR = Math.max(W, H) * (0.15 + p * 0.9);
+  const grd = ctx.createRadialGradient(this.centerX, this.centerY, 0, this.centerX, this.centerY, bloomR);
+  grd.addColorStop(0, `rgba(255,255,255,${0.55 * bloomEase})`);
+  grd.addColorStop(0.35, `rgba(${this._hexToRgb(tc)},${0.35 * bloomEase})`);
+  grd.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, W, H);
+
+  // Punchy zooming "LEVEL UP!" text
+  const textScale = 0.6 + Math.min(1, p / 0.35) * 0.5;
+  const textAlpha = p < 0.1 ? p / 0.1 : (p > 0.75 ? Math.max(0, 1 - (p - 0.75) / 0.25) : 1);
+  ctx.save();
+  ctx.globalAlpha = textAlpha;
+  ctx.translate(this.centerX, this.centerY);
+  ctx.scale(textScale, textScale);
+  ctx.font = "bold 46px 'Trebuchet MS', sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = tc;
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = tc;
+  ctx.fillText("LEVEL UP!", 0, 0);
+  ctx.restore();
+},
+
+_hexToRgb(hex) {
+  const h = (hex || "").replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return isNaN(r) ? "245,200,66" : `${r},${g},${b}`;
+},
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
   update(ctx, fingers, dt = 1/60) {
-  // Clamp runaway dt spikes from tab/app backgrounding, camera-permission
-  // dialogs, or device stutters. Without this, a 3-5s dt spike can yank
-  // timeRemaining down in one frame or fling notes across huge distances.
   dt = Math.min(dt, 1 / 20);
 
   if (this.gameState === "tutorial") {
@@ -2869,31 +2997,45 @@ _bumpTimeCeiling() {
   if (this.gameState === "levelExplain")   { this._drawLevelExplainScreen(ctx, fingers, dt); return; }
   if (this.gameState === "gameOver")       { this._drawGameOverScreen(ctx, fingers, dt); return; }
 
-  // ── Live Playing State (Double Tap Active) ──
   this._noHandDuration = 0;
-  const pauseBtn = document.getElementById("pauseBtn");
-  if (pauseBtn) {
-    pauseBtn.style.display = "none";
-    pauseBtn.style.opacity = "0";
-  }
+  this._hidePauseButton();
 
   this._drawBg(ctx);
   this._drawBgStars(ctx);
   this._updateLevelUp(dt);
   this.noiseTime += dt * 1.8;
   this._driftSpeed(dt);
-  const assistDrain = this._computeProgressPercent(false) >= 72 ? 0.55 : 1;
+  const progressNow = this._computeProgressPercent(false);
+  const assistDrain = progressNow >= 72 ? 0.55 : 1;
   this.timeRemaining = Math.max(0, this.timeRemaining - (dt * assistDrain));
-  this._maybeGrantAssistTime();
+  // Pass the value computed above instead of recomputing it — skillPoints/
+  // level can't have changed in between (only timeRemaining did).
+  this._maybeGrantAssistTime(progressNow);
   if (this.timeRemaining <= 0) {
     this._enterGameOver();
     this._drawGameOverScreen(ctx, fingers, dt);
     return;
   }
 
+  // ── roundWrapPending now covers TWO cases: the normal end-of-round
+  //    wrap (100 numbers cycled) AND an instant level-up burst
+  //    (threshold crossed mid-round). Both stop spawning via
+  //    _updateSpawning()'s roundWrapPending guard. ──
   if (this.roundWrapPending) {
     this._drawBg(ctx);
     this._drawBgStars(ctx);
+
+    if (this._instantBurstActive) {
+      this._instantBurstT += dt;
+      this._drawInstantLevelFlash(ctx, this._instantBurstT / this._instantBurstDuration);
+      if (this._instantBurstT >= this._instantBurstDuration) {
+        this._instantBurstActive = false;
+        this._resolveRoundEnd();
+        return;
+      }
+      return;
+    }
+
     this.roundWrapDelay -= dt;
     if (this.roundWrapDelay <= 0) {
       this._resolveRoundEnd();
@@ -2902,7 +3044,6 @@ _bumpTimeCeiling() {
     return;
   }
 
-  // ── NEW: dt-synced spawning replaces the old setInterval ──
   this._updateSpawning(dt);
 
   const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
@@ -2920,9 +3061,11 @@ _bumpTimeCeiling() {
 
   this.drawPopEffects(ctx);
 
-  fingers.forEach(finger => {
-    this.drawFinger(ctx, finger.x, finger.y);
-  });
+  // ── OPTIMIZED: plain for-loop instead of .forEach() — forEach allocates
+  //    a new closure/callback invocation context every single frame. ──
+  for (let i = 0; i < fingers.length; i++) {
+    this.drawFinger(ctx, fingers[i].x, fingers[i].y);
+  }
 
   const now = performance.now();
   if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
@@ -2933,6 +3076,12 @@ _bumpTimeCeiling() {
       else            this.checkCollision(finger.x, finger.y);
     }
   }
+
+  // ── NEW: check AFTER collisions/misses this frame so skillPoints is
+  //    fully up to date. If threshold just got crossed, this sets
+  //    roundWrapPending + starts the burst — next frame's early branch
+  //    above takes over immediately. ──
+  this._checkInstantLevelUp();
 
   this._drawHUD(ctx, isLauncher);
   this._drawLevelUpBurst(ctx);
@@ -3168,6 +3317,8 @@ _bumpTimeCeiling() {
       const wasCorrect = this.shouldCollect(note.value);
 
       if (wasCorrect) {
+        // ── Missed a correct number (let it reach center untouched) ──
+        // This is one of the two ONLY places that call _penalizeSpeed().
         this.roundMissedCorrect++;
         this.totalMissedCorrect++;
         this.missedCorrectStreak++;
@@ -3177,8 +3328,10 @@ _bumpTimeCeiling() {
         this.combo = 0;
         this.multiplier = 1;
         this._adjustSkill(-(1.2 + Math.min(2, this.missedCorrectStreak * 0.22)));
+        this._penalizeSpeed();
         this.missQueue.push(note.value);
       } else {
+        // Correctly avoided a wrong number — NOT a speed-penalty trigger.
         this.missedCorrectStreak = 0;
       }
 
@@ -3286,7 +3439,145 @@ _drawDespawnEffect(ctx, note, dt) {
 
   ctx.restore();
 },
+ /**
+  * ── OPTIMIZED ──
+  * Notes are drawn dozens of times per second, and with the hint system
+  * permanently locked to "none" (see _updateHintState), the note's
+  * body/rim/shadow colors never actually change between notes — the
+  * only two possible visual states are "normal" and "inside-ring glow".
+  * The old version rebuilt 1-2 radial gradients AND ran shadowBlur
+  * (one of the most expensive canvas2d ops) for EVERY note EVERY frame.
+  *
+  * Now both states are pre-rendered ONCE into small offscreen canvases
+  * (see _getNoteSprites/_buildNoteSprites below) and reused every frame
+  * via a single cheap drawImage() call. Only the number text (which
+  * really does change per-note) is still drawn live. If hintState is
+  * ever re-enabled to something other than "none", this automatically
+  * falls back to the original procedural per-frame renderer so nothing
+  * breaks.
+  */
  _drawNoteCircle(ctx, note) {
+    if (this.hintState !== "none") {
+      this._drawNoteCircleProcedural(ctx, note);
+      return;
+    }
+
+    const r = note.radius;
+    const distFromCenter = Math.hypot(note.x - this.centerX, note.y - this.centerY);
+    const isInsideRingZone = (distFromCenter - r) <= (this.currentOuterRadius + 15);
+    const glowEligibleMode = (this.mode === "default" || this.mode === "pattern");
+    const shouldGlow = glowEligibleMode && isInsideRingZone && !note.spawnProtected;
+
+    const sprites = this._getNoteSprites(r);
+    const sprite = shouldGlow ? sprites.glow : sprites.normal;
+    if (sprite) {
+      ctx.drawImage(sprite, note.x - sprite.width / 2, note.y - sprite.height / 2);
+    }
+
+    ctx.fillStyle = this.C.noteText;
+    ctx.font = this._getNoteFont(r);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(note.value, note.x, note.y);
+  },
+
+  _getNoteFont(r) {
+    const key = Math.round(r);
+    if (this._noteFontCache && this._noteFontCache.key === key) return this._noteFontCache.font;
+    const font = `bold ${Math.round(r * 0.72)}px 'Trebuchet MS', sans-serif`;
+    this._noteFontCache = { key, font };
+    return font;
+  },
+
+  _getNoteSprites(r) {
+    if (!this._noteSpriteCache) this._noteSpriteCache = new Map();
+    const key = Math.round(r * 10); // 0.1px granularity, avoids float mismatches
+    let entry = this._noteSpriteCache.get(key);
+    if (!entry) {
+      entry = this._buildNoteSprites(r);
+      this._noteSpriteCache.set(key, entry);
+      // Bound the cache — resizes are rare, so this practically never trims.
+      if (this._noteSpriteCache.size > 8) {
+        const oldestKey = this._noteSpriteCache.keys().next().value;
+        this._noteSpriteCache.delete(oldestKey);
+      }
+    }
+    return entry;
+  },
+
+  _buildNoteSprites(r) {
+    const bodyFill = "#102140";
+    const pad = r * 1.9; // room for shadow bleed + outer glow aura
+    const size = Math.max(4, Math.ceil((r + pad) * 2));
+    const cx = size / 2, cy = size / 2;
+
+    // ── Normal (non-glow) note ──
+    const normal = document.createElement("canvas");
+    normal.width = size; normal.height = size;
+    {
+      const c = normal.getContext("2d");
+      c.shadowColor = "rgba(90,150,200,0.25)";
+      c.shadowBlur  = 20;
+      c.beginPath();
+      c.arc(cx, cy, r, 0, Math.PI * 2);
+      c.fillStyle = bodyFill;
+      c.fill();
+      c.shadowBlur = 0;
+      c.strokeStyle = "rgba(100,160,200,0.55)";
+      c.lineWidth = 2.5;
+      c.beginPath();
+      c.arc(cx, cy, r, 0, Math.PI * 2);
+      c.stroke();
+      c.beginPath();
+      c.arc(cx - r * 0.27, cy - r * 0.27, r * 0.20, 0, Math.PI * 2);
+      c.fillStyle = "rgba(200,230,255,0.22)";
+      c.fill();
+    }
+
+    // ── Glow note (inside ring zone) — bakes in the old per-frame aura pass ──
+    const glow = document.createElement("canvas");
+    glow.width = size; glow.height = size;
+    {
+      const c = glow.getContext("2d");
+      c.save();
+      c.globalCompositeOperation = "lighter";
+      const glowGrd = c.createRadialGradient(cx, cy, r * 0.1, cx, cy, r * 1.8);
+      glowGrd.addColorStop(0, "rgba(235,245,255,0.45)");
+      glowGrd.addColorStop(0.4, "rgba(142,202,230,0.25)");
+      glowGrd.addColorStop(1, "rgba(0,0,0,0)");
+      c.fillStyle = glowGrd;
+      c.beginPath();
+      c.arc(cx, cy, r * 1.8, 0, Math.PI * 2);
+      c.fill();
+      c.restore();
+
+      c.shadowColor = "rgba(142,202,230,0.6)";
+      c.shadowBlur  = 30;
+      c.beginPath();
+      c.arc(cx, cy, r, 0, Math.PI * 2);
+      c.fillStyle = bodyFill;
+      c.fill();
+      c.shadowBlur = 0;
+      c.strokeStyle = "#ffffff";
+      c.lineWidth = 3.5;
+      c.beginPath();
+      c.arc(cx, cy, r, 0, Math.PI * 2);
+      c.stroke();
+      c.beginPath();
+      c.arc(cx - r * 0.27, cy - r * 0.27, r * 0.20, 0, Math.PI * 2);
+      c.fillStyle = "rgba(200,230,255,0.22)";
+      c.fill();
+    }
+
+    return { normal, glow };
+  },
+
+  /**
+   * Original full per-frame procedural note renderer. Kept as a safety-net
+   * fallback for the (currently unused) hint-state variants — subtle/full/
+   * decoy/chaos — in case that system is ever re-enabled.
+   */
+  _drawNoteCircleProcedural(ctx, note) {
     const r   = note.radius;
     const isC = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple")
                 ? this.shouldCollectCannon(note.value) : this.shouldCollect(note.value);
@@ -3410,6 +3701,7 @@ _drawDespawnEffect(ctx, note, dt) {
 
     if (dist < note.radius + 20 && validCaptureArea) {
       if (this.shouldCollect(note.value)) {
+        // ── Correct touch: the ONLY place that calls _recoverSpeed() ──
         this.roundCorrectTouches++;
         this.totalCorrectTouches++;
         this.wrongTouchStreak = 0;
@@ -3427,6 +3719,7 @@ _drawDespawnEffect(ctx, note, dt) {
         this._recoverSpeed();
         if (this.popEffects.length < this.MAX_POP) this.popEffects.push({x:note.x, y:note.y, life:0, color:this.C.correct});
       } else {
+        // ── Wrong touch: the other of the ONLY two places that call _penalizeSpeed() ──
         this.roundWrongTouches++;
         this.totalWrongTouches++;
         this.wrongTouchStreak++;
@@ -3524,7 +3817,12 @@ _drawDespawnEffect(ctx, note, dt) {
   if (this.hitTextTimer<=0 && this.missQueue.length>0) {
     this.missQueue.sort((a,b)=>a-b);
     this.lastHitType = "YOU SKIPPED NUMBER " + this.missQueue.shift();
-    this.hitTextTimer=40; this._penalizeSpeed();
+    this.hitTextTimer=40;
+    // ── FIXED: this used to call _penalizeSpeed() again here, on top of
+    //    the call already made at the moment of the miss (see drawNotes /
+    //    updateCannonNotes). That double-penalized every missed-correct
+    //    number. Speed is now adjusted exactly once, at the moment the
+    //    miss actually happens — this text popup is purely cosmetic. ──
   }
   if (this.hitTextTimer>0) {
     const alpha=Math.sin((this.hitTextTimer/40)*Math.PI);
@@ -3646,6 +3944,8 @@ _getMaxNotesForMode() {
 
     if (off) {
       if (this.shouldCollectCannon(note.value)) {
+        // ── Missed a correct number in flight — single penalize call
+        //    (drawHitText no longer double-counts this). ──
         this.roundMissedCorrect++;
         this.totalMissedCorrect++;
         this.missedCorrectStreak++;
@@ -3656,6 +3956,7 @@ _getMaxNotesForMode() {
         this._adjustSkill(-(1.2 + Math.min(2, this.missedCorrectStreak * 0.22)));
         this.createExplosion(note.x,note.y,"#e8a06d");
       } else {
+        // Correctly let a wrong number fly off — no speed penalty.
         this.missedCorrectStreak = 0;
       }
       this.notes.splice(i,1);
@@ -3955,15 +4256,18 @@ spawnTripleNote() {
     if (!this.isCharging) return;
     ctx.save();
     ctx.globalCompositeOperation="lighter";
+    // ── Hoisted shadow/fill state out of the loop — these were being
+    //    re-set to the exact same values on every particle every frame. ──
+    ctx.fillStyle=this.C.gold;
+    ctx.shadowColor=this.C.gold;
+    ctx.shadowBlur=12;
     for (const p of this.chargeParticles) {
       ctx.globalAlpha=p.life*0.7;
-      ctx.fillStyle=this.C.gold;
-      ctx.shadowColor=this.C.gold;
-      ctx.shadowBlur=12;
       ctx.beginPath();
       ctx.arc(p.x,p.y,5,0,Math.PI*2);
       ctx.fill();
     }
+    ctx.shadowBlur=0;
     ctx.restore();
     const gr=this.baseOuterRadius*0.18*(0.5+this.charge*0.8);
     const g=ctx.createRadialGradient(this.centerX,this.centerY,0,this.centerX,this.centerY,gr);
@@ -4075,6 +4379,8 @@ spawnTripleNote() {
     this._spriteFrame = 0;
     this.skipAmount = this.getRandomSkip();
     this.gameTitle = "SKIP " + this.skipAmount;
+    this._noteSpriteCache = null;
+    this._noteFontCache = null;
     this._restartSpawnTimer();
   },
 
@@ -4085,7 +4391,3 @@ spawnTripleNote() {
     this._beginRound();
   }
 };
-
-
-
-

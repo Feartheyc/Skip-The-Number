@@ -104,7 +104,7 @@ const Game9 = {
   HOLD_SEC: 3.0,
 
   _lastFingerUpdateTime: 0,
-  FINGER_UPDATE_INTERVAL: 16,
+  FINGER_UPDATE_INTERVAL: 50,
 
   loading: true,
   assetsToLoad: 0,
@@ -114,11 +114,17 @@ const Game9 = {
   _levelPingTime: 0,
   _levelPingDuration: 500,
 
+  _bgCacheCanvas: null,
+  _spriteCache: {},
+  portalSuckAnim: null,
+
   /* ============================================================
      INIT
   ============================================================ */
   init() {
     this._applyResize(window.innerWidth, window.innerHeight);
+    this._buildDreamBackgroundCache();
+    this._spriteCache = {};
 
     this._noHandDuration = 0;
     const pauseBtn = document.getElementById("pauseBtn");
@@ -134,7 +140,7 @@ const Game9 = {
     this.correctThisLevel = 0;
     this.numberRange      = 10;
     this.streak           = 0;
-    this.bestStreak       = 0;
+    this.bestStreak        = 0;
     this.streakPulse      = 0;
     this.heartShakeTime   = 0;
     this.levelUpBurst     = null;
@@ -218,6 +224,8 @@ const Game9 = {
 
   _onResize() {
     this._applyResize(window.innerWidth, window.innerHeight);
+    this._buildDreamBackgroundCache();
+    this._spriteCache = {};
     this.initStarfield();
     this.setupDoors();
     if (!this.numberPosition.picked) {
@@ -640,15 +648,21 @@ const Game9 = {
 
     this.levelUpBurst.shockwaveR += 800 * dt_s;
 
-    for (const p of this.levelUpBurst.particles) {
+    const parts = this.levelUpBurst.particles;
+    for (let i = parts.length - 1; i >= 0; i--) {
+      const p = parts[i];
       p.x  += p.vx * dt_s;
       p.y  += p.vy * dt_s;
       p.vx *= Math.pow(0.92, delta / 16);
       p.vy *= Math.pow(0.92, delta / 16);
       p.rot += p.vRot;
       p.life -= dt_s * 1.1;
+      if (p.life <= 0) {
+        const last = parts.length - 1;
+        parts[i] = parts[last];
+        parts.pop();
+      }
     }
-    this.levelUpBurst.particles = this.levelUpBurst.particles.filter(p => p.life > 0);
     if (this.levelUpBurst.time >= this.levelUpBurst.duration) this.levelUpBurst = null;
   },
 
@@ -842,7 +856,9 @@ const Game9 = {
   },
 
   showToast(text, color) {
-    this.toast = { text, color: color || "#fff", timer: 1600, y: this.CENTER_Y - 200 * this.scale, alpha: 1 };
+    // Spawn well above the floating number (which sits at CENTER_Y - 230*scale)
+    // so the two never overlap, and start below the top HUD row.
+    this.toast = { text, color: color || "#fff", timer: 1600, y: this.CENTER_Y - 310 * this.scale, alpha: 1 };
   },
   updateToast(delta) {
     if (this.toast.timer <= 0) return;
@@ -852,12 +868,33 @@ const Game9 = {
   },
   drawToast(ctx) {
     if (this.toast.timer <= 0 || this.toast.alpha <= 0) return;
-    ctx.save(); ctx.globalAlpha = this.toast.alpha;
-    ctx.fillStyle = this.toast.color;
-    ctx.font = `bold ${Math.round(34 * this.scale)}px 'Fredoka', sans-serif`;
+    const s = this.scale;
+    ctx.save();
+    ctx.globalAlpha = this.toast.alpha;
+    ctx.font = `bold ${Math.round(30 * s)}px 'Fredoka', sans-serif`;
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.shadowColor = this.toast.color; ctx.shadowBlur = 14;
+
+    // Dark pill behind the text so it reads clearly against the pastel
+    // background regardless of toast color.
+    const padX = 24 * s, padY = 14 * s;
+    const textW = ctx.measureText(this.toast.text).width;
+    const pillW = textW + padX * 2;
+    const pillH = 30 * s + padY * 2;
+    ctx.fillStyle = "rgba(20,10,40,0.72)";
+    this._rrect(ctx, this.CENTER_X - pillW / 2, this.toast.y - pillH / 2, pillW, pillH, pillH / 2);
+    ctx.fill();
+
+    // Dark outline behind the text first for extra separation, then the
+    // toast's own color drawn on top.
+    ctx.lineWidth = 5 * s;
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeText(this.toast.text, this.CENTER_X, this.toast.y);
+
+    ctx.shadowColor = this.toast.color; ctx.shadowBlur = 10;
+    ctx.fillStyle = this.toast.color;
     ctx.fillText(this.toast.text, this.CENTER_X, this.toast.y);
+    ctx.shadowBlur = 0;
+
     ctx.restore();
   },
 
@@ -917,10 +954,12 @@ const Game9 = {
     this.updateSparkBursts(delta);
     this.updateToast(delta);
     this.updateHUDTimers(delta);
+    this._updatePortalSuck(delta);
 
     this.drawDoors(ctx);
     this.drawNumber(ctx);
     this.drawMascot(ctx);
+    this._drawPortalSuck(ctx);
     this._drawLevelUpBurst(ctx);
     this.drawHUD(ctx);
     this.drawSparkBursts(ctx);
@@ -1004,7 +1043,9 @@ const Game9 = {
 
   confirmSelection(index) {
     const door = this.doors[index];
-    if (door.suffix === this.correctSuffix) {
+    const wasCorrect = door.suffix === this.correctSuffix;
+
+    if (wasCorrect) {
       this.streak++;
       if (this.streak > this.bestStreak) this.bestStreak = this.streak;
       this.streakPulse = 1;
@@ -1012,7 +1053,6 @@ const Game9 = {
       const points = this._rollScore();
       this.score  += points;
       this.mascotState = "happy";
-      this.spawnSparkBurst(door.x, door.y);
       this.checkLevelUp();
 
       const msg = this.streak >= 10 ? "🔥 UNSTOPPABLE!"
@@ -1021,18 +1061,91 @@ const Game9 = {
                 : "✅ Correct!";
       this.showToast(`${msg} +${points}`, "#34d399");
     } else {
-      this.score       = Math.max(0, this.score - 10);
+      // Allow score to go negative on incorrect selection
+      this.score      -= 5;
       this.streak      = 0;
       this.hearts      = Math.max(0, this.hearts - 1);
       this.heartShakeTime = 520;
       this.mascotState    = "confused";
       this.showToast(`💡 ${this.currentNumber} is ${this.currentNumber}${this.getSuffix(this.currentNumber)}!`, "#f87171");
-      if (this.hearts <= 0) {
-        setTimeout(() => this._startCollapse(), 600);
-        return;
-      }
+    }
+
+    // Detach the number from the mascot immediately and let it get pulled
+    // into the portal it just touched, instead of riding along with the
+    // mascot for the rest of this pause.
+    this.mascot.carryingNumber = false;
+    this._startPortalSuck(door, wasCorrect);
+
+    if (!wasCorrect && this.hearts <= 0) {
+      setTimeout(() => this._startCollapse(), 600);
+      return;
     }
     setTimeout(() => { this.mascotState = "idle"; this.spawnNumber(); }, 1200);
+  },
+
+  _startPortalSuck(door, wasCorrect) {
+    // Carried number is drawn at roughly (mascot.x, mascot.y - 80*scale)
+    // in drawMascot — start the animation from that same spot so the
+    // handoff from "carried" to "sucked in" is seamless.
+    this.portalSuckAnim = {
+      number: this.currentNumber,
+      startX: this.mascot.x,
+      startY: this.mascot.y - 80 * this.scale,
+      doorX: door.x,
+      doorY: door.y,
+      time: 0,
+      duration: 480,
+      wasCorrect,
+    };
+  },
+
+  _updatePortalSuck(delta) {
+    const a = this.portalSuckAnim;
+    if (!a) return;
+    a.time += delta;
+    if (a.time >= a.duration) {
+      // Payoff sparkle fires right as the number vanishes into the portal,
+      // not the instant the door was touched — keeps the burst synced to
+      // what the player is actually watching.
+      if (a.wasCorrect) this.spawnSparkBurst(a.doorX, a.doorY);
+      this.portalSuckAnim = null;
+    }
+  },
+
+  _drawPortalSuck(ctx) {
+    const a = this.portalSuckAnim;
+    if (!a) return;
+    const t = Math.min(1, a.time / a.duration);
+
+    // Ease-in pull: drifts at first, then accelerates hard into the portal.
+    const pull  = t * t * t;
+    const x     = a.startX + (a.doorX - a.startX) * pull;
+    const y     = a.startY + (a.doorY - a.startY) * pull;
+    const scale = Math.max(0.02, 1 - t * t);
+    const spin  = t * t * Math.PI * 6;
+    const alpha = t < 0.7 ? 1 : Math.max(0, 1 - (t - 0.7) / 0.3);
+
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.translate(x, y);
+    ctx.rotate(spin);
+    ctx.scale(scale, scale);
+    const spr = this._getGlowSprite(String(a.number), 70 * this.scale, "#FFD700", 34, "#FFD700", 7, "#FFFFFF");
+    ctx.drawImage(spr.canvas, -spr.w / 2, -spr.h / 2);
+    ctx.restore();
+
+    // Faint inward ring at the portal itself, collapsing in step with the pull.
+    const ringR = (1 - pull) * 46 * this.scale;
+    if (ringR > 2) {
+      ctx.save();
+      ctx.globalAlpha = 0.5 * (1 - pull);
+      ctx.beginPath();
+      ctx.arc(a.doorX, a.doorY, ringR, 0, Math.PI * 2);
+      ctx.strokeStyle = "#c4b5fd";
+      ctx.lineWidth = 3 * this.scale;
+      ctx.stroke();
+      ctx.restore();
+    }
   },
 
   drawHUD(ctx) {
@@ -1156,6 +1269,7 @@ const Game9 = {
     this.gameOver=false; this.selectionLocked=false;
     this.collapseActive=false; this.collapseTime=0; this.collapseSpiral=[];
     this.sparkBursts=[]; this.shootingStars=[]; this.shootingStarBursts=[];
+    this.portalSuckAnim=null;
     this.mascotState="idle"; this.mascot.carryingNumber=false;
     this.mascot.x=this.CENTER_X; this.mascot.y=this.CENTER_Y+100*this.scale;
     this.mascot.vx=0; this.mascot.vy=0;
@@ -1175,11 +1289,8 @@ const Game9 = {
     const floatOff=Math.sin(this.floatTime*this.floatSpeed)*this.floatAmplitude*this.scale;
     const pulse=1+Math.sin(this.numberScalePulse)*0.15;
     ctx.save(); ctx.translate(baseX, baseY+floatOff); ctx.scale(pulse, pulse);
-    ctx.shadowColor="#FFD700"; ctx.shadowBlur=40; ctx.lineWidth=8; ctx.strokeStyle="#FFD700";
-    ctx.font=`bold ${90*this.scale}px 'Fredoka', sans-serif`;
-    ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.strokeText(this.currentNumber, 0, 0);
-    ctx.fillStyle="#FFFFFF"; ctx.fillText(this.currentNumber, 0, 0);
+    const numSpr = this._getGlowSprite(String(this.currentNumber), 90*this.scale, "#FFD700", 40, "#FFD700", 8, "#FFFFFF");
+    ctx.drawImage(numSpr.canvas, -numSpr.w/2, -numSpr.h/2);
     ctx.restore();
     this.drawFloatingSparkles(ctx, baseX, baseY+floatOff);
   },
@@ -1188,9 +1299,13 @@ const Game9 = {
     const size=this.portalSize*this.scale;
     for (let i=0; i<this.doors.length; i++) {
       const door=this.doors[i], pulse=1+Math.sin(performance.now()*0.003+i)*0.05;
-      const gradient=ctx.createRadialGradient(door.x,door.y,size*0.2,door.x,door.y,size*0.6);
-      gradient.addColorStop(0,"#FFFFFF"); gradient.addColorStop(0.3,"#FDE047");
-      gradient.addColorStop(0.6,"#A78BFA"); gradient.addColorStop(1,"rgba(255,255,255,0)");
+      let gradient = door._gradient;
+      if (!gradient || door._gradSize !== size) {
+        gradient=ctx.createRadialGradient(door.x,door.y,size*0.2,door.x,door.y,size*0.6);
+        gradient.addColorStop(0,"#FFFFFF"); gradient.addColorStop(0.3,"#FDE047");
+        gradient.addColorStop(0.6,"#A78BFA"); gradient.addColorStop(1,"rgba(255,255,255,0)");
+        door._gradient = gradient; door._gradSize = size;
+      }
       ctx.save(); ctx.globalAlpha=0.8; ctx.fillStyle=gradient;
       ctx.beginPath(); ctx.arc(door.x,door.y,size*0.6*pulse,0,Math.PI*2); ctx.fill(); ctx.restore();
       const portalImg=this.portalFrames[this.portalFrameIndex];
@@ -1232,12 +1347,8 @@ const Game9 = {
     ctx.shadowBlur=0;
     if (this.mascot.carryingNumber) {
       const bY=-80*this.scale;
-      ctx.shadowColor="#FFD700"; ctx.shadowBlur=30; ctx.lineWidth=7;
-      ctx.strokeStyle="#FFD700"; ctx.fillStyle="#FFFFFF";
-      ctx.font=`bold ${44*this.scale}px 'Fredoka', sans-serif`;
-      ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.strokeText(this.currentNumber,0,bY); ctx.fillText(this.currentNumber,0,bY);
-      ctx.shadowBlur=0;
+      const carrySpr = this._getGlowSprite(String(this.currentNumber), 44*this.scale, "#FFD700", 30, "#FFD700", 7, "#FFFFFF");
+      ctx.drawImage(carrySpr.canvas, -carrySpr.w/2, bY - carrySpr.h/2);
     }
     ctx.restore();
   },
@@ -1256,7 +1367,11 @@ const Game9 = {
       } else {
         const p=1-(s.life/600); s.radius=s.maxRadius*p; s.alpha=1-p;
       }
-      if (s.life<=0) this.sparkBursts.splice(i,1);
+      if (s.life<=0) {
+        const last = this.sparkBursts.length - 1;
+        this.sparkBursts[i] = this.sparkBursts[last];
+        this.sparkBursts.pop();
+      }
     }
   },
   drawSparkBursts(ctx) {
@@ -1346,7 +1461,12 @@ const Game9 = {
     for (let i=this.shootingStars.length-1;i>=0;i--) {
       const s=this.shootingStars[i]; s.x+=s.speedX; s.y+=s.speedY;
       s.life+=delta; s.opacity=1-(s.life/s.maxLife);
-      if (s.life>s.maxLife) { this.createStarBurst(s.x,s.y); this.shootingStars.splice(i,1); }
+      if (s.life>s.maxLife) {
+        this.createStarBurst(s.x,s.y);
+        const last = this.shootingStars.length - 1;
+        this.shootingStars[i] = this.shootingStars[last];
+        this.shootingStars.pop();
+      }
     }
   },
   drawShootingStars(ctx) {
@@ -1361,19 +1481,78 @@ const Game9 = {
     for(let i=0;i<15;i++){const a=Math.random()*Math.PI*2,spd=Math.random()*3+2;this.shootingStarBursts.push({x,y,vx:Math.cos(a)*spd,vy:Math.sin(a)*spd,life:0,maxLife:600,size:Math.random()*3+1});}
   },
   updateStarBursts(delta) {
-    for(let i=this.shootingStarBursts.length-1;i>=0;i--){const p=this.shootingStarBursts[i];p.x+=p.vx;p.y+=p.vy;p.life+=delta;if(p.life>p.maxLife)this.shootingStarBursts.splice(i,1);}
+    for(let i=this.shootingStarBursts.length-1;i>=0;i--){
+      const p=this.shootingStarBursts[i];p.x+=p.vx;p.y+=p.vy;p.life+=delta;
+      if(p.life>p.maxLife){
+        const last=this.shootingStarBursts.length-1;
+        this.shootingStarBursts[i]=this.shootingStarBursts[last];
+        this.shootingStarBursts.pop();
+      }
+    }
   },
   drawStarBursts(ctx) {
     for(const p of this.shootingStarBursts){const op=1-(p.life/p.maxLife);ctx.beginPath();ctx.arc(p.x,p.y,p.size*this.scale,0,Math.PI*2);ctx.fillStyle=`rgba(255,255,200,${op})`;ctx.fill();}
   },
 
+  _buildDreamBackgroundCache() {
+    const w = Math.max(1, Math.ceil(this.cssWidth));
+    const h = Math.max(1, Math.ceil(this.cssHeight));
+    const off = this._bgCacheCanvas || document.createElement("canvas");
+    off.width = w; off.height = h;
+    const octx = off.getContext("2d");
+    const g = octx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#60A5FA"); g.addColorStop(0.5, "#A78BFA"); g.addColorStop(1, "#F472B6");
+    octx.fillStyle = g; octx.fillRect(0, 0, w, h);
+    const glow = octx.createRadialGradient(w / 2, h / 2, 0, w / 2, h / 2, w * 0.8);
+    glow.addColorStop(0, "rgba(255,255,255,0.15)"); glow.addColorStop(1, "rgba(255,255,255,0)");
+    octx.fillStyle = glow; octx.fillRect(0, 0, w, h);
+    this._bgCacheCanvas = off;
+  },
+
   drawDreamBackground(ctx) {
-    const g=ctx.createLinearGradient(0,0,0,this.cssHeight);
-    g.addColorStop(0,"#60A5FA"); g.addColorStop(0.5,"#A78BFA"); g.addColorStop(1,"#F472B6");
-    ctx.fillStyle=g; ctx.fillRect(0,0,this.cssWidth,this.cssHeight);
-    const glow=ctx.createRadialGradient(this.CENTER_X,this.CENTER_Y,0,this.CENTER_X,this.CENTER_Y,this.cssWidth*0.8);
-    glow.addColorStop(0,"rgba(255,255,255,0.15)"); glow.addColorStop(1,"rgba(255,255,255,0)");
-    ctx.fillStyle=glow; ctx.fillRect(0,0,this.cssWidth,this.cssHeight);
+    // Rebuilt only on init/resize now — this used to rebuild 2 full-screen
+    // gradients every single frame. Safety check below covers any edge case
+    // where a resize hook was missed (e.g. first frame before cache exists).
+    if (!this._bgCacheCanvas ||
+        this._bgCacheCanvas.width  !== Math.max(1, Math.ceil(this.cssWidth)) ||
+        this._bgCacheCanvas.height !== Math.max(1, Math.ceil(this.cssHeight))) {
+      this._buildDreamBackgroundCache();
+    }
+    ctx.drawImage(this._bgCacheCanvas, 0, 0, this.cssWidth, this.cssHeight);
+  },
+
+  /* Pre-renders a stroked+glowing text label to an offscreen canvas once,
+     then every frame we just drawImage() it — shadowBlur only ever runs
+     once per distinct (text, size) combo instead of every single frame. */
+  _getGlowSprite(text, fontPx, glowColor, glowBlur, strokeColor, strokeWidth, fillColor) {
+    const key = text + "|" + Math.round(fontPx) + "|" + glowColor + "|" + glowBlur + "|" + strokeColor + "|" + strokeWidth + "|" + fillColor;
+    const cached = this._spriteCache[key];
+    if (cached) return cached;
+
+    const measureCanvas = document.createElement("canvas");
+    const mctx = measureCanvas.getContext("2d");
+    mctx.font = `bold ${fontPx}px 'Fredoka', sans-serif`;
+    const textW = mctx.measureText(text).width;
+
+    const pad = glowBlur * 2 + strokeWidth * 2 + 10;
+    const w = Math.ceil(textW + pad * 2);
+    const h = Math.ceil(fontPx * 1.4 + pad * 2);
+
+    const off = document.createElement("canvas");
+    off.width = w; off.height = h;
+    const octx = off.getContext("2d");
+    octx.font = `bold ${fontPx}px 'Fredoka', sans-serif`;
+    octx.textAlign = "center"; octx.textBaseline = "middle";
+    octx.lineWidth = strokeWidth; octx.strokeStyle = strokeColor;
+    octx.shadowColor = glowColor; octx.shadowBlur = glowBlur;
+    octx.strokeText(text, w / 2, h / 2);
+    octx.shadowBlur = 0;
+    octx.fillStyle = fillColor;
+    octx.fillText(text, w / 2, h / 2);
+
+    const entry = { canvas: off, w, h };
+    this._spriteCache[key] = entry;
+    return entry;
   },
   drawFloatingSparkles(ctx,x,y) {
     const time=performance.now()*0.002; 
