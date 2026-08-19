@@ -61,11 +61,6 @@ const Game5 = {
       window.addEventListener('resize', () => { if (this.running) this.resizeCanvas(); });
       this.listenersAdded = true;
     }
-    window.addEventListener('keydown', (e) => {
-      if (e.key.toLowerCase() === 'd') {
-        this.debugMode = !this.debugMode;
-      }
-    });
   },
 
   // =========================================================================
@@ -347,7 +342,6 @@ const Game5 = {
     return clusters;
   },
 
-  // Check if non-overlapping strokes sit too close or contain unclassifiable shapes
   checkProximityWarning(clusters, romanString) {
     if (romanString.includes("?")) return true;
     if (clusters.length < 2) return false;
@@ -357,7 +351,6 @@ const Game5 = {
       const c2 = this.getClusterBounds(clusters[i + 1]);
 
       const gap = c2.minX - c1.maxX;
-      // If two clusters are closer than 35px without intersecting/touching
       if (gap < 35 && gap > 0) {
         return true;
       }
@@ -429,12 +422,10 @@ const Game5 = {
       }
     }
 
-    // === X ===
     if (crossCount >= 1) {
       return { char: "X", score: 0.94 };
     }
 
-    // === I ===
     if (segments.length <= 3) {
       const dx = maxX - minX;
       const dy = maxY - minY;
@@ -443,7 +434,6 @@ const Game5 = {
       }
     }
 
-    // === C ===
     if (segments.length >= 3 && segments.length <= 7) {
       const chain = this.buildChain(segments);
       if (chain) {
@@ -455,7 +445,6 @@ const Game5 = {
       }
     }
 
-    // === L ===
     if (segments.length <= 3) {
       let hasVertical = false;
       let hasHorizontalAtBottom = false;
@@ -476,7 +465,6 @@ const Game5 = {
       }
     }
 
-    // === V ===
     if (segments.length <= 3) {
       let bottomIntersect = false;
       for (let i = 0; i < segments.length; i++) {
@@ -489,7 +477,6 @@ const Game5 = {
       if (bottomIntersect) return { char: "V", score: 0.86 };
     }
 
-    // Fallback: 2-segment curve for C
     if (segments.length === 2) {
       const chain = this.buildChain(segments);
       if (chain) {
@@ -755,7 +742,6 @@ const Game5 = {
     const baseUnit = Math.min(w, h);
     const x = this.cursor.x;
     const y = this.cursor.y;
-    if (!this.debugMode) this.debugMode = true;
 
     if (this.showHelp) {
         const boxW = baseUnit * 0.8, boxH = baseUnit * 0.7;
@@ -911,7 +897,6 @@ const Game5 = {
     this.drawTemplate(ctx, w, h, baseUnit);
     this.drawUserInk(ctx, baseUnit);
     this.drawParticles(ctx, baseUnit); 
-    this.drawRecognitionDebug(ctx, baseUnit);
     if (!this.isMenuOpen && !this.showHelp) this.drawCursor(ctx, baseUnit); 
     this.drawUI(ctx, w, h, baseUnit);
 
@@ -1012,12 +997,10 @@ const Game5 = {
     }
   },
 
-  // ⚡ UPDATED: Arrow placed near starting point (~15% progress) with slight offset so it stays visible
   drawArrow(ctx, x1, y1, x2, y2, baseUnit) {
     const angle = Math.atan2(y2 - y1, x2 - x1);
     const size = baseUnit * 0.015; 
     
-    // Position arrow slightly forward along the line (15% progress) so it is clear of the starting dot
     const arrowX = x1 + (x2 - x1) * 0.15;
     const arrowY = y1 + (y2 - y1) * 0.15;
 
@@ -1099,7 +1082,6 @@ const Game5 = {
         ctx.fillText("Draw anywhere! Any size!", w / 2, baseUnit * 0.12);
     }
 
-    // Proximity or Unclear Drawing Guidance Warning
     if (this.mode === "FREEHAND" && this.proximityWarning) {
       ctx.save();
       ctx.fillStyle = "#FFCC00";
@@ -1257,71 +1239,5 @@ const Game5 = {
       x: (p.x - centerX) * scale,
       y: (p.y - centerY) * scale
     })));
-  },
-
-  drawRecognitionDebug(ctx, baseUnit) {
-    if (!this.debugMode || this.mode !== "FREEHAND") return;
-
-    const result = this.recognizeRoman(this.freehandStrokes);
-    const clusters = this.clusterIntoCharacters(this.freehandStrokes);
-    const normalized = this.normalizeStrokes(this.freehandStrokes);
-
-    ctx.save();
-    ctx.translate(70, 100);
-    ctx.scale(0.32, 0.32);
-
-    ctx.strokeStyle = "#00FFCC";
-    ctx.lineWidth = 14;
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-
-    if (normalized && normalized.length > 0) {
-      normalized.forEach(stroke => {
-        if (stroke.length < 2) return;
-        ctx.beginPath();
-        ctx.moveTo(stroke[0].x, stroke[0].y);
-        for (let i = 1; i < stroke.length; i++) {
-          ctx.lineTo(stroke[i].x, stroke[i].y);
-        }
-        ctx.stroke();
-      });
-    }
-
-    ctx.restore();
-
-    ctx.textAlign = "left";
-    ctx.font = `bold ${baseUnit * 0.028}px Arial`;
-    
-    let y = baseUnit * 0.18;
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillText("=== RECOGNITION DEBUG ===", 35, y);
-    y += baseUnit * 0.055;
-
-    if (result && result.roman) {
-      ctx.fillStyle = "#00FF88";
-      ctx.fillText(`Detected: ${result.roman}`, 35, y);
-      y += baseUnit * 0.05;
-      
-      ctx.fillStyle = "#88FFAA";
-      ctx.fillText(`Confidence: ${Math.round(result.score * 100)}%`, 35, y);
-      y += baseUnit * 0.05;
-    } else {
-      ctx.fillStyle = "#FF6666";
-      ctx.fillText("No clear character detected", 35, y);
-      y += baseUnit * 0.05;
-    }
-
-    ctx.fillStyle = "#BBBBBB";
-    ctx.font = `${baseUnit * 0.023}px Arial`;
-    ctx.fillText(`Characters detected: ${clusters ? clusters.length : 0}`, 35, y);
-    y += baseUnit * 0.045;
-
-    if (clusters && clusters.length > 0) {
-      ctx.fillText(`Segments: ${this.extractSegments(this.freehandStrokes, 20).length}`, 35, y);
-    }
-
-    ctx.fillStyle = "#666666";
-    ctx.font = `${baseUnit * 0.02}px Arial`;
-    ctx.fillText("Press D to toggle debug", 35, baseUnit * 0.75);
   }
 };

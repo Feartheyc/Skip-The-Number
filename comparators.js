@@ -20,6 +20,8 @@ const Game3 = {
 
   currentGrade: 1,
   currentLevel: 1, 
+  maxGradeUnlocked: 1,
+  questionsInLevel: 0,
   targetPromptText: "Aim at the BIGGER number!", 
 
   winHoldTime: 0,
@@ -65,10 +67,10 @@ const Game3 = {
   difficultyMenuOpen: false,
   gradeBtn: null,
   menuOptions: [
-    { grade: 1, label: "Grade 1: Progressive", color: "#4CAF50" },
-    { grade: 2, label: "Grade 2: Negatives", color: "#2196F3" },
-    { grade: 3, label: "Grade 3: Fractions", color: "#FF9800" },
-    { grade: 4, label: "Grade 4: Advanced", color: "#F44336" }
+    { grade: 1, label: "Grade 1: Progressive (1-20)", color: "#4CAF50" },
+    { grade: 2, label: "Grade 2: Negatives (-50 to 50)", color: "#2196F3" },
+    { grade: 3, label: "Grade 3: Like Fractions", color: "#FF9800" },
+    { grade: 4, label: "Grade 4: Advanced Fractions", color: "#F44336" }
   ],
 
   sfx: {
@@ -107,6 +109,7 @@ const Game3 = {
     this.score = 0;
     this.combo = 0;
     this.currentLevel = 1; 
+    this.questionsInLevel = 0;
     this.running = true;
     this.showTutorial = true;
     this.tutorialHoldTime = 0;
@@ -125,10 +128,10 @@ const Game3 = {
       this.eventsBound = true;
 
       window.addEventListener('keydown', (e) => {
-        if (e.key === '1') this.setDifficulty(1);
-        if (e.key === '2') this.setDifficulty(2);
-        if (e.key === '3') this.setDifficulty(3);
-        if (e.key === '4') this.setDifficulty(4);
+        if (e.key === '1' && 1 <= this.maxGradeUnlocked) this.setDifficulty(1);
+        if (e.key === '2' && 2 <= this.maxGradeUnlocked) this.setDifficulty(2);
+        if (e.key === '3' && 3 <= this.maxGradeUnlocked) this.setDifficulty(3);
+        if (e.key === '4' && 4 <= this.maxGradeUnlocked) this.setDifficulty(4);
 
         if (e.key === ' ' && this.showTutorial) {
           this.showTutorial = false;
@@ -159,13 +162,27 @@ const Game3 = {
 
           if (this.difficultyMenuOpen) {
             this.menuOptions.forEach((opt, i) => {
-              const btnW = 320 * this.scale;
-              const btnH = 60 * this.scale;
+              const btnW = 380 * this.scale;
+              const btnH = 55 * this.scale;
               const x = this.centerX - btnW / 2;
-              const y = this.centerY - 100 * this.scale + (i * 80 * this.scale);
+              const y = this.centerY - 90 * this.scale + (i * 75 * this.scale);
               if (mouseX >= x && mouseX <= x + btnW && mouseY >= y && mouseY <= y + btnH) {
-                this.setDifficulty(opt.grade);
-                this.difficultyMenuOpen = false;
+                if (opt.grade <= this.maxGradeUnlocked) {
+                  this.setDifficulty(opt.grade);
+                  this.difficultyMenuOpen = false;
+                } else {
+                  this.playSFX('wrong', 0.4);
+                  this.popups.push({ 
+                    text: `Grade ${opt.grade} is Locked! Beat Grade ${opt.grade - 1} Level 5 first.`, 
+                    x: this.centerX, 
+                    y: this.centerY + 210 * this.scale, 
+                    vy: 0, 
+                    life: 1.5, 
+                    color: "#FF4444", 
+                    isMilestone: true,
+                    timestamp: performance.now() 
+                  });
+                }
               }
             });
             return;
@@ -220,6 +237,7 @@ const Game3 = {
   setDifficulty(grade) {
     this.currentGrade = grade;
     this.currentLevel = 1; 
+    this.questionsInLevel = 0;
     this.score = 0;
     this.combo = 0;
     this.onResize(window.innerWidth, window.innerHeight);
@@ -240,26 +258,39 @@ const Game3 = {
     this.confetti = [];
     this.handResetRequired = true;
 
+    if (this.currentLevel === 5) {
+      this.winHoldThreshold = 0.6;
+      this.COMBO_MAX_TIME = 3.0;
+    } else {
+      this.winHoldThreshold = 1.0;
+      this.COMBO_MAX_TIME = 5.0;
+    }
+
+    let askBigger = true;
+    if (this.currentLevel === 1) askBigger = true;
+    else if (this.currentLevel === 2) askBigger = false;
+    else askBigger = Math.random() > 0.5;
+
+    if (this.currentLevel === 5) {
+      this.targetPromptText = askBigger ? "⚡ BARRAGE: Aim at BIGGER!" : "⚡ BARRAGE: Point at SMALLER!";
+    } else {
+      this.targetPromptText = askBigger ? "Aim at the BIGGER number!" : "Point finger at the SMALLER number!";
+    }
+
     if (this.currentGrade === 1) {
-      if (this.currentLevel === 1) this.targetPromptText = "Aim at the BIGGER number!";
-      else if (this.currentLevel === 2) this.targetPromptText = "Point finger at the SMALLER number!";
-      else if (this.currentLevel >= 3) {
-        const askBigger = Math.random() > 0.5;
-        this.targetPromptText = askBigger ? "Aim at the BIGGER number!" : "Point finger at the SMALLER number!";
-      }
       this.spawnIntegers(1, 20);
     }
     else if (this.currentGrade === 2) {
-      this.targetPromptText = "Aim at the BIGGER number!";
       this.spawnIntegers(-50, 50);
     }
     else if (this.currentGrade === 3) {
-      this.targetPromptText = "Aim at the BIGGER number!";
-      if (Math.random() > 0.5) this.spawnIntegers(100, 999);
-      else this.spawnLikeFractions();
+      if (this.currentLevel <= 2) this.spawnLikeFractions();
+      else {
+        if (Math.random() > 0.5) this.spawnIntegers(100, 999);
+        else this.spawnLikeFractions();
+      }
     }
     else if (this.currentGrade === 4) {
-      this.targetPromptText = "Aim at the BIGGER number!";
       this.spawnIrregularFractions();
     }
 
@@ -293,7 +324,13 @@ const Game3 = {
     while (n1 === n2) n2 = Math.floor(Math.random() * 12) + 1;
     this.leftValue = n1 / den; this.rightValue = n2 / den;
     this.leftText = `${n1}/${den}`; this.rightText = `${n2}/${den}`;
-    this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+    
+    const isBiggerTarget = this.targetPromptText.includes("BIGGER");
+    if (isBiggerTarget) {
+      this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+    } else {
+      this.currentRelation = this.leftValue < this.rightValue ? ">" : "<";
+    }
   },
 
   spawnIrregularFractions() {
@@ -305,7 +342,13 @@ const Game3 = {
     let n2 = Math.floor(Math.random() * d2) + 1;
     this.leftValue = n1 / d1; this.rightValue = n2 / d2;
     this.leftText = `${n1}/${d1}`; this.rightText = `${n2}/${d2}`;
-    this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+    
+    const isBiggerTarget = this.targetPromptText.includes("BIGGER");
+    if (isBiggerTarget) {
+      this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+    } else {
+      this.currentRelation = this.leftValue < this.rightValue ? ">" : "<";
+    }
   },
 
   drawSciFiCameraOverlay(ctx) {
@@ -341,7 +384,6 @@ const Game3 = {
     if (this.fpsTimer >= 1) { this.fps = this.frameCounter; this.frameCounter = 0; this.fpsTimer = 0; }
 
     const now = performance.now();
-    // Invalidate stale landmarks if no frame has arrived in over 200ms
     if (now - this._lastHandDetectedTime > 200) {
       this._cachedLandmarks = null;
       window.fingerPositions = null;
@@ -426,17 +468,24 @@ const Game3 = {
     ctx.fillText("Select Difficulty", this.centerX, this.centerY - 160 * this.scale);
 
     this.menuOptions.forEach((opt, i) => {
-      const btnW = 340 * this.scale; const btnH = 55 * this.scale;
+      const btnW = 380 * this.scale; const btnH = 55 * this.scale;
       const x = this.centerX - btnW / 2;
       const y = this.centerY - 90 * this.scale + (i * 75 * this.scale);
 
-      ctx.fillStyle = opt.color; ctx.beginPath(); ctx.roundRect(x, y, btnW, btnH, 12 * this.scale); ctx.fill();
+      const isUnlocked = opt.grade <= this.maxGradeUnlocked;
+      ctx.fillStyle = isUnlocked ? opt.color : "#444444"; 
+      ctx.beginPath(); ctx.roundRect(x, y, btnW, btnH, 12 * this.scale); ctx.fill();
 
       if (this.currentGrade === opt.grade) {
         ctx.strokeStyle = "white"; ctx.lineWidth = 4 * this.scale; ctx.stroke();
+      } else if (!isUnlocked) {
+        ctx.strokeStyle = "#222"; ctx.lineWidth = 2 * this.scale; ctx.stroke();
       }
-      ctx.fillStyle = "white"; ctx.font = `bold ${22 * this.scale}px Arial`;
-      ctx.fillText(opt.label, this.centerX, y + 35 * this.scale);
+
+      ctx.fillStyle = isUnlocked ? "white" : "#AAAAAA"; 
+      ctx.font = `bold ${20 * this.scale}px Arial`;
+      const labelText = isUnlocked ? opt.label : `🔒 ${opt.label}`;
+      ctx.fillText(labelText, this.centerX, y + 35 * this.scale);
     });
   },
 
@@ -489,7 +538,7 @@ const Game3 = {
         { icon: "📈", text: "Answer fast to stack score multipliers!" },
         { icon: "📉", text: "If Combo Timer drains to 0, multiplier resets." },
         { icon: "🎯", text: "Response Bar (1s): Fills as you hold gesture." },
-        { icon: "❌", text: "Wrong choice deducts -5 (Score cap at 0)." }
+        { icon: "💥", text: "Level 5 Question Barrage: Faster rapid-fire rounds!" }
       );
     }
 
@@ -548,10 +597,6 @@ const Game3 = {
       ctx.lineTo(cx - 10 * this.scale + waveOffset, baseDrawingY - 20 * this.scale);
       ctx.stroke();
 
-      ctx.fillStyle = "#fff";
-      ctx.beginPath(); ctx.arc(cx + waveOffset, baseDrawingY + 45 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
-      ctx.beginPath(); ctx.arc(cx - 50 * this.scale + waveOffset, baseDrawingY - 15 * this.scale, 5 * this.scale, 0, 7); ctx.fill();
-      
       ctx.font = `bold ${12 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
       ctx.fillText("Wide V = Bigger / Point = Smaller", cx, baseDrawingY + 75 * this.scale);
     } else {
@@ -669,6 +714,7 @@ const Game3 = {
     const pointsGained = 10 * multiplier;
     this.score += pointsGained;
     this.combo++;
+    this.questionsInLevel++;
 
     this.comboTimer = this.COMBO_MAX_TIME;
     this.popups = this.popups.filter(p => p.color !== "#FF4444");
@@ -687,32 +733,49 @@ const Game3 = {
       });
     }
 
-    if (this.currentGrade === 1) {
-      const calculatedLevel = Math.floor(this.score / 40) + 1;
-      
-      if (calculatedLevel > 5) {
-        this.currentGrade = 2;
-        this.currentLevel = 1;
+    const requiredQuestions = (this.currentLevel === 5) ? 10 : 5; 
+
+    if (this.questionsInLevel >= requiredQuestions) {
+      this.questionsInLevel = 0;
+
+      if (this.currentLevel < 5) {
+        this.currentLevel++;
+        const levelMsg = (this.currentLevel === 5) ? "⚡ LEVEL 5: QUESTION BARRAGE!" : `LEVEL ${this.currentLevel}!`;
         this.popups.push({ 
-          text: "ADVANCED TO GRADE 2!", 
+          text: levelMsg, 
           x: this.centerX, 
           y: this.centerY - 140 * this.scale, 
           vy: -15, 
           life: 2.0, 
-          color: "#00FFCC", 
-          timestamp: performance.now() 
-        });
-      } else if (calculatedLevel > this.currentLevel) {
-        this.currentLevel = calculatedLevel;
-        this.popups.push({ 
-          text: `LEVEL ${this.currentLevel}!`, 
-          x: this.centerX, 
-          y: this.centerY - 140 * this.scale, 
-          vy: -15, 
-          life: 1.5, 
           color: "#FFFF00", 
           timestamp: performance.now() 
         });
+      } else {
+        if (this.currentGrade < 4) {
+          this.currentGrade++;
+          this.maxGradeUnlocked = Math.max(this.maxGradeUnlocked, this.currentGrade);
+          this.currentLevel = 1;
+          this.score = 0;
+          this.popups.push({ 
+            text: `GRADE ${this.currentGrade} UNLOCKED!`, 
+            x: this.centerX, 
+            y: this.centerY - 140 * this.scale, 
+            vy: -15, 
+            life: 2.5, 
+            color: "#00FFCC", 
+            timestamp: performance.now() 
+          });
+        } else {
+          this.popups.push({ 
+            text: "MASTERED ALL GRADES!", 
+            x: this.centerX, 
+            y: this.centerY - 140 * this.scale, 
+            vy: -15, 
+            life: 3.0, 
+            color: "#FFD700", 
+            timestamp: performance.now() 
+          });
+        }
       }
     }
 
@@ -722,7 +785,7 @@ const Game3 = {
       this.playSFX('correct', 0.5);
     }
 
-    this.popups.push({ text: `+${pointsGained}!`, x: this.centerX, y: this.centerY, vy: -20, life: 1.2, color: "#00FF22", timestamp: performance.now() });
+    this.popups.push({ text: `+${pointsGained}!`, x: this.centerX, y: this.centerY - 40 * this.scale, vy: -20, life: 1.2, color: "#00FF22", timestamp: performance.now() });
 
     if (this.combo > 0 && this.combo % 5 === 0) {
       this.popups.push({ 
@@ -758,8 +821,7 @@ const Game3 = {
     this.shakeMag = 14 * this.scale;
     this.confetti = [];
 
-    this.popups = this.popups.filter(p => p.color !== "#00FF22" && !p.isMilestone);
-    this.popups.push({ text: "Wrong!", x: this.centerX, y: this.centerY, vy: 40, life: 1, color: "#FF4444", timestamp: performance.now() });
+    this.popups.push({ text: "Wrong!", x: this.centerX, y: this.centerY - 40 * this.scale, vy: 40, life: 1, color: "#FF4444", timestamp: performance.now() });
     setTimeout(() => this.spawnNumbers(), 1000);
   },
 
@@ -805,24 +867,24 @@ const Game3 = {
     if (this.showTutorial) return; 
 
     const isSmallerNumberChallenge = this.targetPromptText.includes("SMALLER");
-    const isCorrect = this.detectedSymbol === this.currentRelation;
-    const isWrong = this.detectedSymbol !== "None" && this.detectedSymbol !== this.currentRelation;
 
     let color = "#00FFCC"; 
-    if (isCorrect) color = "#00FF22"; 
-    else if (isWrong) color = "#FF3333"; 
+
+    if (this.gameState === "SUCCESS") {
+      color = "#00FF22"; 
+    } else if (this.gameState === "GAME_OVER") {
+      color = "#FF3333"; 
+    }
 
     ctx.strokeStyle = color; ctx.lineWidth = 10 * this.scale; ctx.lineCap = "round";
     ctx.beginPath();
     
     if (isSmallerNumberChallenge) {
       ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.stroke();
-      ctx.fillStyle = "white"; [indexTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
     } else {
       const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
       if (angle < 20) return;
       ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.lineTo(thumbTip.x, thumbTip.y); ctx.stroke();
-      ctx.fillStyle = "white"; [indexTip, thumbTip, wrist].forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, 6 * this.scale, 0, 7); ctx.fill(); });
     }
   },
 
@@ -840,7 +902,7 @@ const Game3 = {
       ctx.stroke();
     };
 
-    const subLabel = this.currentGrade === 1 ? `Grade 1 (Lvl ${this.currentLevel})` : `Grade ${this.currentGrade}`;
+    const subLabel = `Grade ${this.currentGrade} (Lvl ${this.currentLevel})`;
     ctx.font = `bold ${18 * this.scale}px Arial`;
     const gradeW = ctx.measureText(subLabel).width + 36 * this.scale;
     const gradeH = 44 * this.scale;
@@ -920,12 +982,11 @@ const Game3 = {
     drawCard(this.centerX + offsetX, this.rightColor, this.rightText);
 
     ctx.globalAlpha = 1;
-    ctx.font = `bold ${54 * this.scale}px Arial`; 
-    ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-    ctx.fillText("?", this.centerX, this.centerY);
+    
+    // Completely removed the center '?' rendering block to keep the middle clear!
 
     ctx.font = `bold ${24 * this.scale}px Arial`; 
-    ctx.fillStyle = "#FFFFFF";
+    ctx.fillStyle = (this.currentLevel === 5) ? "#FFCC00" : "#FFFFFF";
     ctx.shadowBlur = 8; 
     ctx.shadowColor = "#000";
     ctx.fillText(this.targetPromptText, this.centerX, this.centerY + 140 * this.scale);
