@@ -478,7 +478,7 @@ const Game1 = {
   currentOuterRadius: 1000,
   currentInnerRadius: 970,
   ringScale: 1.5,
-
+GLOBAL_SPEED_MULTIPLIER: 0.8,  
   /* ── Palette ────────────────────────────────────────────── */
   C: {
     bg:        "#0d1b2e",
@@ -952,7 +952,7 @@ _spawnAccumulator: 0,
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
     const levelBoost = 1 + Math.min(0.55, Math.max(0, (this.level || 1) - 1) * 0.08);
-    this.speedCap = this.baseOuterRadius * 0.25 * levelBoost;
+    this.speedCap = this.baseOuterRadius * 0.25 * levelBoost * this.GLOBAL_SPEED_MULTIPLIER;
     this.speedMin = this.speedCap * 0.15;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
@@ -1699,10 +1699,10 @@ _getCumulativeThreshold(level) {
 },
 
   _getSpawnIntervalForLevel() {
-  const baseMap = { default: 1800, pattern: 2800, cannon: 1800, orb: 1800, triple: 1800 };
-  const minMap  = { default: 900,  pattern: 1400, cannon: 900,  orb: 900,  triple: 900 };
-  const base = baseMap[this.mode] || 1800;
-  const min  = minMap[this.mode] || 900;
+  const baseMap = { default: 1300, pattern: 1400, cannon: 1300, orb: 1300, triple: 1300 };
+  const minMap  = { default: 600,  pattern: 700, cannon: 600,  orb: 600,  triple: 600 };
+  const base = (baseMap[this.mode] || 1400) / this.GLOBAL_SPEED_MULTIPLIER;
+  const min  = (minMap[this.mode] || 600) / this.GLOBAL_SPEED_MULTIPLIER;
   const drop = (this.level - 1) * (this.mode === "pattern" ? 90 : 80);
   return Math.max(min, base - drop);
 },
@@ -1710,7 +1710,7 @@ _getCumulativeThreshold(level) {
   _syncDifficultyScalars() {
   // Ramps speed baseline significantly higher on each successive level up
   const speedMultiplier = 1 + Math.min(1.9, Math.max(0, this.level - 1) * 0.22); 
-  this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier;
+  this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier * this.GLOBAL_SPEED_MULTIPLIER;
   this.speedMin = this.speedCap * 0.15;
   
   // Protection zone size calculation: 2.5x the size of the flying numbers
