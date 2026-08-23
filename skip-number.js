@@ -478,7 +478,7 @@ const Game1 = {
   currentOuterRadius: 1000,
   currentInnerRadius: 970,
   ringScale: 1.5,
-
+GLOBAL_SPEED_MULTIPLIER: 0.8,  
   /* ── Palette ────────────────────────────────────────────── */
   C: {
     bg:        "#0d1b2e",
@@ -755,6 +755,9 @@ _spawnAccumulator: 0,
    /* ============================================================
       INIT
   ============================================================ */
+  /* ============================================================
+   INIT
+============================================================ */
   init(modeKey = "default") {
     const rect = document.getElementById("container").getBoundingClientRect();
     this._applyResize(rect.width, rect.height);
@@ -777,7 +780,7 @@ _spawnAccumulator: 0,
     this.currentNumber = 1;
     this.xp = 0;
     this.level = 1;
-    this.levelThreshold = this._getCumulativeThreshold(this.level); // was _getLevelThreshold
+    this.levelThreshold = this._getCumulativeThreshold(this.level);
     this.tier = 0;
     this.levelUpActive = false;
     this.xpPopFlash = 0;
@@ -812,11 +815,8 @@ _spawnAccumulator: 0,
     this.overlayData = null;
     this.torusAngle = 0;
     this._spriteFrame = 0;
-    this.showSkillDebug = false; // Reset debug toggles across hard reboots
+    this.showSkillDebug = false;
 
-    // ── FIXED: use the actual chosen mode (not a hardcoded "default")
-    //    so _buildRoundPlan() below generates the correct type of plan
-    //    (pattern skip/collect vs. plain skip amount) right from the start. ──
     this.mode = modeKey || "default";
     this.skipAmount = this.getRandomSkip();
     this.gameTitle = "COLLECT MULTIPLES OF "+ this.skipAmount;
@@ -839,8 +839,6 @@ _spawnAccumulator: 0,
     this._tutNoFingerFrames = 0;
     this._syncDifficultyScalars();
 
-    // ── FIXED: this plan is now generated ONCE, using the correct mode,
-    //    and will be reused verbatim when the round actually starts. ──
     this.nextRoundPlan = this._buildRoundPlan();
 
     this._initTutStars();
@@ -858,10 +856,8 @@ _spawnAccumulator: 0,
         this._resizeTimer = setTimeout(() => this._onResize(), 300);
       });
 
-      // ── Unified Double Click / Double Tap Interaction Listener ──
       this._lastTapTime = 0;
       window.addEventListener("pointerdown", (e) => {
-        // Only allow freezing actions inside the live execution gameplay loop
         if (this.gameState !== "playing") return;
         
         const now = performance.now();
@@ -899,14 +895,27 @@ _spawnAccumulator: 0,
           return;
         }
 
-        // ── KEY 3 Toggles Interactive UI Skill Point Overlay Debug Display ──
+        // Key 3: Toggle Debug Skill UI
         if (e.key === "3") {
           this.showSkillDebug = !this.showSkillDebug;
           return;
         }
         
+        // Key 4: Get and set skill points required for Level - 1
+        if (e.key === "4") {
+          const targetLevel = Math.max(0, this.level - 1);
+          const pointsNeeded = this._getCumulativeThreshold(targetLevel);
+
+          console.log(`[DEBUG Key 4] Current Level: ${this.level} | Points needed for Level ${targetLevel}: ${pointsNeeded}`);
+
+          if (this.gameState === "playing") {
+            // Set running skill points directly and update system XP
+            this._adjustSkill(pointsNeeded - this.skillPoints);
+          }
+          return;
+        }
+
         if (e.key === "5") this._setMode("orb");
-        if (e.key === "4") this._setMode("triple");
       });
     }
   },
@@ -943,7 +952,7 @@ _spawnAccumulator: 0,
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
     const levelBoost = 1 + Math.min(0.55, Math.max(0, (this.level || 1) - 1) * 0.08);
-    this.speedCap = this.baseOuterRadius * 0.25 * levelBoost;
+    this.speedCap = this.baseOuterRadius * 0.25 * levelBoost * this.GLOBAL_SPEED_MULTIPLIER;
     this.speedMin = this.speedCap * 0.15;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
@@ -1690,10 +1699,10 @@ _getCumulativeThreshold(level) {
 },
 
   _getSpawnIntervalForLevel() {
-  const baseMap = { default: 1800, pattern: 2800, cannon: 1800, orb: 1800, triple: 1800 };
-  const minMap  = { default: 900,  pattern: 1400, cannon: 900,  orb: 900,  triple: 900 };
-  const base = baseMap[this.mode] || 1800;
-  const min  = minMap[this.mode] || 900;
+  const baseMap = { default: 1300, pattern: 1400, cannon: 1300, orb: 1300, triple: 1300 };
+  const minMap  = { default: 600,  pattern: 700, cannon: 600,  orb: 600,  triple: 600 };
+  const base = (baseMap[this.mode] || 1400) / this.GLOBAL_SPEED_MULTIPLIER;
+  const min  = (minMap[this.mode] || 600) / this.GLOBAL_SPEED_MULTIPLIER;
   const drop = (this.level - 1) * (this.mode === "pattern" ? 90 : 80);
   return Math.max(min, base - drop);
 },
@@ -1701,7 +1710,7 @@ _getCumulativeThreshold(level) {
   _syncDifficultyScalars() {
   // Ramps speed baseline significantly higher on each successive level up
   const speedMultiplier = 1 + Math.min(1.9, Math.max(0, this.level - 1) * 0.22); 
-  this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier;
+  this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier * this.GLOBAL_SPEED_MULTIPLIER;
   this.speedMin = this.speedCap * 0.15;
   
   // Protection zone size calculation: 2.5x the size of the flying numbers
