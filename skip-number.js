@@ -478,7 +478,7 @@ const Game1 = {
   currentOuterRadius: 1000,
   currentInnerRadius: 970,
   ringScale: 1.5,
-GLOBAL_SPEED_MULTIPLIER: 0.8,  
+GLOBAL_SPEED_MULTIPLIER: 0.65,  
   /* ── Palette ────────────────────────────────────────────── */
   C: {
     bg:        "#0d1b2e",
@@ -748,6 +748,14 @@ _spawnAccumulator: 0,
   _noteFontCache: null,     // {key, font}
 
 
+
+  // Minimum angle between two notes spawned in the same tick,
+// so their straight-line paths to center don't overlap/crowd.
+MIN_SPAWN_ANGLE_SEPARATION: Math.PI / 3.2, // ~56°
+
+_lastSpawnAngle: 0,
+
+_recentSpawnAngles: [],
   /* ============================================================
       INIT
   ============================================================ */
@@ -1150,31 +1158,32 @@ const gameplayByMode = {
     { icon: "🎯", text: "Numbers fly from the ring toward the center." },
     { icon: "✅", text: `Collect multiples of ${previewSkip} this round (changes each round!)` },
     { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
-    { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone:Center doesn't count — nothing to collect there" },
   ],
   pattern: [
     { icon: "🎶", text: "Numbers cycle: skip a set, then collect a set." },
     { icon: "🧠", text: `Skip ${previewSkip}, collect ${previewCollect} this round (changes each round!)` },
     { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
-    { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone:Center doesn't count — nothing to collect there." },
+
   ],
   cannon: [
     { icon: "💥", text: "The cannon fires numbers straight across the screen." },
     { icon: "✅", text: `Touch multiples of ${previewSkip} this round (changes each round!)` },
     { icon: "🚀", text: "Numbers travel in one direction until they escape." },
-    { icon: "🛡️", text: "Safe Zone: Right by the cannon is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone: Right by the cannon doesn't count yet." },
   ],
   orb: [
     { icon: "🌀", text: "A spinning orb launches numbers outward." },
     { icon: "✅", text: `Catch multiples of ${previewSkip} this round (changes each round!)` },
     { icon: "💜", text: "The orb turns to aim — watch closely." },
-    { icon: "🛡️", text: "Safe Zone: Right by the orb is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone: Right by the orb doesn't count yet." },
   ],
   triple: [
     { icon: "🔴", text: "THREE cannons fire in random order." },
     { icon: "👀", text: "A gold glow shows which cannon fires next." },
     { icon: "✅", text: `Intercept multiples of ${previewSkip} this round (changes each round!)` },
-    { icon: "🛡️", text: "Safe Zone: Right by the cannons is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone: Right by the cannons doesn't count yet." },
   ],
 };
 
@@ -1699,8 +1708,8 @@ _getCumulativeThreshold(level) {
 },
 
   _getSpawnIntervalForLevel() {
-  const baseMap = { default: 1300, pattern: 1400, cannon: 1300, orb: 1300, triple: 1300 };
-  const minMap  = { default: 600,  pattern: 700, cannon: 600,  orb: 600,  triple: 600 };
+  const baseMap = { default: 1600, pattern: 1700, cannon: 1600, orb: 1600, triple: 1600 };
+  const minMap  = { default: 900,  pattern: 1000, cannon: 900,  orb: 900,  triple: 900 };
   const base = (baseMap[this.mode] || 1400) / this.GLOBAL_SPEED_MULTIPLIER;
   const min  = (minMap[this.mode] || 600) / this.GLOBAL_SPEED_MULTIPLIER;
   const drop = (this.level - 1) * (this.mode === "pattern" ? 90 : 80);
@@ -1807,6 +1816,7 @@ _getCumulativeThreshold(level) {
   this._instantLevelUpFired = false;
   this._instantBurstActive = false;
   this._instantBurstT = 0;
+  this._recentSpawnAngles = [];
   if (this.mode === "triple" && (!this.tripleCannons || this.tripleCannons.length === 0)) {
       this.tripleCannons = [
           { offset: 0 },
@@ -3261,26 +3271,76 @@ _hexToRgb(hex) {
   },
 
   /* ── Notes ───────────────────────────────────────────────── */
-  spawnNote() {
-    if (this.notes.length >= this.maxNotesOnScreen) return;
-    if (this.roundWrapPending || this.gameState !== "playing") return;
-    
-    // GUARD: If 100 has already been spawned, stop producing new notes entirely
-    if (this.currentNumber > this.maxNumber) return;
+/* ── Ring mode note spawner — spawns 2 per interval instead of 1.
+   Rolling-window separation check:
+     • Note A (1st of this batch) only avoids the LAST note spawned
+       before this batch (i.e. the previous batch's most recent note).
+     • Note B (2nd of this batch) avoids Note A (this batch), NOT the
+       older previous-batch note — so B is free to spawn near where
+       last batch's notes were, keeping things collectible.
+   After spawning, _recentSpawnAngles is replaced (not appended) with
+   just this batch's angles, so the NEXT batch only ever checks
+   against what was "just before it". ── */
+spawnNote() {
+  if (this.roundWrapPending || this.gameState !== "playing") return;
+  if (this.currentNumber > this.maxNumber) return;
 
-    const angle = Math.random() * Math.PI * 2;
-    const minR  = this.currentOuterRadius + 150, maxR = this.currentOuterRadius + 210;
+  const notesToSpawn = 2;
+  const minSep = this.MIN_SPAWN_ANGLE_SEPARATION;
+
+  // The only angle this batch needs to avoid initially is the most
+  // recent angle from the PREVIOUS batch (rolling — one batch back).
+  const priorAngle = this._recentSpawnAngles.length > 0
+    ? this._recentSpawnAngles[this._recentSpawnAngles.length - 1]
+    : null;
+
+  const thisBatchAngles = [];
+
+  for (let i = 0; i < notesToSpawn; i++) {
+    if (this.notes.length >= this.maxNotesOnScreen) break;
+    if (this.currentNumber > this.maxNumber) break;
+
+    let angle;
+    if (i === 0) {
+      // Note A: avoid only the previous batch's last angle (if any)
+      if (priorAngle !== null) {
+        const span = Math.PI * 2 - minSep * 2;
+        angle = priorAngle + minSep + Math.random() * span;
+      } else {
+        angle = Math.random() * Math.PI * 2;
+      }
+    } else {
+      // Note B: avoid only Note A from THIS batch — free to land
+      // anywhere relative to the older previous-batch angle.
+      const prev = thisBatchAngles[i - 1];
+      const span = Math.PI * 2 - minSep * 2;
+      angle = prev + minSep + Math.random() * span;
+    }
+
+    thisBatchAngles.push(angle);
+
+    const radiusJitter = i * 18;
+    const minR = this.currentOuterRadius + 150 + radiusJitter;
+    const maxR = this.currentOuterRadius + 210 + radiusJitter;
     const spawnR = Math.random() * (maxR - minR) + minR;
+
     const num = this.currentNumber++;
 
-    this.notes.push({ 
-      x: this.centerX + Math.cos(angle)*spawnR, 
-      y: this.centerY + Math.sin(angle)*spawnR, 
-      radius: this.baseOuterRadius*0.12, 
-      value: num, 
-      id: num 
+    this.notes.push({
+      x: this.centerX + Math.cos(angle) * spawnR,
+      y: this.centerY + Math.sin(angle) * spawnR,
+      radius: this.baseOuterRadius * 0.12,
+      value: num,
+      id: num
     });
-  },
+  }
+
+  // Replace (not append) — only this batch's angles matter for
+  // the NEXT batch's rolling check.
+  if (thisBatchAngles.length > 0) {
+    this._recentSpawnAngles = thisBatchAngles;
+  }
+},
   drawNotes(ctx, dt) {
   const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
   if (!isLauncher) {
@@ -4398,7 +4458,8 @@ spawnTripleNote() {
     this.skipAmount = this.getRandomSkip();
     this.gameTitle = "SKIP " + this.skipAmount;
     this._noteSpriteCache = null;
-    this._noteFontCache = null;
+    this._noteFontCache = null
+    this._recentSpawnAngles = [];;
     this._restartSpawnTimer();
   },
 
