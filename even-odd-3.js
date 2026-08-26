@@ -1622,50 +1622,71 @@ _updateTutorial(ctx, dt) {
   }
 },
  
- 
-/* ── 4b) NEW: animated mini-diagram of the actual mechanic ───── */
 _drawTutVisual(ctx, px, py, pw, ph, t) {
   ctx.save();
   ctx.translate(px, py);
- 
+
   const cx = pw / 2, cy = ph / 2;
   const armLen = Math.min(pw, ph) * 0.32;
- 
-  // Colored edge zones — mirrors the real red/blue bands
+  const ballRadius = 14;
+
+  // Render edge zones
   const bandW = pw * 0.14;
   ctx.fillStyle = "rgba(255,0,0,0.35)";
   ctx.fillRect(0, 0, bandW, ph);
   ctx.fillStyle = "rgba(0,255,255,0.35)";
   ctx.fillRect(pw - bandW, 0, bandW, ph);
- 
-  // Demo cycle: 0-2s shows an ODD ball knocked LEFT,
-  //             2-4s shows an EVEN ball knocked RIGHT.
+
+  // Demo cycle: 0-2s ODD ball (left), 2-4s EVEN ball (right)
   const cycle = t % 4;
   const isOddDemo = cycle < 2;
-  const localT = (cycle % 2) / 2; // 0..1 within this half-cycle
+  const localT = (cycle % 2) / 2; // Normalized loop time (0.0 to 1.0)
   const num = isOddDemo ? 7 : 4;
   const zoneColor = isOddDemo ? "#FF0000" : "#00FFFF";
- 
-  const fallPhase = 0.45;
+
+  // Dynamic bar rotation with smooth angular velocity momentum
+  const baseTargetAngle = isOddDemo ? Math.PI * 0.75 : Math.PI * 0.25;
+  const armAngle = baseTargetAngle + Math.sin(t * 4) * 0.2;
+
+  // Collision timeline settings
+  const hitT = 0.45; // Fraction of cycle when impact occurs
+  const contactDist = armLen * 0.65; // Distance along the arm where ball hits
+
+  // Calculate exact collision point in canvas space
+  const hitX = cx + Math.cos(armAngle) * contactDist;
+  const hitY = cy + Math.sin(armAngle) * contactDist;
+
   let bx, by;
-  if (localT < fallPhase) {
-    const p = localT / fallPhase;
-    bx = cx;
-    by = p * cy;
+
+  if (localT < hitT) {
+    // Phase 1: Straight vertical drop onto the rotating arm
+    const p = localT / hitT;
+    const startY = -ballRadius;
+    
+    // Smooth quadratic drop trajectory
+    bx = cx + (hitX - cx) * p;
+    by = startY + (hitY - startY) * Math.pow(p, 1.2);
   } else {
-    const p = (localT - fallPhase) / (1 - fallPhase);
+    // Phase 2: Perfect smooth parabolic bounce towards target edge zone
+    const p = (localT - hitT) / (1 - hitT);
     const targetX = isOddDemo ? bandW * 0.5 : pw - bandW * 0.5;
-    bx = cx + (targetX - cx) * p;
-    by = cy + (ph - cy) * p * 0.9;
+    const targetY = ph * 0.85;
+
+    // Normal vector direction from collision point
+    const sideDir = isOddDemo ? -1 : 1;
+
+    // Smooth horizontal travel
+    bx = hitX + (targetX - hitX) * Math.pow(p, 0.85);
+
+    // Parabolic arc bounce curve (outward momentum push)
+    const arcHeight = 35 * (1 - Math.pow(p - 0.5, 2) * 4);
+    by = hitY + (targetY - hitY) * p - Math.max(0, arcHeight);
   }
- 
-  // Arm points toward the deflection direction, with a little idle swing
-  const armAngle = isOddDemo ? Math.PI * 0.82 : Math.PI * 0.18;
-  const swingAngle = armAngle + Math.sin(t * 3) * 0.12;
- 
+
+  // Draw double-sided arm
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(swingAngle);
+  ctx.rotate(armAngle);
   ctx.strokeStyle = "#ac2fffff";
   ctx.shadowColor = "#f36affff";
   ctx.shadowBlur = 10;
@@ -1680,28 +1701,30 @@ _drawTutVisual(ctx, px, py, pw, ph, t) {
   ctx.stroke();
   ctx.shadowBlur = 0;
   ctx.restore();
- 
-  // Pivot
+
+  // Draw Center Pivot
   ctx.beginPath();
   ctx.arc(cx, cy, 5, 0, Math.PI * 2);
   ctx.fillStyle = "#ff2491ff";
   ctx.fill();
- 
-  // Ball
+
+  // Draw Ball with glow
   ctx.beginPath();
-  ctx.arc(bx, by, 14, 0, Math.PI * 2);
+  ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
   ctx.fillStyle = "#ffffff";
   ctx.shadowColor = zoneColor;
   ctx.shadowBlur = 14;
   ctx.fill();
   ctx.shadowBlur = 0;
-  ctx.fillStyle = "#000";
+
+  // Ball number text
+  ctx.fillStyle = "#000000";
   ctx.font = "bold 13px Orbitron";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(num, bx, by);
- 
-  // Zone labels
+
+  // Side zone labels
   ctx.font = "10px Orbitron";
   ctx.fillStyle = "#FF0000";
   ctx.textAlign = "left";
@@ -1709,10 +1732,9 @@ _drawTutVisual(ctx, px, py, pw, ph, t) {
   ctx.fillStyle = "#00FFFF";
   ctx.textAlign = "right";
   ctx.fillText("EVEN", pw - 6, ph - 8);
- 
+
   ctx.restore();
 },
- 
  
 /* ── 4c) NEW: transition out of the tutorial into real play ──── */
 _startPlayingFromTutorial() {
