@@ -1078,6 +1078,7 @@ const Game3 = {
     return mag === 0 ? 0 : Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180 / Math.PI;
   },
 
+  
   getHandOverlapRatio(indexTip, thumbTip, wrist) {
     const margin = 100 * this.scale;
     const left = this.centerX - 200 * this.scale, right = this.centerX + 200 * this.scale;
