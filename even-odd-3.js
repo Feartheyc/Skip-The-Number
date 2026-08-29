@@ -85,6 +85,23 @@ gameState: "tutorial",
   _tutNoHandFrames: 0,
   TUT_HOLD_SEC: 2.0,
 
+
+  // ===== SPAWN PHASE SYSTEM (top-only <-> bottom-only, then unlocks "both") =====
+spawnPhase: "top",          // "top" | "bottom" | "both"
+phaseTimer: 0,               // ms elapsed in current phase
+phaseDuration: 60000,        // 15s per phase before switching sides
+bothSidesUnlocked: false,    // becomes true permanently once score hits LEVEL_UNLOCK_SCORE
+LEVEL_UNLOCK_SCORE: 777,
+
+// Popup overlay state (pauses spawning/movement while shown)
+sidePopupActive: false,
+sidePopupTitle: "",
+sidePopupSubtitle: "",
+sidePopupColor: "#00FFFF",
+sidePopupTimer: 0,
+sidePopupDuration: 2600,     // ms popup stays on screen
+sidePopupScale: 0,           // for pop-in animation
+
   init() {
   try {
     if (screen.orientation && screen.orientation.lock) {
@@ -154,6 +171,28 @@ gameState: "tutorial",
   this._tutOrbT = 0;
   this._tutHoldProgress = 0;
   this._tutNoHandFrames = 0;
+
+  this.spawnPhase = "top";
+this.phaseTimer = 0;
+this.bothSidesUnlocked = false;
+this.sidePopupActive = false;
+this.sidePopupTimer = 0;
+this.sidePopupScale = 0;
+
+
+window.addEventListener('keydown', (e) => {
+  if (window.currentGame !== Game8) return;
+
+  if (e.key === "1") {
+    this.score = 770;
+    this.scoreScale = 2.0;
+    this.scoreColor = "#FFD700";
+
+    this.spawnFloatingText(this.CENTER_X, this.CENTER_Y - 60 * this.scale, "CHEAT: 770!", "#FFD700");
+
+    console.log("[CHEAT] Score set to 770 for testing level-up popup.");
+  }
+});
  
   this.initPose();
 },
@@ -521,142 +560,142 @@ gameState: "tutorial",
     this.rebuildCaches();
   },
 
- /* ── 3) REPLACE update(ctx) ──────────────────────────────────── */
 update(ctx) {
   if (!this.running) return;
- 
+
   const now = performance.now();
   const deltaTime = now - this.lastTime;
   this.lastTime = now;
- 
+
   if (this.scoreScale > 1) {
     this.scoreScale = Math.max(1, this.scoreScale - 0.05);
   }
- 
-  // ── Tutorial screen takes over rendering entirely until the
-  //    player holds their wrist at center for TUT_HOLD_SEC. ──
+
   if (this.gameState === "tutorial") {
     this.drawBackground(ctx);
     this._updateTutorial(ctx, Math.min(deltaTime, 50));
     return;
   }
- 
+
   if (!this.gameStarted) {
-    // Safety fallback — shouldn't normally be reached since the
-    // tutorial now owns the pre-game state.
     this.checkPivotLock(deltaTime);
+  } else if (this.sidePopupActive) {
+    // Freeze spawning/physics/scoring while the popup is up,
+    // but keep particles/floaters settling and the popup animating.
+    this.updateSidePopup(Math.min(deltaTime, 50));
   } else {
     this.handleSpawning(deltaTime);
     this.updateBalls(deltaTime / 16.67);
     this.checkPhysics();
     this.checkScoring();
   }
- 
+
   this.updateParticles();
   this.updateFloaters();
- 
+
   this.drawBackground(ctx);
- 
+
   if (this.gameStarted) {
     this.drawBalls(ctx);
     this.drawArms(ctx);
   }
- 
+
   this.drawPivots(ctx);
   this.drawParticles(ctx);
   this.drawFloaters(ctx);
   this.drawUI(ctx);
+
+  if (this.sidePopupActive) {
+    this.drawSidePopup(ctx);
+  }
 },
 
-  handleSpawning(dt) {
-    this.spawnTimer += dt;
+handleSpawning(dt) {
+  if (this.sidePopupActive) return;
 
-    this.spawnMode = "top-bottom";
+  if (!this.bothSidesUnlocked) {
+    this.phaseTimer += dt;
 
-    if (this.spawnTimer > this.spawnRate && this.balls.length < this.MAX_BALLS) {
-      this.spawnBall();
-      this.spawnTimer = 0;
-    }
-  },
+    // Timer's up — but don't switch yet if balls from the current
+    // side are still on screen. Just stop spawning NEW ones and
+    // wait for the board to clear first.
+    if (this.phaseTimer >= this.phaseDuration) {
+      if (this.balls.length === 0) {
+        this.phaseTimer = 0;
+        const nextPhase = this.spawnPhase === "top" ? "bottom" : "top";
+        this.triggerSidePopup(nextPhase);
+      }
+      return; // no new spawns while waiting to switch or showing popup
+    }
+  }
 
-  spawnBall() {
-    const number = Math.floor(Math.random() * 100) + 1;
-    const isOdd = number % 2 !== 0;
+  this.spawnTimer += dt;
 
-    const speed = (1 + (2000 - this.spawnRate) / 2000) * this.scale;
+  if (this.spawnTimer > this.spawnRate && this.balls.length < this.MAX_BALLS) {
+    this.spawnBall();
+    this.spawnTimer = 0;
+  }
+},
 
-    let sides = [];
+ spawnBall() {
+  const number = Math.floor(Math.random() * 100) + 1;
+  const isOdd = number % 2 !== 0;
 
-    if (this.spawnMode === "top-bottom") {
-      sides = [0, 1];
-    } else if (this.spawnMode === "left-right") {
-      sides = [2, 3];
-    } else if (this.spawnMode === "all") {
-      sides = [0, 1, 2, 3];
-    } else if (this.spawnMode === "random-one") {
-      if (!this._lastRandomSide) {
-        this._lastRandomSide = Math.floor(Math.random() * 4);
-      }
+  const speed = (1 + (2000 - this.spawnRate) / 2000) * this.scale;
 
-      sides = [this._lastRandomSide];
+  let sides = [];
 
-      if (Math.random() < 0.1) {
-        this._lastRandomSide = Math.floor(Math.random() * 4);
-      }
-    }
+  if (this.spawnPhase === "top") {
+    sides = [0];
+  } else if (this.spawnPhase === "bottom") {
+    sides = [1];
+  } else {
+    // "both" — unlocked at 777 points, same as your original top-bottom mode
+    sides = [0, 1];
+  }
 
-    const side = sides[Math.floor(Math.random() * sides.length)];
+  const side = sides[Math.floor(Math.random() * sides.length)];
 
-    let x;
-    let y;
-    let tx;
-    let ty;
+  let x;
+  let y;
+  let tx;
+  let ty;
 
-    const outsideOffset = this.ballRadius * 2;
-    const farBoundary = 2000 * this.scale;
+  const outsideOffset = this.ballRadius * 2;
+  const farBoundary = 2000 * this.scale;
 
-    if (side === 0) {
-      x = this.CENTER_X;
-      y = -outsideOffset;
-      tx = x;
-      ty = this.cssHeight + farBoundary;
-    } else if (side === 1) {
-      x = this.CENTER_X;
-      y = this.cssHeight + outsideOffset;
-      tx = x;
-      ty = -farBoundary;
-    } else if (side === 2) {
-      x = -outsideOffset;
-      y = this.CENTER_Y;
-      tx = this.cssWidth + farBoundary;
-      ty = y;
-    } else if (side === 3) {
-      x = this.cssWidth + outsideOffset;
-      y = this.CENTER_Y;
-      tx = -farBoundary;
-      ty = y;
-    }
+  if (side === 0) {
+    x = this.CENTER_X;
+    y = -outsideOffset;
+    tx = x;
+    ty = this.cssHeight + farBoundary;
+  } else if (side === 1) {
+    x = this.CENTER_X;
+    y = this.cssHeight + outsideOffset;
+    tx = x;
+    ty = -farBoundary;
+  }
 
-    this.balls.push({
-      x,
-      y,
-      prevX: x,
-      prevY: y,
-      targetX: tx,
-      targetY: ty,
-      vx: 0,
-      vy: 0,
-      speed,
-      number,
-      isOdd,
-      color: "#ffffff",
-      trail: [],
-      trailIdx: 0,
-      hitCooldown: 0,
-      scored: false,
-      hasCollided: false
-    });
-  },
+  this.balls.push({
+    x,
+    y,
+    prevX: x,
+    prevY: y,
+    targetX: tx,
+    targetY: ty,
+    vx: 0,
+    vy: 0,
+    speed,
+    number,
+    isOdd,
+    color: "#ffffff",
+    trail: [],
+    trailIdx: 0,
+    hitCooldown: 0,
+    scored: false,
+    hasCollided: false
+  });
+},
 
   updateBalls(dt) {
     for (let i = 0; i < this.balls.length; i++) {
@@ -1030,22 +1069,27 @@ update(ctx) {
   },
 
   updateScore(amount, isGood) {
-    if (isGood) {
-      sfxCorrect_8.currentTime = 0;
-      sfxCorrect_8.play().catch(() => { });
-    } else {
-      sfxWrong_8.currentTime = 0;
-      sfxWrong_8.play().catch(() => { });
-    }
+  if (isGood) {
+    sfxCorrect_8.currentTime = 0;
+    sfxCorrect_8.play().catch(() => { });
+  } else {
+    sfxWrong_8.currentTime = 0;
+    sfxWrong_8.play().catch(() => { });
+  }
 
-    this.score += amount;
-    this.scoreScale = 2.0;
-    this.scoreColor = isGood ? "#00FF00" : "#FF0000";
+  this.score += amount;
+  this.scoreScale = 2.0;
+  this.scoreColor = isGood ? "#00FF00" : "#FF0000";
 
-    this.spawnRate = isGood
-      ? Math.max(this.minSpawnRate, this.spawnRate - 100)
-      : Math.min(this.maxSpawnRate, this.spawnRate + 200);
-  },
+  this.spawnRate = isGood
+    ? Math.max(this.minSpawnRate, this.spawnRate - 100)
+    : Math.min(this.maxSpawnRate, this.spawnRate + 200);
+
+  // Unlock simultaneous top+bottom spawning once the player proves themselves.
+  if (!this.bothSidesUnlocked && this.score >= this.LEVEL_UNLOCK_SCORE) {
+    this.triggerLevelPopup();
+  }
+},
 
   checkPivotLock(dt) {
     if (!this.steeringHand) {
@@ -1746,5 +1790,127 @@ _startPlayingFromTutorial() {
   if (video) video.style.opacity = "0.2";
  
   this.spawnFloatingText(this.CENTER_X, this.CENTER_Y, "START!", "white");
+},
+
+triggerSidePopup(nextPhase) {
+  this.spawnPhase = nextPhase;
+
+  const fromTop = nextPhase === "bottom"; // switching FROM top TO bottom
+  const messages = fromTop
+    ? { title: "🔄 SWITCHEROO!", subtitle: "Numbers now zoom in from the BOTTOM!" }
+    : { title: "🔄 SWITCHEROO!", subtitle: "Numbers now zoom in from the TOP!" };
+
+  this.sidePopupActive = true;
+  this.sidePopupTitle = messages.title;
+  this.sidePopupSubtitle = messages.subtitle;
+  this.sidePopupColor = "#BB66FF";
+  this.sidePopupTimer = 0;
+  this.sidePopupScale = 0;
+
+  sfxLevel_8.currentTime = 0;
+  sfxLevel_8.play().catch(() => {});
+},
+
+triggerLevelPopup() {
+  this.bothSidesUnlocked = true;
+  this.spawnPhase = "both";
+
+  this.sidePopupActive = true;
+  this.sidePopupTitle = "🌟 LEVEL UP! 🌟";
+  this.sidePopupSubtitle = "You're ready for the next level — numbers now fly in from BOTH sides!";
+  this.sidePopupColor = "#FFD700";
+  this.sidePopupTimer = 0;
+  this.sidePopupScale = 0;
+
+  sfxLevel_8.currentTime = 0;
+  sfxLevel_8.play().catch(() => {});
+},
+
+updateSidePopup(dt) {
+  if (!this.sidePopupActive) return;
+
+  this.sidePopupTimer += dt;
+
+  // Quick pop-in, hold, then close automatically.
+  this.sidePopupScale = Math.min(1, this.sidePopupTimer / 250);
+
+  if (this.sidePopupTimer >= this.sidePopupDuration) {
+    this.sidePopupActive = false;
+    this.sidePopupTimer = 0;
+    // Reset timers cleanly so play resumes at a fair pace, not a burst.
+    this.spawnTimer = 0;
+    this.phaseTimer = 0;
+    this.lastTime = performance.now();
+  }
+},
+
+drawSidePopup(ctx) {
+  if (!this.sidePopupActive) return;
+
+  const W = this.cssWidth, H = this.cssHeight;
+  const sc = this.scale || 1;
+  let pop = this.sidePopupScale;
+
+  // Little overshoot bounce on pop-in.
+  if (this.sidePopupTimer < 250) {
+    pop += Math.sin((this.sidePopupTimer / 250) * Math.PI) * 0.1;
+  }
+
+  ctx.save();
+  ctx.fillStyle = "rgba(2,4,10,0.72)";
+  ctx.fillRect(0, 0, W, H);
+
+  const boxW = Math.min(W - 60 * sc, 640 * sc);
+  const boxH = 220 * sc;
+  const boxX = this.CENTER_X - boxW / 2;
+  const boxY = this.CENTER_Y - boxH / 2;
+
+  ctx.translate(this.CENTER_X, this.CENTER_Y);
+  ctx.scale(pop, pop);
+  ctx.translate(-this.CENTER_X, -this.CENTER_Y);
+
+  ctx.shadowColor = this.sidePopupColor;
+  ctx.shadowBlur = 30 * sc;
+  ctx.fillStyle = "rgba(10,8,24,0.96)";
+  ctx.strokeStyle = this.sidePopupColor;
+  ctx.lineWidth = 4 * sc;
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, boxW, boxH, 26 * sc);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.fillStyle = this.sidePopupColor;
+  ctx.shadowColor = this.sidePopupColor;
+  ctx.shadowBlur = 16 * sc;
+  ctx.font = `bold ${34 * sc}px Orbitron`;
+  ctx.fillText(this.sidePopupTitle, this.CENTER_X, boxY + 75 * sc);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `${17 * sc}px Orbitron`;
+  ctx.fillText(this.sidePopupSubtitle, this.CENTER_X, boxY + 130 * sc);
+
+  // Little countdown bar showing time left before auto-close.
+  const barW = boxW * 0.6;
+  const barH = 8 * sc;
+  const barX = this.CENTER_X - barW / 2;
+  const barY = boxY + boxH - 34 * sc;
+  const progress = Math.min(1, this.sidePopupTimer / this.sidePopupDuration);
+
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 4 * sc);
+  ctx.fill();
+
+  ctx.fillStyle = this.sidePopupColor;
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW * (1 - progress), barH, 4 * sc);
+  ctx.fill();
+
+  ctx.restore();
 },
 };

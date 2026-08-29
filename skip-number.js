@@ -478,7 +478,7 @@ const Game1 = {
   currentOuterRadius: 1000,
   currentInnerRadius: 970,
   ringScale: 1.5,
-GLOBAL_SPEED_MULTIPLIER: 0.65,  
+GLOBAL_SPEED_MULTIPLIER: 0.55,  
   /* ── Palette ────────────────────────────────────────────── */
   C: {
     bg:        "#0d1b2e",
@@ -615,7 +615,7 @@ GLOBAL_SPEED_MULTIPLIER: 0.65,
 
   MAX_POP:  80,
   MAX_EXPL: 80,
-  maxNotesOnScreen: 6,
+  maxNotesOnScreen: 4,
 
   /* ── Listener guard ─────────────────────────────────────── */
   _listenersAttached: false,
