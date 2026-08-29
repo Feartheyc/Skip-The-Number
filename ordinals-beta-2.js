@@ -216,6 +216,15 @@ const Game11 = {
   lastFingerUpdateTime: 0,
   FINGER_UPDATE_INTERVAL: 16,
   FINGER_SMOOTH: 0.85,  // Increased for almost instant finger sync
+
+
+  /* ============================================================
+   FINGER GESTURE DETECTION + FAILSAFE STABILITY SYSTEM
+============================================================ */
+
+lastFingerPattern: null,      // last RAW pattern seen (may be invalid for level)
+fingerStableFrames: 0,        // how many consecutive frames it's held
+fingerRequiredFrames: 5,     // frames required before a pattern is accepted
   init() {
     try { if (screen.orientation && screen.orientation.lock) { screen.orientation.lock("landscape").catch(e => console.log("Orientation lock failed:", e)); } } catch (e) { }
 
@@ -383,74 +392,78 @@ const Game11 = {
     return this.levelOrdinals[this.level] || ["st", "nd", "rd", "th"];
   },
 
-  detectSuffixFromFingerStates() {
-    if (!window.fingerStates) return null;
+// Level-aware wrapper: a gesture is only usable if it's BOTH
+// (a) a clean, stable pattern, AND (b) actually allowed at this level.
+// A gesture that's stable but not allowed in this level is explicitly
+// rejected — it never falls back to "st" or any other guess.
+detectSuffixFromFingerStates() {
+  const stable = this.getStableFingerPattern();
+  if (!stable) return null;
 
-    const { index, middle, ring, thumb, little } = window.fingerStates;
+  const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
+  if (!allowedOrdinals.includes(stable)) return null; // out-of-level gesture = invalid, full stop
 
-    // No correct visible gesture.
-    if (!index && !middle && !ring && !thumb && !little) return null;
+  return stable;
+},
 
-    // Correct patterns used by this game.
-    if (index && middle && little && ring && !thumb) return "th";
-    if (index && middle && ring && !thumb && !little) return "rd";
-    if (index && middle && !ring && !thumb && !little) return "nd";
-    if (index && !middle && !ring && !thumb && !little) return "st";
+setSafeTargetSuffixForLevel(preferDifferent = false, oldSuffix = null) {
+  const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
+  const detectedSuffix = this.detectSuffixFromFingerStates();
 
-    // Any other combination is a wrong/unclear gesture.
-    // Important: return null so the current ordinal does NOT glitch/change.
-    return null;
-  },
+  if (detectedSuffix) {
+    this.mode1TargetSuffix = detectedSuffix;
+    this.lastValidTargetSuffix = detectedSuffix;
+    return;
+  }
 
-  setSafeTargetSuffixForLevel(preferDifferent = false, oldSuffix = null) {
-    const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
-    const detectedSuffix = this.detectSuffixFromFingerStates();
-
-    if (detectedSuffix && allowedOrdinals.includes(detectedSuffix)) {
-      this.mode1TargetSuffix = detectedSuffix;
-      this.lastValidTargetSuffix = detectedSuffix;
-      return;
-    }
-
-    if (this.mode1TargetSuffix && allowedOrdinals.includes(this.mode1TargetSuffix) && !preferDifferent) {
-      this.lastValidTargetSuffix = this.mode1TargetSuffix;
-      return;
-    }
-
-    let choices = allowedOrdinals.slice();
-
-    if (preferDifferent && oldSuffix) {
-      const differentChoices = choices.filter(s => s !== oldSuffix);
-      if (differentChoices.length > 0) choices = differentChoices;
-    }
-
-    this.mode1TargetSuffix = choices[Math.floor(Math.random() * choices.length)] || "st";
+  if (this.mode1TargetSuffix && allowedOrdinals.includes(this.mode1TargetSuffix) && !preferDifferent) {
     this.lastValidTargetSuffix = this.mode1TargetSuffix;
-  },
+    return;
+  }
 
-  updateMode1TargetSuffix() {
+  let choices = allowedOrdinals.slice();
 
-    if (this.levelChangeActive || this.mode1GameOver || this.galaxyCollapsed) return;
+  if (preferDifferent && oldSuffix) {
+    const differentChoices = choices.filter(s => s !== oldSuffix);
+    if (differentChoices.length > 0) choices = differentChoices;
+  }
 
-    const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
-    const detectedSuffix = this.detectSuffixFromFingerStates();
+  this.mode1TargetSuffix = choices[Math.floor(Math.random() * choices.length)] || allowedOrdinals[0] || "st";
+  this.lastValidTargetSuffix = this.mode1TargetSuffix;
+},
 
-    // ✅ FIX: if no fingers are shown, or a wrong gesture is shown,
-    // keep the last correct ordinal instead of randomly changing/glitching.
-    if (!detectedSuffix) {
-      if (!this.mode1TargetSuffix && this.lastValidTargetSuffix) {
-        this.mode1TargetSuffix = this.lastValidTargetSuffix;
-      }
-      return;
+updateMode1TargetSuffix() {
+  if (this.levelChangeActive || this.mode1GameOver || this.galaxyCollapsed) return;
+
+  // getStableFingerPattern() is RAW and level-agnostic — it just tells us
+  // what clean, debounced gesture the hand is holding, if any.
+  const stable = this.getStableFingerPattern();
+
+  if (!stable) {
+    // No stable gesture right now — keep showing whatever was last valid.
+    if (!this.mode1TargetSuffix && this.lastValidTargetSuffix) {
+      this.mode1TargetSuffix = this.lastValidTargetSuffix;
     }
+    return;
+  }
 
-    // ✅ Only change when the gesture is valid for the current level.
-    // If the shown gesture is not part of this level, keep the old suffix.
-    if (allowedOrdinals.includes(detectedSuffix)) {
-      this.mode1TargetSuffix = detectedSuffix;
-      this.lastValidTargetSuffix = detectedSuffix;
-    }
-  },
+  const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
+
+  if (allowedOrdinals.includes(stable)) {
+    // Valid gesture for this level.
+    this.mode1TargetSuffix = stable;
+    this.lastValidTargetSuffix = stable;
+  } else {
+    // Recognized gesture, but NOT allowed at this level (e.g. showing
+    // "rd"/"th" during a level that only allows "st"/"nd").
+    // Portal shows "?" and any collection made now is penalized,
+    // no matter which number is grabbed.
+    this.mode1TargetSuffix = "?";
+    // Deliberately do NOT touch lastValidTargetSuffix here —
+    // so once the player goes back to a valid gesture (or drops
+    // their hand), we fall back to the last legit suffix, not "?".
+  }
+},
 
   startLevelChangeTransition(oldLevel, newLevel, oldSuffix) {
     this.levelChangeActive = true;
@@ -2017,114 +2030,117 @@ const Game11 = {
 
   finishMode1Suction() {
 
-    const s = this.mode1SuctionData;
-    const n = this.mode1Numbers[s.index];
+  const s = this.mode1SuctionData;
+  const n = this.mode1Numbers[s.index];
 
-    if (!n) {
-      this.mode1SuctionActive = false;
-      this.mode1SuctionData = null;
-      return;
-    }
-
-    const collectedSuffix = this.getSuffix(n.number);
-
-    // Safety guard: if any older invalid collectable somehow remains onscreen after a level change,
-    // remove it and replace it with a valid number instead of punishing the player.
-    if (!this.isNumberValidForLevel(n.number, this.level)) {
-      this.mode1Numbers.splice(s.index, 1);
-      this.mode1SuctionActive = false;
-      this.mode1SuctionData = null;
-      this.spawnMode1Numbers();
-      return;
-    }
-
-    const expectedSuffix = s.expectedSuffix || this.mode1TargetSuffix;
-
-    if (collectedSuffix === expectedSuffix) {
-      sfxCorrect_11.currentTime = 0;
-      sfxCorrect_11.play().catch(() => { });
-
-      this.score += 10;
-      this.mode1CorrectCollected++;
-
-      if (this.score >= 500) {
-        this.spawnFloatingText(
-          this.mascot.x,
-          this.mascot.y - 120 * this.scale,
-          "Mission Complete!",
-          "#FACC15"
-        );
-        this.triggerGameCompleted();
-        this.mode1SuctionActive = false;
-        this.mode1SuctionData = null;
-        return;
-      }
-
-      // ⭐ Add 5 seconds life on correct answer
-      this.galaxyLife += 5000;
-
-      if (this.galaxyLife > this.galaxyMaxLife) {
-        this.galaxyLife = this.galaxyMaxLife;
-      }
-
-      this.spawnSparkBurst(this.mascot.x, this.mascot.y);
-
-      const ordinalNum = n.number + collectedSuffix;
-      this.spawnFloatingText(
-        this.mascot.x,
-        this.mascot.y - 100 * this.scale,
-        `${ordinalNum}! +5s`,
-        "#00FFAA"
-      );
-
-      this.mode1Numbers.splice(s.index, 1);
-
-      let didLevelChange = false;
-
-      // Check if level should advance after 10 correct answers.
-      if (this.mode1CorrectCollected >= 10) {
-        this.mode1CorrectCollected = 0;
-
-        if (this.level < 5) {
-          const oldLevel = this.level;
-          const oldSuffix = this.mode1TargetSuffix;
-
-          this.level++;
-          didLevelChange = true;
-
-          // ✅ Show popup, pause gameplay, and clear numbers.
-          this.startLevelChangeTransition(oldLevel, this.level, oldSuffix);
-        }
-      }
-
-      // Spawn immediately only if level did NOT change.
-      // If level changed, numbers come back after OK is clicked.
-      if (!didLevelChange) {
-        this.spawnMode1Numbers();
-      }
-
-    } else {
-      sfxWrong_11.currentTime = 0;
-      sfxWrong_11.play().catch(() => { });
-
-      this.score -= 5;
-
-      const ordinalNum = n.number + collectedSuffix;
-      this.spawnFloatingText(
-        this.mascot.x,
-        this.mascot.y - 100 * this.scale,
-        `${ordinalNum}? Oops!`,
-        "#FF4444"
-      );
-
-      // Remove wrong number and spawn a new one.
-      this.mode1Numbers.splice(s.index, 1);
-      this.spawnMode1Numbers();
-    }
-
+  if (!n) {
     this.mode1SuctionActive = false;
     this.mode1SuctionData = null;
-  },
+    return;
+  }
+
+  const collectedSuffix = this.getSuffix(n.number);
+
+  // Safety guard: an old invalid collectable somehow still onscreen after
+  // a level change — replace it instead of punishing the player.
+  if (!this.isNumberValidForLevel(n.number, this.level)) {
+    this.mode1Numbers.splice(s.index, 1);
+    this.mode1SuctionActive = false;
+    this.mode1SuctionData = null;
+    this.spawnMode1Numbers();
+    return;
+  }
+
+  const expectedSuffix = s.expectedSuffix || this.mode1TargetSuffix;
+  const isQuestionMark = expectedSuffix === "?";
+  const isCorrect = !isQuestionMark && collectedSuffix === expectedSuffix;
+
+  if (isCorrect) {
+    sfxCorrect_11.currentTime = 0;
+    sfxCorrect_11.play().catch(() => { });
+
+    this.score += 10;
+    this.mode1CorrectCollected++;
+
+    if (this.score >= 500) {
+      this.spawnFloatingText(
+        this.mascot.x,
+        this.mascot.y - 120 * this.scale,
+        "Mission Complete!",
+        "#FACC15"
+      );
+      this.triggerGameCompleted();
+      this.mode1SuctionActive = false;
+      this.mode1SuctionData = null;
+      return;
+    }
+
+    // ⭐ Add 5 seconds life on correct answer
+    this.galaxyLife += 5000;
+    if (this.galaxyLife > this.galaxyMaxLife) {
+      this.galaxyLife = this.galaxyMaxLife;
+    }
+
+    this.spawnSparkBurst(this.mascot.x, this.mascot.y);
+
+    const ordinalNum = n.number + collectedSuffix;
+    this.spawnFloatingText(
+      this.mascot.x,
+      this.mascot.y - 100 * this.scale,
+      `${ordinalNum}! +5s`,
+      "#00FFAA"
+    );
+
+    this.mode1Numbers.splice(s.index, 1);
+
+    let didLevelChange = false;
+
+    if (this.mode1CorrectCollected >= 10) {
+      this.mode1CorrectCollected = 0;
+
+      if (this.level < 5) {
+        const oldLevel = this.level;
+        const oldSuffix = this.mode1TargetSuffix === "?"
+          ? this.lastValidTargetSuffix
+          : this.mode1TargetSuffix;
+
+        this.level++;
+        didLevelChange = true;
+
+        this.startLevelChangeTransition(oldLevel, this.level, oldSuffix);
+      }
+    }
+
+    if (!didLevelChange) {
+      this.spawnMode1Numbers();
+    }
+
+  } else {
+    // Wrong OR grabbed while showing "?" (invalid gesture for this level)
+    sfxWrong_11.currentTime = 0;
+    sfxWrong_11.play().catch(() => { });
+
+    this.score -= 5;
+
+    const ordinalNum = n.number + collectedSuffix;
+    const failMsg = isQuestionMark
+      ? `${ordinalNum}? Wrong Gesture!`
+      : `${ordinalNum}? Oops!`;
+
+    this.spawnFloatingText(
+      this.mascot.x,
+      this.mascot.y - 100 * this.scale,
+      failMsg,
+      "#FF4444"
+    );
+
+    this.mode1Numbers.splice(s.index, 1);
+    this.spawnMode1Numbers();
+  }
+
+  this.mode1SuctionActive = false;
+  this.mode1SuctionData = null;
+},
 
   distSq(ax, ay, bx, by) {
     const dx = ax - bx;
@@ -2564,6 +2580,48 @@ const Game11 = {
     ctx.fillText("START", this.CENTER_X, btnY + btnH / 2 + 2 * this.scale);
 
     ctx.restore();
+  },
+// Returns the RAW gesture the hand is physically showing right now,
+// with ZERO knowledge of the current level. Exact-match only —
+// anything that isn't a clean, unambiguous pattern returns null.
+detectRawFingerPattern() {
+  if (!window.fingerStates) return null;
+
+  const { index, middle, ring, thumb, little } = window.fingerStates;
+
+  // Build a canonical signature so there is no ambiguity from
+  // chained if/else fallthrough — every finger must be explicitly
+  // true/false and match one exact known pattern.
+  const sig = `${!!thumb}-${!!index}-${!!middle}-${!!ring}-${!!little}`;
+
+  const PATTERNS = {
+    "false-true-false-false-false": "st",   // only index
+    "false-true-true-false-false":  "nd",   // index + middle
+    "false-true-true-true-false":   "rd",   // index + middle + ring
+    "false-true-true-true-true":    "th",   // index + middle + ring + little (no thumb)
+  };
+
+  return PATTERNS[sig] || null; // anything else (open palm, fist, thumb included, etc.) = invalid
+},
+
+
+// Runs the raw pattern through the debounce/stability buffer.
+// A pattern only "counts" once it has been held steady for
+// fingerRequiredFrames consecutive frames. Any flicker resets the counter.
+getStableFingerPattern() {
+  const raw = this.detectRawFingerPattern();
+
+  if (raw === this.lastFingerPattern) {
+    this.fingerStableFrames++;
+  } else {
+    this.lastFingerPattern = raw;
+    this.fingerStableFrames = 1;
   }
 
+  if (raw !== null && this.fingerStableFrames >= this.fingerRequiredFrames) {
+    return raw;
+  }
+
+  return null; // not held long enough yet, or currently invalid/null
+},
 };
