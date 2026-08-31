@@ -435,33 +435,31 @@ setSafeTargetSuffixForLevel(preferDifferent = false, oldSuffix = null) {
 updateMode1TargetSuffix() {
   if (this.levelChangeActive || this.mode1GameOver || this.galaxyCollapsed) return;
 
-  // getStableFingerPattern() is RAW and level-agnostic — it just tells us
-  // what clean, debounced gesture the hand is holding, if any.
   const stable = this.getStableFingerPattern();
 
   if (!stable) {
-    // No stable gesture right now — keep showing whatever was last valid.
+    // No stable gesture — keep showing whatever was last valid
     if (!this.mode1TargetSuffix && this.lastValidTargetSuffix) {
       this.mode1TargetSuffix = this.lastValidTargetSuffix;
     }
     return;
   }
 
+  // Hardcoded: 5 fingers explicitly sets suffix to "?"
+  if (stable === "?") {
+    this.mode1TargetSuffix = "?";
+    return;
+  }
+
   const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
 
   if (allowedOrdinals.includes(stable)) {
-    // Valid gesture for this level.
+    // Valid gesture for this level
     this.mode1TargetSuffix = stable;
     this.lastValidTargetSuffix = stable;
   } else {
-    // Recognized gesture, but NOT allowed at this level (e.g. showing
-    // "rd"/"th" during a level that only allows "st"/"nd").
-    // Portal shows "?" and any collection made now is penalized,
-    // no matter which number is grabbed.
+    // Recognized gesture, but NOT allowed at current level
     this.mode1TargetSuffix = "?";
-    // Deliberately do NOT touch lastValidTargetSuffix here —
-    // so once the player goes back to a valid gesture (or drops
-    // their hand), we fall back to the last legit suffix, not "?".
   }
 },
 
@@ -2584,24 +2582,59 @@ updateMode1TargetSuffix() {
 // Returns the RAW gesture the hand is physically showing right now,
 // with ZERO knowledge of the current level. Exact-match only —
 // anything that isn't a clean, unambiguous pattern returns null.
+// Returns the RAW gesture the hand is physically showing right now.
 detectRawFingerPattern() {
   if (!window.fingerStates) return null;
 
   const { index, middle, ring, thumb, little } = window.fingerStates;
 
-  // Build a canonical signature so there is no ambiguity from
-  // chained if/else fallthrough — every finger must be explicitly
-  // true/false and match one exact known pattern.
+  // Hardcoded check: 5 fingers (Thumb + Index + Middle + Ring + Little) -> "?"
+  if (thumb && index && middle && ring && little) {
+    return "?";
+  }
+
+  // Canonical signature mapping
   const sig = `${!!thumb}-${!!index}-${!!middle}-${!!ring}-${!!little}`;
 
   const PATTERNS = {
-    "false-true-false-false-false": "st",   // only index
-    "false-true-true-false-false":  "nd",   // index + middle
-    "false-true-true-true-false":   "rd",   // index + middle + ring
-    "false-true-true-true-true":    "th",   // index + middle + ring + little (no thumb)
+    "false-true-false-false-false": "st",   // Index only
+    "false-true-true-false-false":  "nd",   // Index + Middle
+    "false-true-true-true-false":   "rd",   // Index + Middle + Ring
+    "false-true-true-true-true":    "th",   // 4 fingers (Index + Middle + Ring + Little)
   };
 
-  return PATTERNS[sig] || null; // anything else (open palm, fist, thumb included, etc.) = invalid
+  return PATTERNS[sig] || null; // Any unmapped shape returns null
+},
+
+updateMode1TargetSuffix() {
+  if (this.levelChangeActive || this.mode1GameOver || this.galaxyCollapsed) return;
+
+  const stable = this.getStableFingerPattern();
+
+  if (!stable) {
+    // No stable gesture — keep showing whatever was last valid
+    if (!this.mode1TargetSuffix && this.lastValidTargetSuffix) {
+      this.mode1TargetSuffix = this.lastValidTargetSuffix;
+    }
+    return;
+  }
+
+  // Hardcoded: 5 fingers explicitly sets suffix to "?"
+  if (stable === "?") {
+    this.mode1TargetSuffix = "?";
+    return;
+  }
+
+  const allowedOrdinals = this.getAllowedOrdinalsForCurrentLevel();
+
+  if (allowedOrdinals.includes(stable)) {
+    // Valid gesture for this level
+    this.mode1TargetSuffix = stable;
+    this.lastValidTargetSuffix = stable;
+  } else {
+    // Recognized gesture, but NOT allowed at current level
+    this.mode1TargetSuffix = "?";
+  }
 },
 
 

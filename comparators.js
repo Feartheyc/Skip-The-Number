@@ -128,10 +128,23 @@ const Game3 = {
       this.eventsBound = true;
 
       window.addEventListener('keydown', (e) => {
-        if (e.key === '1' && 1 <= this.maxGradeUnlocked) this.setDifficulty(1);
-        if (e.key === '2' && 2 <= this.maxGradeUnlocked) this.setDifficulty(2);
-        if (e.key === '3' && 3 <= this.maxGradeUnlocked) this.setDifficulty(3);
-        if (e.key === '4' && 4 <= this.maxGradeUnlocked) this.setDifficulty(4);
+        // Cheat key: Press '1' to skip to the next level
+        if (e.key === '1') {
+          this.currentLevel++;
+          this.questionsInLevel = 0;
+          
+          this.popups.push({ 
+            text: `CHEAT: LEVEL ${this.currentLevel}!`, 
+            x: this.centerX, 
+            y: this.centerY - 140 * this.scale, 
+            vy: -15, 
+            life: 1.5, 
+            color: "#FFD700", 
+            timestamp: performance.now() 
+          });
+
+          this.spawnNumbers();
+        }
 
         if (e.key === ' ' && this.showTutorial) {
           this.showTutorial = false;
@@ -145,6 +158,9 @@ const Game3 = {
           this.reset();
         }, 200);
       });
+
+
+
 
       const canvas = document.getElementById("game_canvas") || document.querySelector("canvas");
       if (canvas) {
@@ -258,7 +274,8 @@ const Game3 = {
     this.confetti = [];
     this.handResetRequired = true;
 
-    if (this.currentLevel === 5) {
+    // Level 3 is the mixed barrage (shorter hold threshold & faster combo timer)
+    if (this.currentLevel === 3) {
       this.winHoldThreshold = 0.6;
       this.COMBO_MAX_TIME = 3.0;
     } else {
@@ -266,32 +283,38 @@ const Game3 = {
       this.COMBO_MAX_TIME = 5.0;
     }
 
+    // Determine gesture prompt based on levels
     let askBigger = true;
-    if (this.currentLevel === 1) askBigger = true;
-    else if (this.currentLevel === 2) askBigger = false;
-    else askBigger = Math.random() > 0.5;
+    if (this.currentLevel === 1) {
+      askBigger = true; // Level 1: Hand gesture at BIGGER number
+    } else if (this.currentLevel === 2) {
+      askBigger = false; // Level 2: Point at SMALLER number
+    } else {
+      askBigger = Math.random() > 0.5; // Level 3+: Mixed Barrage
+    }
 
-    if (this.currentLevel === 5) {
+    if (this.currentLevel === 3) {
       this.targetPromptText = askBigger ? "⚡ BARRAGE: Aim at BIGGER!" : "⚡ BARRAGE: Point at SMALLER!";
     } else {
       this.targetPromptText = askBigger ? "Aim at the BIGGER number!" : "Point finger at the SMALLER number!";
     }
 
-    if (this.currentGrade === 1) {
+    // Progression mechanics based on levels:
+    // Level 1-3: Base numbers (1 to 20)
+    // Level 4-5: Number range increases (21 to 100)
+    // Level 6-9: Negative numbers (-50 to -1)
+    // Level 10: Like Fractions (same denominator, max number 20)
+    // Level 11+: Unlike Fractions (different denominators, max number 20)
+    if (this.currentLevel <= 3) {
       this.spawnIntegers(1, 20);
-    }
-    else if (this.currentGrade === 2) {
-      this.spawnIntegers(-50, 50);
-    }
-    else if (this.currentGrade === 3) {
-      if (this.currentLevel <= 2) this.spawnLikeFractions();
-      else {
-        if (Math.random() > 0.5) this.spawnIntegers(100, 999);
-        else this.spawnLikeFractions();
-      }
-    }
-    else if (this.currentGrade === 4) {
-      this.spawnIrregularFractions();
+    } else if (this.currentLevel <= 5) {
+      this.spawnIntegers(21, 100);
+    } else if (this.currentLevel <= 9) {
+      this.spawnIntegers(-50, -1);
+    } else if (this.currentLevel === 10) {
+      this.spawnLikeFractions(20);
+    } else {
+      this.spawnIrregularFractions(20);
     }
 
     this.leftColor = this.getBrightColor();
@@ -299,7 +322,64 @@ const Game3 = {
     this.fadeAlpha = 0;
     this.popScale = 0.5;
   },
+// Updated spawnNumbers method according to level-only progression
+  spawnNumbers() {
+    this.gameState = "PLAYING";
+    this.winHoldTime = 0;
+    this.failHoldTime = 0;
+    this.detectedSymbol = "None";
+    this.gestureGraceTimer = 0;
+    this.confetti = [];
+    this.handResetRequired = true;
 
+    // Level 3 is the mixed barrage (shorter hold threshold & faster combo timer)
+    if (this.currentLevel === 3) {
+      this.winHoldThreshold = 0.6;
+      this.COMBO_MAX_TIME = 3.0;
+    } else {
+      this.winHoldThreshold = 1.0;
+      this.COMBO_MAX_TIME = 5.0;
+    }
+
+    // Determine prompt based on level
+    let askBigger = true;
+    if (this.currentLevel === 1) {
+      askBigger = true; // Level 1: Aim at BIGGER
+    } else if (this.currentLevel === 2) {
+      askBigger = false; // Level 2: Point at SMALLER
+    } else {
+      askBigger = Math.random() > 0.5; // Level 3+: Mixed Barrage
+    }
+
+    if (this.currentLevel === 3) {
+      this.targetPromptText = askBigger ? "⚡ BARRAGE: Aim at BIGGER!" : "⚡ BARRAGE: Point at SMALLER!";
+    } else {
+      this.targetPromptText = askBigger ? "Aim at the BIGGER number!" : "Point finger at the SMALLER number!";
+    }
+
+    // Progression mechanics based strictly on Levels:
+    // Level 1-3: Low numbers (1 to 20)
+    // Level 4-5: Number range increases (21 to 100)
+    // Level 6-9: Negative numbers (-50 to -1)
+    // Level 10: Like Fractions (same denominator, numbers under 20)
+    // Level 11+: Unlike Fractions (different denominators, numbers under 20)
+    if (this.currentLevel <= 3) {
+      this.spawnIntegers(1, 20);
+    } else if (this.currentLevel <= 5) {
+      this.spawnIntegers(21, 100);
+    } else if (this.currentLevel <= 9) {
+      this.spawnIntegers(-50, -1);
+    } else if (this.currentLevel === 10) {
+      this.spawnLikeFractions(20);
+    } else {
+      this.spawnIrregularFractions(20);
+    }
+
+    this.leftColor = this.getBrightColor();
+    this.rightColor = this.getBrightColor();
+    this.fadeAlpha = 0;
+    this.popScale = 0.5;
+  },
   spawnIntegers(min, max) {
     let n1 = Math.floor(Math.random() * (max - min + 1)) + min;
     let n2 = Math.floor(Math.random() * (max - min + 1)) + min;
@@ -317,11 +397,12 @@ const Game3 = {
     }
   },
 
-  spawnLikeFractions() {
-    const den = Math.floor(Math.random() * 7) + 3;
-    let n1 = Math.floor(Math.random() * 12) + 1;
-    let n2 = Math.floor(Math.random() * 12) + 1;
-    while (n1 === n2) n2 = Math.floor(Math.random() * 12) + 1;
+  spawnLikeFractions(maxNum = 20) {
+    const den = Math.floor(Math.random() * 8) + 2; // Denominator 2-9
+    let n1 = Math.floor(Math.random() * maxNum) + 1;
+    let n2 = Math.floor(Math.random() * maxNum) + 1;
+    while (n1 === n2) n2 = Math.floor(Math.random() * maxNum) + 1;
+
     this.leftValue = n1 / den; this.rightValue = n2 / den;
     this.leftText = `${n1}/${den}`; this.rightText = `${n2}/${den}`;
     
@@ -332,14 +413,15 @@ const Game3 = {
       this.currentRelation = this.leftValue < this.rightValue ? ">" : "<";
     }
   },
-
-  spawnIrregularFractions() {
+  spawnIrregularFractions(maxNum = 20) {
     const easyDenoms = [2, 3, 4, 5, 6, 8, 10];
     let d1 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
     let d2 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
     while (d1 === d2) d2 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
-    let n1 = Math.floor(Math.random() * d1) + 1;
-    let n2 = Math.floor(Math.random() * d2) + 1;
+
+    let n1 = Math.floor(Math.random() * Math.min(d1 * 2, maxNum)) + 1;
+    let n2 = Math.floor(Math.random() * Math.min(d2 * 2, maxNum)) + 1;
+    
     this.leftValue = n1 / d1; this.rightValue = n2 / d2;
     this.leftText = `${n1}/${d1}`; this.rightText = `${n2}/${d2}`;
     
@@ -706,6 +788,7 @@ const Game3 = {
     this.detectedSymbol = "None";
   },
 
+  // Level Progression Logic without Grades
   handleSuccess() {
     this.gameState = "SUCCESS";
     this.handResetRequired = true;
@@ -733,50 +816,22 @@ const Game3 = {
       });
     }
 
-    const requiredQuestions = (this.currentLevel === 5) ? 10 : 5; 
+    const requiredQuestions = (this.currentLevel === 3) ? 10 : 5; 
 
     if (this.questionsInLevel >= requiredQuestions) {
       this.questionsInLevel = 0;
-
-      if (this.currentLevel < 5) {
-        this.currentLevel++;
-        const levelMsg = (this.currentLevel === 5) ? "⚡ LEVEL 5: QUESTION BARRAGE!" : `LEVEL ${this.currentLevel}!`;
-        this.popups.push({ 
-          text: levelMsg, 
-          x: this.centerX, 
-          y: this.centerY - 140 * this.scale, 
-          vy: -15, 
-          life: 2.0, 
-          color: "#FFFF00", 
-          timestamp: performance.now() 
-        });
-      } else {
-        if (this.currentGrade < 4) {
-          this.currentGrade++;
-          this.maxGradeUnlocked = Math.max(this.maxGradeUnlocked, this.currentGrade);
-          this.currentLevel = 1;
-          this.score = 0;
-          this.popups.push({ 
-            text: `GRADE ${this.currentGrade} UNLOCKED!`, 
-            x: this.centerX, 
-            y: this.centerY - 140 * this.scale, 
-            vy: -15, 
-            life: 2.5, 
-            color: "#00FFCC", 
-            timestamp: performance.now() 
-          });
-        } else {
-          this.popups.push({ 
-            text: "MASTERED ALL GRADES!", 
-            x: this.centerX, 
-            y: this.centerY - 140 * this.scale, 
-            vy: -15, 
-            life: 3.0, 
-            color: "#FFD700", 
-            timestamp: performance.now() 
-          });
-        }
-      }
+      this.currentLevel++;
+      
+      const levelMsg = (this.currentLevel === 3) ? "⚡ LEVEL 3: QUESTION BARRAGE!" : `LEVEL ${this.currentLevel}!`;
+      this.popups.push({ 
+        text: levelMsg, 
+        x: this.centerX, 
+        y: this.centerY - 140 * this.scale, 
+        vy: -15, 
+        life: 2.0, 
+        color: "#FFFF00", 
+        timestamp: performance.now() 
+      });
     }
 
     if (this.combo > 0 && this.combo % 5 === 0) {
@@ -786,19 +841,6 @@ const Game3 = {
     }
 
     this.popups.push({ text: `+${pointsGained}!`, x: this.centerX, y: this.centerY - 40 * this.scale, vy: -20, life: 1.2, color: "#00FF22", timestamp: performance.now() });
-
-    if (this.combo > 0 && this.combo % 5 === 0) {
-      this.popups.push({ 
-        text: `AMAZING COMBO x${this.combo}`, 
-        x: this.centerX, 
-        y: this.centerY + 175 * this.scale, 
-        vy: -5, 
-        life: 1.5, 
-        color: "#FFD700",
-        isMilestone: true,
-        timestamp: performance.now()
-      });
-    }
 
     for (let i = 0; i < 15; i++) {
       this.particles.push({
@@ -888,6 +930,7 @@ const Game3 = {
     }
   },
 
+  // Updated UI pill removing Grade labels
   drawUI(ctx) {
     const topY = 28 * this.scale;
 
@@ -902,16 +945,16 @@ const Game3 = {
       ctx.stroke();
     };
 
-    const subLabel = `Grade ${this.currentGrade} (Lvl ${this.currentLevel})`;
+    const subLabel = `Level ${this.currentLevel}`;
     ctx.font = `bold ${18 * this.scale}px Arial`;
-    const gradeW = ctx.measureText(subLabel).width + 36 * this.scale;
-    const gradeH = 44 * this.scale;
-    const gradeX = 25 * this.scale;
-    drawPill(gradeX, topY, gradeW, gradeH);
+    const levelW = ctx.measureText(subLabel).width + 36 * this.scale;
+    const levelH = 44 * this.scale;
+    const levelX = 25 * this.scale;
+    drawPill(levelX, topY, levelW, levelH);
     ctx.fillStyle = "#00FFCC";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(subLabel, gradeX + gradeW / 2, topY + gradeH / 2);
+    ctx.fillText(subLabel, levelX + levelW / 2, topY + levelH / 2);
 
     const scoreText = `SCORE: ${this.score}`;
     ctx.font = `bold ${22 * this.scale}px Arial`;
@@ -982,11 +1025,9 @@ const Game3 = {
     drawCard(this.centerX + offsetX, this.rightColor, this.rightText);
 
     ctx.globalAlpha = 1;
-    
-    // Completely removed the center '?' rendering block to keep the middle clear!
 
     ctx.font = `bold ${24 * this.scale}px Arial`; 
-    ctx.fillStyle = (this.currentLevel === 5) ? "#FFCC00" : "#FFFFFF";
+    ctx.fillStyle = (this.currentLevel === 3) ? "#FFCC00" : "#FFFFFF";
     ctx.shadowBlur = 8; 
     ctx.shadowColor = "#000";
     ctx.fillText(this.targetPromptText, this.centerX, this.centerY + 140 * this.scale);
