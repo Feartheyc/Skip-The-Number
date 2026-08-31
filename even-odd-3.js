@@ -89,7 +89,7 @@ gameState: "tutorial",
   // ===== SPAWN PHASE SYSTEM (top-only <-> bottom-only, then unlocks "both") =====
 spawnPhase: "top",          // "top" | "bottom" | "both"
 phaseTimer: 0,               // ms elapsed in current phase
-phaseDuration: 60000,        // 15s per phase before switching sides
+phaseDuration: 15000,        // 15s per phase before switching sides
 bothSidesUnlocked: false,    // becomes true permanently once score hits LEVEL_UNLOCK_SCORE
 LEVEL_UNLOCK_SCORE: 777,
 
