@@ -512,53 +512,59 @@ window.addEventListener('keydown', (e) => {
   },
 
   resize() {
-    const cssW = window.innerWidth;
-    const cssH = window.innerHeight;
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
 
-    let newScale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
 
-    if (!newScale || newScale <= 0) newScale = 1;
+    let newScale = Math.min(cssW / this.BASE_WIDTH, (cssH - topbarH) / this.BASE_HEIGHT);
 
-    if (
-      this.scale &&
-      Math.abs(newScale - this.scale) < 0.001 &&
-      this.cssWidth === cssW &&
-      this.cssHeight === cssH
-    ) {
-      return;
-    }
+    if (!newScale || newScale <= 0) newScale = 1;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    if (
+      this.scale &&
+      Math.abs(newScale - this.scale) < 0.001 &&
+      this.cssWidth === cssW &&
+      this.cssHeight === cssH
+    ) {
+      return;
+    }
 
-    canvasElement.width = cssW * dpr;
-    canvasElement.height = cssH * dpr;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
-    this.cssWidth = cssW;
-    this.cssHeight = cssH;
-    this.scale = newScale;
+    canvasElement.width = cssW * dpr;
+    canvasElement.height = cssH * dpr;
 
-    this._armLength = this.ARM_LENGTH * this.scale;
-    this._ballRadius = this.BALL_RADIUS * this.scale;
-    this._edgeSize = this.EDGE_SIZE * this.scale;
-    this._lineGap = this.LINE_GAP * this.scale;
-    this._pivotRadius = this.PIVOT_RADIUS * this.scale;
-    this._pivotOffset = this.PIVOT_OFFSET * this.scale;
+    this.cssWidth = cssW;
+    this.cssHeight = cssH;
+    this.scale = newScale;
 
-    this.CENTER_X = cssW / 2;
-    this.CENTER_Y = cssH / 2;
+    this._armLength = this.ARM_LENGTH * this.scale;
+    this._ballRadius = this.BALL_RADIUS * this.scale;
+    this._edgeSize = this.EDGE_SIZE * this.scale;
+    this._lineGap = this.LINE_GAP * this.scale;
+    this._pivotRadius = this.PIVOT_RADIUS * this.scale;
+    this._pivotOffset = this.PIVOT_OFFSET * this.scale;
 
-    const ctx = canvasElement.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const playableH = cssH - topbarH;
+    this.CENTER_X = cssW / 2;
+    this.CENTER_Y = topbarH + (playableH / 2);
 
-    this.fontBall = `bold ${30 * this.scale}px Orbitron`;
-    this.fontUI = `bold ${30 * this.scale}px Orbitron`;
-    this.fontLegend = `bold ${36 * this.scale}px Orbitron`;
-    this.fontFloater = `bold ${24 * this.scale}px Orbitron`;
-    this.fontScore = `bold ${20 * this.scale}px Orbitron`;
-    this.fontScoreBig = `bold ${40 * this.scale}px Orbitron`;
+    const ctx = canvasElement.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    this.rebuildCaches();
-  },
+    this.fontBall = `bold ${30 * this.scale}px Orbitron`;
+    this.fontUI = `bold ${30 * this.scale}px Orbitron`;
+    this.fontLegend = `bold ${36 * this.scale}px Orbitron`;
+    this.fontFloater = `bold ${24 * this.scale}px Orbitron`;
+    this.fontScore = `bold ${20 * this.scale}px Orbitron`;
+    this.fontScoreBig = `bold ${40 * this.scale}px Orbitron`;
+
+    this.rebuildCaches();
+  },
 
 update(ctx) {
   if (!this.running) return;
@@ -638,65 +644,68 @@ handleSpawning(dt) {
 },
 
  spawnBall() {
-  const number = Math.floor(Math.random() * 100) + 1;
-  const isOdd = number % 2 !== 0;
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
 
-  const speed = (1 + (2000 - this.spawnRate) / 2000) * this.scale;
+    const number = Math.floor(Math.random() * 100) + 1;
+    const isOdd = number % 2 !== 0;
 
-  let sides = [];
+    const speed = (1 + (2000 - this.spawnRate) / 2000) * this.scale;
 
-  if (this.spawnPhase === "top") {
-    sides = [0];
-  } else if (this.spawnPhase === "bottom") {
-    sides = [1];
-  } else {
-    // "both" — unlocked at 777 points, same as your original top-bottom mode
-    sides = [0, 1];
-  }
+    let sides = [];
 
-  const side = sides[Math.floor(Math.random() * sides.length)];
+    if (this.spawnPhase === "top") {
+      sides = [0];
+    } else if (this.spawnPhase === "bottom") {
+      sides = [1];
+    } else {
+      sides = [0, 1];
+    }
 
-  let x;
-  let y;
-  let tx;
-  let ty;
+    const side = sides[Math.floor(Math.random() * sides.length)];
 
-  const outsideOffset = this.ballRadius * 2;
-  const farBoundary = 2000 * this.scale;
+    let x;
+    let y;
+    let tx;
+    let ty;
 
-  if (side === 0) {
-    x = this.CENTER_X;
-    y = -outsideOffset;
-    tx = x;
-    ty = this.cssHeight + farBoundary;
-  } else if (side === 1) {
-    x = this.CENTER_X;
-    y = this.cssHeight + outsideOffset;
-    tx = x;
-    ty = -farBoundary;
-  }
+    const outsideOffset = this.ballRadius * 2;
+    const farBoundary = 2000 * this.scale;
 
-  this.balls.push({
-    x,
-    y,
-    prevX: x,
-    prevY: y,
-    targetX: tx,
-    targetY: ty,
-    vx: 0,
-    vy: 0,
-    speed,
-    number,
-    isOdd,
-    color: "#ffffff",
-    trail: [],
-    trailIdx: 0,
-    hitCooldown: 0,
-    scored: false,
-    hasCollided: false
-  });
-},
+    if (side === 0) {
+      x = this.CENTER_X;
+      y = topbarH - outsideOffset;
+      tx = x;
+      ty = this.cssHeight + farBoundary;
+    } else if (side === 1) {
+      x = this.CENTER_X;
+      y = this.cssHeight + outsideOffset;
+      tx = x;
+      ty = -farBoundary;
+    }
 
+    this.balls.push({
+      x,
+      y,
+      prevX: x,
+      prevY: y,
+      targetX: tx,
+      targetY: ty,
+      vx: 0,
+      vy: 0,
+      speed,
+      number,
+      isOdd,
+      color: "#ffffff",
+      trail: [],
+      trailIdx: 0,
+      hitCooldown: 0,
+      scored: false,
+      hasCollided: false
+    });
+  },
   updateBalls(dt) {
     for (let i = 0; i < this.balls.length; i++) {
       let b = this.balls[i];
@@ -1323,96 +1332,102 @@ handleSpawning(dt) {
   },
 
   drawUI(ctx) {
-    if (!this.gameStarted) {
-      ctx.textAlign = "center";
-      ctx.font = this.fontUI;
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
 
-      ctx.fillStyle = "black";
-      ctx.fillText(
-        "PLACE ONE HAND ON CENTER TO START",
-        this.CENTER_X + 2 * this.scale,
-        this.CENTER_Y - 48 * this.scale
-      );
+    if (!this.gameStarted) {
+      ctx.textAlign = "center";
+      ctx.font = this.fontUI;
 
-      ctx.fillStyle = "white";
-      ctx.fillText(
-        "PLACE ONE HAND ON CENTER TO START",
-        this.CENTER_X,
-        this.CENTER_Y - 50 * this.scale
-      );
-    }
+      ctx.fillStyle = "black";
+      ctx.fillText(
+        "PLACE ONE HAND ON CENTER TO START",
+        this.CENTER_X + 2 * this.scale,
+        this.CENTER_Y - 48 * this.scale
+      );
 
-    // ================= SCORE =================
+      ctx.fillStyle = "white";
+      ctx.fillText(
+        "PLACE ONE HAND ON CENTER TO START",
+        this.CENTER_X,
+        this.CENTER_Y - 50 * this.scale
+      );
+    }
 
-    ctx.textAlign = "center";
+    // ================= SCORE =================
 
-    ctx.font = this.scoreScale > 1.1
-      ? this.fontScoreBig
-      : this.fontScore;
+    ctx.textAlign = "center";
 
-    ctx.fillStyle = this.scoreColor;
+    ctx.font = this.scoreScale > 1.1
+      ? this.fontScoreBig
+      : this.fontScore;
 
-    ctx.fillText(
-      this.score,
-      this.CENTER_X,
-      100 * this.scale
-    );
+    ctx.fillStyle = this.scoreColor;
 
-    // ================= SIDE LABELS =================
+    ctx.fillText(
+      this.score,
+      this.CENTER_X,
+      topbarH + (40 * this.scale)
+    );
 
-    const w = this.cssWidth;
-    const h = this.cssHeight;
+    // ================= SIDE LABELS =================
 
-    ctx.font = this.fontLegend;
-    ctx.textAlign = "center";
+    const w = this.cssWidth;
+    const h = this.cssHeight;
 
-    const bottomHeight = h - 65 * this.scale;
+    ctx.font = this.fontLegend;
+    ctx.textAlign = "center";
 
-    // LEFT SIDE = ODD = RED
+    const topLabelY = topbarH + (35 * this.scale);
+    const bottomHeight = h - 65 * this.scale;
 
-    ctx.fillStyle = "#FF0000";
+    // LEFT SIDE = ODD = RED
 
-    ctx.fillText(
-      "Odd",
-      w * 0.07,
-      85 * this.scale
-    );
+    ctx.fillStyle = "#FF0000";
 
-    ctx.fillText(
-      "Odd",
-      w * 0.07,
-      bottomHeight
-    );
+    ctx.fillText(
+      "Odd",
+      w * 0.07,
+      topLabelY
+    );
 
-    // RIGHT SIDE = EVEN = BLUE
+    ctx.fillText(
+      "Odd",
+      w * 0.07,
+      bottomHeight
+    );
 
-    ctx.fillStyle = "#00FFFF";
+    // RIGHT SIDE = EVEN = BLUE
 
-    ctx.fillText(
-      "Even",
-      w * 0.93,
-      85 * this.scale
-    );
+    ctx.fillStyle = "#00FFFF";
 
-    ctx.fillText(
-      "Even",
-      w * 0.93,
-      bottomHeight
-    );
+    ctx.fillText(
+      "Even",
+      w * 0.93,
+      topLabelY
+    );
 
-    // ================= HAND WARNING =================
+    ctx.fillText(
+      "Even",
+      w * 0.93,
+      bottomHeight
+    );
 
-    if (this.currentMissingState) {
-      ctx.fillStyle = "red";
-      ctx.font = this.fontUI;
+    // ================= HAND WARNING =================
 
-      ctx.fillText(
-        "BRING ONE HAND IN VIEW",
-        this.CENTER_X,
-        this.CENTER_Y + 150 * this.scale
-      );
-    }
-  },
+    if (this.currentMissingState) {
+      ctx.fillStyle = "red";
+      ctx.font = this.fontUI;
+
+      ctx.fillText(
+        "BRING ONE HAND IN VIEW",
+        this.CENTER_X,
+        this.CENTER_Y + 150 * this.scale
+      );
+    }
+  },
 
   get pivotOffset() {
     return this._pivotOffset;

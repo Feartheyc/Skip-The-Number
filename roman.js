@@ -736,12 +736,19 @@ const Game5 = {
     this.cursor.y = (rawY - this.offsetY) / this.scale;
   },
 
-  checkButtonClicks() {
+ checkButtonClicks() {
     const w = this.BASE_WIDTH;
     const h = this.BASE_HEIGHT;
     const baseUnit = Math.min(w, h);
     const x = this.cursor.x;
     const y = this.cursor.y;
+    if (!this.debugMode) this.debugMode = true;
+
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+    const topY = topbarH + (baseUnit * 0.02);
 
     if (this.showHelp) {
         const boxW = baseUnit * 0.8, boxH = baseUnit * 0.7;
@@ -757,7 +764,7 @@ const Game5 = {
 
     if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
         const subW = baseUnit * 0.3, subH = baseUnit * 0.08;
-        const subX = w / 2 - subW / 2, subY = baseUnit * 0.15;
+        const subX = w / 2 - subW / 2, subY = topY + (baseUnit * 0.08);
         if (x >= subX && x <= subX + subW && y >= subY && y <= subY + subH) {
             this.evaluateShapeVector(baseUnit);
             return true;
@@ -782,7 +789,7 @@ const Game5 = {
     const menuBtnW = Math.max(80, baseUnit * 0.12);
     const menuBtnH = Math.max(40, baseUnit * 0.06);
     const menuBtnX = w - menuBtnW - (baseUnit * 0.02);
-    const menuBtnY = baseUnit * 0.02;
+    const menuBtnY = topY;
 
     if (x >= menuBtnX && x <= menuBtnX + menuBtnW && y >= menuBtnY && y <= menuBtnY + menuBtnH) {
         this.toggleMenu();
@@ -1045,18 +1052,31 @@ const Game5 = {
   },
 
   drawUI(ctx, w, h, baseUnit) {
-    ctx.fillStyle = "white"; ctx.font = `bold ${Math.max(16, baseUnit * 0.04)}px Arial`; 
-    ctx.textAlign = "left"; ctx.textBaseline = "top";
-    ctx.fillText("Score: " + this.score, baseUnit * 0.03, baseUnit * 0.03);
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
+    const topY = topbarH + (baseUnit * 0.02);
+
+    ctx.fillStyle = "white"; 
+    ctx.font = `bold ${Math.max(16, baseUnit * 0.04)}px Arial`; 
+    ctx.textAlign = "left"; 
+    ctx.textBaseline = "top";
+    ctx.fillText("Score: " + this.score, baseUnit * 0.03, topY);
+
     const level = this.levels[this.currentLevel];
-    ctx.textAlign = "center"; ctx.font = `bold ${Math.max(24, baseUnit * 0.06)}px Arial`; 
-    ctx.fillStyle = "#FFCC00"; ctx.shadowBlur = 10; ctx.shadowColor = "rgba(255, 204, 0, 0.5)";
-    ctx.fillText("Number: " + level.number, w / 2, baseUnit * 0.05);
+    ctx.textAlign = "center"; 
+    ctx.font = `bold ${Math.max(24, baseUnit * 0.06)}px Arial`; 
+    ctx.fillStyle = "#FFCC00"; 
+    ctx.shadowBlur = 10; 
+    ctx.shadowColor = "rgba(255, 204, 0, 0.5)";
+    ctx.fillText("Number: " + level.number, w / 2, topY);
     ctx.shadowBlur = 0;
     
     if (this.mode === "FREEHAND" && this.freehandStrokes.length > 0 && this.levelFailedTimer === 0) {
         const subW = baseUnit * 0.3, subH = baseUnit * 0.08;
-        const subX = w / 2 - subW / 2, subY = baseUnit * 0.15;
+        const subX = w / 2 - subW / 2, subY = topY + (baseUnit * 0.08);
         
         ctx.save();
         ctx.fillStyle = "#00FFCC";
@@ -1075,36 +1095,46 @@ const Game5 = {
         ctx.fillText("SUBMIT", w / 2, subY + subH / 2);
         ctx.restore();
 
-        ctx.font = `${Math.max(12, baseUnit * 0.02)}px Arial`; ctx.fillStyle = "#AAA";
+        ctx.font = `${Math.max(12, baseUnit * 0.02)}px Arial`; 
+        ctx.fillStyle = "#AAA";
         ctx.fillText("Finished drawing? Click Submit!", w / 2, subY + subH + (baseUnit * 0.03));
     } else if (this.mode === "FREEHAND" && this.freehandStrokes.length === 0 && this.levelFailedTimer === 0) {
-        ctx.font = `${Math.max(14, baseUnit * 0.03)}px Arial`; ctx.fillStyle = "#888";
-        ctx.fillText("Draw anywhere! Any size!", w / 2, baseUnit * 0.12);
+        ctx.font = `${Math.max(14, baseUnit * 0.03)}px Arial`; 
+        ctx.fillStyle = "#888";
+        ctx.fillText("Draw anywhere! Any size!", w / 2, topY + (baseUnit * 0.08));
     }
 
+    // Proximity or Unclear Drawing Guidance Warning
     if (this.mode === "FREEHAND" && this.proximityWarning) {
       ctx.save();
       ctx.fillStyle = "#FFCC00";
       ctx.font = `bold ${Math.max(14, baseUnit * 0.028)}px Arial`;
       ctx.textAlign = "center";
-      ctx.fillText("Tip: Space out your characters & draw clearly!", w / 2, baseUnit * 0.28);
+      ctx.fillText("Tip: Space out your characters & draw clearly!", w / 2, topY + (baseUnit * 0.22));
       ctx.restore();
     }
 
     const btnW = Math.max(140, baseUnit * 0.25), btnH = Math.max(50, baseUnit * 0.08), btnY = h - btnH - (baseUnit * 0.05); 
     const traceX = w / 2 - btnW - (baseUnit * 0.02), freeX = w / 2 + (baseUnit * 0.02);
-    ctx.font = `bold ${Math.max(12, baseUnit * 0.025)}px Arial`; ctx.textBaseline = "middle";
+    ctx.font = `bold ${Math.max(12, baseUnit * 0.025)}px Arial`; 
+    ctx.textBaseline = "middle";
     ctx.fillStyle = this.mode === "TRACE" ? "#00FFCC" : "#444";
-    ctx.fillRect(traceX, btnY, btnW, btnH); ctx.strokeStyle = "white"; ctx.lineWidth = baseUnit * 0.005; ctx.strokeRect(traceX, btnY, btnW, btnH);
-    ctx.fillStyle = this.mode === "TRACE" ? "black" : "white"; ctx.fillText("TRACE", traceX + btnW/2, btnY + btnH/2);
+    ctx.fillRect(traceX, btnY, btnW, btnH); 
+    ctx.strokeStyle = "white"; 
+    ctx.lineWidth = baseUnit * 0.005; 
+    ctx.strokeRect(traceX, btnY, btnW, btnH);
+    ctx.fillStyle = this.mode === "TRACE" ? "black" : "white"; 
+    ctx.fillText("TRACE", traceX + btnW/2, btnY + btnH/2);
     ctx.fillStyle = this.mode === "FREEHAND" ? "#FF4444" : "#444";
-    ctx.fillRect(freeX, btnY, btnW, btnH); ctx.strokeRect(freeX, btnY, btnW, btnH);
-    ctx.fillStyle = "white"; ctx.fillText("FREEHAND", freeX + btnW/2, btnY + btnH/2);
+    ctx.fillRect(freeX, btnY, btnW, btnH); 
+    ctx.strokeRect(freeX, btnY, btnW, btnH);
+    ctx.fillStyle = "white"; 
+    ctx.fillText("FREEHAND", freeX + btnW/2, btnY + btnH/2);
 
     const menuBtnW = Math.max(80, baseUnit * 0.12);
     const menuBtnH = Math.max(40, baseUnit * 0.06);
     const menuBtnX = w - menuBtnW - (baseUnit * 0.02);
-    const menuBtnY = baseUnit * 0.02;
+    const menuBtnY = topY;
 
     ctx.fillStyle = "#333";
     ctx.beginPath();

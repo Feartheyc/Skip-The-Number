@@ -233,14 +233,22 @@ const Game3 = {
   },
 
   onResize(width, height) {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
+    const playableHeight = height - topbarH;
     this.centerX = width / 2;
-    this.centerY = height / 2;
-    const base = Math.min(width, height);
+    this.centerY = topbarH + (playableHeight / 2);
+
+    const base = Math.min(width, playableHeight);
     this.scale = base / 600;
     this.margin = 80 * this.scale;
 
-    this.gradeBtn = { x: 140 * this.scale, y: 50 * this.scale, r: 35 * this.scale };
-    this.helpBtn = { x: width - 125 * this.scale, y: 50 * this.scale, r: 22 * this.scale };
+    const topY = topbarH + (28 * this.scale);
+    this.gradeBtn = { x: 140 * this.scale, y: topY, r: 35 * this.scale };
+    this.helpBtn = { x: width - 125 * this.scale, y: topY, r: 22 * this.scale };
     this.preRenderUI();
   },
 
@@ -932,7 +940,11 @@ const Game3 = {
 
   // Updated UI pill removing Grade labels
   drawUI(ctx) {
-    const topY = 28 * this.scale;
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+    const topY = topbarH + (14 * this.scale);
 
     const drawPill = (x, y, w, h, bg = "rgba(20, 20, 20, 0.75)", stroke = "rgba(255, 255, 255, 0.15)") => {
       ctx.fillStyle = bg;
@@ -1043,7 +1055,7 @@ const Game3 = {
 
   drawHelpPillButton(ctx, topY) {
     const itemW = 44 * this.scale;
-    const pillX = window.innerWidth - itemW - 85 * this.scale;
+    const pillX = window.innerWidth - itemW - 25 * this.scale;
 
     ctx.fillStyle = "rgba(20, 20, 20, 0.75)";
     ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";

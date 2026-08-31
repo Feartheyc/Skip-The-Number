@@ -596,6 +596,11 @@ const Game10 = {
 
   /* ── Spawn numbers ───────────────────────────────────────── */
   spawnMode1Numbers() {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     this.mode1Numbers = [];
     this.proximityGlow = [];
 
@@ -625,11 +630,9 @@ const Game10 = {
     const count = Math.min(MAX_NUMBERS, 4 + this.level);
 
     const margin = 140 * this.scale;
+    const marginTop = topbarH + (100 * this.scale);
     const safeR = 170 * this.scale;
 
-    // No-spawn zone is centered on the portal's CURRENT position (wherever
-    // the finger actually is right now), not the screen center — otherwise
-    // numbers can spawn under/near a portal that never recenters.
     const originX = this.mascot.x;
     const originY = this.mascot.y;
 
@@ -647,7 +650,7 @@ const Game10 = {
       while (attempts < 80 && !foundPosition) {
         attempts++;
         x = margin + Math.random() * (this.cssWidth - margin * 2);
-        y = margin + Math.random() * (this.cssHeight - margin * 2);
+        y = marginTop + Math.random() * (this.cssHeight - marginTop - margin);
 
         if (Math.hypot(x - originX, y - originY) < safeR) continue;
 
@@ -660,7 +663,7 @@ const Game10 = {
 
       if (!foundPosition) {
         x = margin + Math.random() * (this.cssWidth - margin * 2);
-        y = margin + Math.random() * (this.cssHeight - margin * 2);
+        y = marginTop + Math.random() * (this.cssHeight - marginTop - margin);
       }
 
       used.push({ x, y });
@@ -670,21 +673,11 @@ const Game10 = {
         num = this.generateNumberWithSuffix(this.mode1TargetSuffix, usedNumbers);
         correctSpawned++;
       } else {
-        // Generate a DISTRACTOR number — must NOT match the target suffix.
         let distAttempts = 0;
         do {
           num = Math.floor(Math.random() * this.numberRange) + 1;
           distAttempts++;
           if (distAttempts > 300) {
-            // FIX: previously this just broke out and kept whatever `num`
-            // was last rolled — which could still match the target suffix,
-            // producing a visually-"correct" distractor that was never
-            // counted in mode1CorrectTotal. That let players finish a round
-            // after catching only ONE of two identical-looking numbers,
-            // leaving a duplicate uncollected on screen.
-            //
-            // Instead, explicitly search for a guaranteed non-matching,
-            // unused number before giving up.
             let fallback = null;
             for (let n = 1; n <= this.numberRange; n++) {
               if (this.getSuffix(n) !== this.mode1TargetSuffix && !usedNumbers.has(n)) {
@@ -692,9 +685,6 @@ const Game10 = {
                 break;
               }
             }
-            // If the range is too small/saturated to find an unused one,
-            // fall back to ANY non-matching number (allow reuse) rather
-            // than risking a number that matches the target suffix.
             if (fallback === null) {
               for (let n = 1; n <= this.numberRange; n++) {
                 if (this.getSuffix(n) !== this.mode1TargetSuffix) {
@@ -728,9 +718,6 @@ const Game10 = {
 
       this.proximityGlow.push(0);
     }
-
-
-    
   },
 
   /* ============================================================
@@ -1327,16 +1314,21 @@ const Game10 = {
   /* ── HUD ─────────────────────────────────────────────────── */
   updateHUDTimers(delta){if(this.heartShakeTime>0)this.heartShakeTime=Math.max(0,this.heartShakeTime-delta);if(this.streakPulse>0)this.streakPulse=Math.max(0,this.streakPulse-delta*0.003);},
   drawHUD(ctx) {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     const T=this.T,s=this.scale,W=this.cssWidth,H=this.cssHeight;
     
     // Top-Left Score Display Box
-    const sw=175*s,sh=54*s,sx=18*s,sy=16*s;
+    const sw=175*s,sh=54*s,sx=18*s,sy=topbarH + (16*s);
     ctx.fillStyle=T.scoreBg;this._rrect(ctx,sx,sy,sw,sh,18*s);ctx.fill();
     ctx.fillStyle=T.numberColor;ctx.font=`bold ${Math.round(26*s)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(`⭐ ${this.score}`,sx+sw/2,sy+sh/2);
 
     // Top-Right Hearts
     const hSz=32*s,hGap=8*s,totalHW=this.maxHearts*(hSz+hGap)-hGap;
-    const hx0=W-18*s-totalHW,hy0=18*s,shk=this.heartShakeTime>0?Math.sin(this.heartShakeTime*0.055)*5*s:0;
+    const hx0=W-18*s-totalHW,hy0=topbarH + (18*s),shk=this.heartShakeTime>0?Math.sin(this.heartShakeTime*0.055)*5*s:0;
     for(let i=0;i<this.maxHearts;i++){ctx.globalAlpha=i<this.hearts?1:0.2;ctx.font=`${Math.round(hSz)}px serif`;ctx.textAlign="left";ctx.textBaseline="top";ctx.fillText("❤️",hx0+i*(hSz+hGap),hy0+(i<this.hearts?shk:0));}
     ctx.globalAlpha=1;
 
@@ -1366,8 +1358,14 @@ const Game10 = {
 
   drawInstruction(ctx) {
     if(this.mode1GameOver||this.blackHoleActive)return;
+
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     const T=this.T,s=this.scale,W=this.cssWidth;
-    const suf=this.mode1TargetSuffix,maxW=Math.min(W-44*s,700*s),bh=48*s,bx=W/2-maxW/2,by=20*s;
+    const suf=this.mode1TargetSuffix,maxW=Math.min(W-44*s,700*s),bh=48*s,bx=W/2-maxW/2,by=topbarH + (20*s);
     ctx.fillStyle=T.cardBg;
     ctx.beginPath(); this._rrectPath(ctx,bx,by,maxW,bh,13*s); ctx.fill();
     ctx.strokeStyle=T.cardBorder;ctx.lineWidth=1.5*s;
@@ -1377,7 +1375,22 @@ const Game10 = {
   },
 
   /* ── Toast ───────────────────────────────────────────────── */
-  showToast(text,color){this.toast={text,color,timer:1600,maxTimer:1600,y:this.CENTER_Y-220*this.scale,alpha:1};},
+  showToast(text, color) {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
+    const playableH = this.cssHeight - topbarH;
+    this.toast = {
+      text,
+      color,
+      timer: 1600,
+      maxTimer: 1600,
+      y: topbarH + (playableH * 0.18),
+      alpha: 1
+    };
+  },
   updateToast(delta){if(this.toast.timer<=0)return;this.toast.timer-=delta;this.toast.alpha=Math.min(1,this.toast.timer/350);this.toast.y-=0.022*delta;},
   drawToast(ctx){if(this.toast.timer<=0||this.toast.alpha<=0)return;ctx.save();ctx.globalAlpha=this.toast.alpha;ctx.fillStyle=this.toast.color;ctx.font=`bold ${Math.round(36*this.scale)}px 'Fredoka',cursive`;ctx.textAlign="center";ctx.textBaseline="middle";ctx.shadowColor=this.toast.color;ctx.shadowBlur=14;ctx.fillText(this.toast.text,this.CENTER_X,this.toast.y);ctx.restore();},
 

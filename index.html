@@ -60,6 +60,23 @@
   <script src="even-odd-3.js"></script>
   <script src="ordinals-beta-2.js"></script>
   <script src="mode-slector.js"></script>
+
+      <!-- Shared Not-a-Bot top bar: owl mark + game name (left), a read-only
+         "Grade N" chip from ?difficulty and this game's pause button (right).
+         A classic script exposing window.NbTopbar; mounted below, relocating the
+         existing #pauseBtn into the bar's right-hand control slot so it no longer
+         floats free over the canvas. -->
+    <script src="topbar.js"></script>
+    <script>
+      (function () {
+        var bar = window.NbTopbar &&
+          window.NbTopbar.mount({ gameName: "Math Adventure" });
+        var pauseBtn = document.getElementById("pauseBtn");
+        if (bar && bar.controls && pauseBtn) {
+          bar.controls.appendChild(pauseBtn);
+        }
+      })();
+    </script>
 </body>
 
 </html>

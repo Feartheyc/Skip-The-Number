@@ -952,9 +952,19 @@ _recentSpawnAngles: [],
   },
 
   _applyResize(width, height) {
+    // Read the top bar height published by topbar.js (defaulting to 50px if not ready)
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
+    const playableHeight = height - topbarH;
     this.centerX = width / 2;
-    this.centerY = height / 2;
-    const base = Math.min(width, height);
+    // Center the ring within the remaining space below the bar
+    this.centerY = topbarH + (playableHeight / 2);
+
+    // Scale outer radius based on available playable area
+    const base = Math.min(width, playableHeight);
     this.baseOuterRadius    = base * 0.25 * this.ringScale;
     this.baseInnerRadius    = this.baseOuterRadius * 0.8;
     this.currentOuterRadius = this.baseOuterRadius;
@@ -964,9 +974,6 @@ _recentSpawnAngles: [],
     this.speedMin = this.speedCap * 0.15;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
-    // Background gradient key changes with size, so it'll rebuild lazily.
-    // Note glow/body sprites are keyed by radius already, so no explicit
-    // invalidation is required here — new radii just get their own cache entry.
   },
 
    /* ── Mode switching ─────────────────────────────────────── */
@@ -2510,59 +2517,65 @@ _drawXPRing(ctx, cx, cy, radius) {
  _drawHUD(ctx, isLauncher) {
     const W = this.centerX * 2, H = this.centerY * 2;
     const f = "bold 20px 'Trebuchet MS', sans-serif";
+    
+    // Read live top bar height to offset HUD top elements
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+    const topY = topbarH + 10;
+
     if (isLauncher) {
       ctx.fillStyle = this.C.hudBg;
-      ctx.fillRect(0, 0, W, 50);
+      ctx.fillRect(0, topbarH, W, 50);
       ctx.strokeStyle = this.C.hudBorder;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(0,50);
-      ctx.lineTo(W,50);
+      ctx.moveTo(0, topbarH + 50);
+      ctx.lineTo(W, topbarH + 50);
       ctx.stroke();
       ctx.font = f;
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#e8f4ff";
       ctx.textAlign = "left";
-      ctx.fillText("⭐ "+this.score, 16, 25);
+      ctx.fillText("⭐ "+this.score, 16, topbarH + 25);
       ctx.fillStyle = this.C.gold;
       ctx.textAlign = "center";
       ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
-      ctx.fillText(this.gameTitle, W/2, 25);
+      ctx.fillText(this.gameTitle, W/2, topbarH + 25);
       
       ctx.textAlign = "right";
       ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
       ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
       
       if (this.showSkillDebug) {
-        // Shift baseline slightly upwards to make clean visual space for fractional text
-        ctx.fillText("x"+this.combo+" combo", W-16, 18);
+        ctx.fillText("x"+this.combo+" combo", W-16, topbarH + 18);
         ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
         ctx.fillStyle = this.tierColors[this.tier];
-        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-16, 36);
+        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-16, topbarH + 36);
       } else {
-        ctx.fillText("x"+this.combo+" combo", W-16, 25);
+        ctx.fillText("x"+this.combo+" combo", W-16, topbarH + 25);
       }
     } else {
-      this._pill(ctx, 14, 14, 155, 42);
+      this._pill(ctx, 14, topY, 155, 42);
       ctx.font = f;
       ctx.fillStyle = "#e8f4ff";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillText("⭐ "+this.score, 28, 35);
+      ctx.fillText("⭐ "+this.score, 28, topY + 21);
       
-      // Dynamic scaling panel framework adjustments based on UI diagnostics layout switches
       const pillHeight = this.showSkillDebug ? 56 : 42;
-      this._pill(ctx, W-174, 14, 160, pillHeight);
+      this._pill(ctx, W-174, topY, 160, pillHeight);
       ctx.textAlign = "right";
       ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
       
       if (this.showSkillDebug) {
-        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, 30);
+        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, topY + 16);
         ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
         ctx.fillStyle = this.tierColors[this.tier];
-        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-28, 50);
+        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-28, topY + 36);
       } else {
-        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, 35);
+        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, topY + 21);
       }
       
       ctx.textAlign = "center";
@@ -2571,9 +2584,10 @@ _drawXPRing(ctx, cx, cy, radius) {
       ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
       ctx.shadowColor = "rgba(245,200,66,0.4)";
       ctx.shadowBlur = 14;
-      ctx.fillText(this.gameTitle, W/2, 34);
+      ctx.fillText(this.gameTitle, W/2, topY + 20);
       ctx.shadowBlur = 0;
     }
+
     this._drawTimeBar(ctx, isLauncher);
     const ringCX = W/2, ringCY = isLauncher ? H-60 : H-48, ringR = 26;
     this._drawXPRing(ctx, ringCX, ringCY, ringR);
@@ -2614,14 +2628,21 @@ _bumpTimeCeiling() {
     const pct = this.timeLimit > 0 ? Math.max(0, Math.min(1, this.timeRemaining / this.timeLimit)) : 0;
     const barW = Math.min(W * 0.52, 380);
     const barH = 12;
+    
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     const x = W / 2 - barW / 2;
-    const y = isLauncher ? 58 : 58;
+    const y = isLauncher ? topbarH + 58 : topbarH + 58;
+
     ctx.save();
     ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "rgba(240,244,255,0.8)";
-    ctx.fillText(`Time ${Math.ceil(this.timeRemaining)}s`, (W / 2) +220, y +7);
+    ctx.fillText(`Time ${Math.ceil(this.timeRemaining)}s`, (W / 2) + 220, y + 7);
     ctx.fillStyle = "rgba(8,18,36,0.76)";
     ctx.beginPath();
     ctx.roundRect(x-4, y, barW, barH, 6);
