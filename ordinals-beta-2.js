@@ -847,10 +847,15 @@ updateMode1TargetSuffix() {
     if (this.gameMode !== 1 || this.mode1GameOver || !this.mode1RoundActive) return;
     if (this.fingerImages.length === 0) return;
 
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     const imgSize = 70 * this.scale;
     const padding = 40 * this.scale;
     const startX = 30 * this.scale;
-    const startY = 150 * this.scale; // Below the score area
+    const startY = topbarH + (95 * this.scale); // Shifted down relative to top bar + score box
     const verticalGap = 130 * this.scale;
 
     ctx.save();
@@ -894,12 +899,16 @@ updateMode1TargetSuffix() {
   },
 
   drawScore(ctx) {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
 
     const padding = 20 * this.scale;
     const width = 220 * this.scale;
     const height = 70 * this.scale;
     const x = 20 * this.scale;
-    const y = 20 * this.scale;
+    const y = topbarH + (10 * this.scale);
 
     // Glassmorphism bubble
     ctx.save();
@@ -934,7 +943,6 @@ updateMode1TargetSuffix() {
 
     ctx.restore();
   },
-
   drawLevel(ctx) {
 
     const padding = 20 * this.scale;
@@ -1712,11 +1720,15 @@ updateMode1TargetSuffix() {
   },
 
   drawMode1Instruction(ctx) {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
 
     const time = performance.now();
     const floatY = Math.sin(time * 0.002) * 5 * this.scale;
 
-    const yBaseline = 60 * this.scale + floatY;
+    const yBaseline = topbarH + (25 * this.scale) + floatY;
 
     ctx.save();
 
@@ -2361,10 +2373,15 @@ updateMode1TargetSuffix() {
   drawGalaxyLifeBar(ctx) {
     if (this.gameMode !== 1 || this.mode1GameOver || !this.mode1RoundActive) return;
 
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     const barWidth = 400 * this.scale;
     const barHeight = 20 * this.scale;
     const x = this.CENTER_X - barWidth / 2;
-    const y = 130 * this.scale;
+    const y = topbarH + (65 * this.scale);
 
     ctx.save();
     // Glassy background
