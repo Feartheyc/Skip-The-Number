@@ -273,6 +273,7 @@ const Game3 = {
     return `hsl(${hue}, 85%, 55%)`;
   },
 
+  // ⚡ INCLUDES RE-ENABLED EQUAL VALUES (=)
   spawnNumbers() {
     this.gameState = "PLAYING";
     this.winHoldTime = 0;
@@ -291,7 +292,9 @@ const Game3 = {
       this.COMBO_MAX_TIME = 5.0;
     }
 
-    // Determine gesture prompt based on levels
+    // 20% chance to test equal values if in Level >= 3
+    const shouldTestEqual = this.currentLevel >= 3 && Math.random() < 0.22;
+
     let askBigger = true;
     if (this.currentLevel === 1) {
       askBigger = true; // Level 1: Hand gesture at BIGGER number
@@ -301,28 +304,29 @@ const Game3 = {
       askBigger = Math.random() > 0.5; // Level 3+: Mixed Barrage
     }
 
-    if (this.currentLevel === 3) {
+    if (shouldTestEqual) {
+      this.targetPromptText = "Numbers are EQUAL! Hold in center!";
+    } else if (this.currentLevel === 5) {
       this.targetPromptText = askBigger ? "⚡ BARRAGE: Aim at BIGGER!" : "⚡ BARRAGE: Point at SMALLER!";
     } else {
       this.targetPromptText = askBigger ? "Aim at the BIGGER number!" : "Point finger at the SMALLER number!";
     }
 
-    // Progression mechanics based on levels:
-    // Level 1-3: Base numbers (1 to 20)
-    // Level 4-5: Number range increases (21 to 100)
-    // Level 6-9: Negative numbers (-50 to -1)
-    // Level 10: Like Fractions (same denominator, max number 20)
-    // Level 11+: Unlike Fractions (different denominators, max number 20)
-    if (this.currentLevel <= 3) {
-      this.spawnIntegers(1, 20);
-    } else if (this.currentLevel <= 5) {
-      this.spawnIntegers(21, 100);
-    } else if (this.currentLevel <= 9) {
-      this.spawnIntegers(-50, -1);
-    } else if (this.currentLevel === 10) {
-      this.spawnLikeFractions(20);
-    } else {
-      this.spawnIrregularFractions(20);
+    if (this.currentGrade === 1) {
+      this.spawnIntegers(1, 20, shouldTestEqual);
+    }
+    else if (this.currentGrade === 2) {
+      this.spawnIntegers(-50, 50, shouldTestEqual);
+    }
+    else if (this.currentGrade === 3) {
+      if (this.currentLevel <= 2) this.spawnLikeFractions(shouldTestEqual);
+      else {
+        if (Math.random() > 0.5) this.spawnIntegers(100, 999, shouldTestEqual);
+        else this.spawnLikeFractions(shouldTestEqual);
+      }
+    }
+    else if (this.currentGrade === 4) {
+      this.spawnIrregularFractions(shouldTestEqual);
     }
 
     this.leftColor = this.getBrightColor();
@@ -330,98 +334,63 @@ const Game3 = {
     this.fadeAlpha = 0;
     this.popScale = 0.5;
   },
-// Updated spawnNumbers method according to level-only progression
-  spawnNumbers() {
-    this.gameState = "PLAYING";
-    this.winHoldTime = 0;
-    this.failHoldTime = 0;
-    this.detectedSymbol = "None";
-    this.gestureGraceTimer = 0;
-    this.confetti = [];
-    this.handResetRequired = true;
 
-    // Level 3 is the mixed barrage (shorter hold threshold & faster combo timer)
-    if (this.currentLevel === 3) {
-      this.winHoldThreshold = 0.6;
-      this.COMBO_MAX_TIME = 3.0;
-    } else {
-      this.winHoldThreshold = 1.0;
-      this.COMBO_MAX_TIME = 5.0;
-    }
-
-    // Determine prompt based on level
-    let askBigger = true;
-    if (this.currentLevel === 1) {
-      askBigger = true; // Level 1: Aim at BIGGER
-    } else if (this.currentLevel === 2) {
-      askBigger = false; // Level 2: Point at SMALLER
-    } else {
-      askBigger = Math.random() > 0.5; // Level 3+: Mixed Barrage
-    }
-
-    if (this.currentLevel === 3) {
-      this.targetPromptText = askBigger ? "⚡ BARRAGE: Aim at BIGGER!" : "⚡ BARRAGE: Point at SMALLER!";
-    } else {
-      this.targetPromptText = askBigger ? "Aim at the BIGGER number!" : "Point finger at the SMALLER number!";
-    }
-
-    // Progression mechanics based strictly on Levels:
-    // Level 1-3: Low numbers (1 to 20)
-    // Level 4-5: Number range increases (21 to 100)
-    // Level 6-9: Negative numbers (-50 to -1)
-    // Level 10: Like Fractions (same denominator, numbers under 20)
-    // Level 11+: Unlike Fractions (different denominators, numbers under 20)
-    if (this.currentLevel <= 3) {
-      this.spawnIntegers(1, 20);
-    } else if (this.currentLevel <= 5) {
-      this.spawnIntegers(21, 100);
-    } else if (this.currentLevel <= 9) {
-      this.spawnIntegers(-50, -1);
-    } else if (this.currentLevel === 10) {
-      this.spawnLikeFractions(20);
-    } else {
-      this.spawnIrregularFractions(20);
-    }
-
-    this.leftColor = this.getBrightColor();
-    this.rightColor = this.getBrightColor();
-    this.fadeAlpha = 0;
-    this.popScale = 0.5;
-  },
-  spawnIntegers(min, max) {
+  spawnIntegers(min, max, forceEqual = false) {
     let n1 = Math.floor(Math.random() * (max - min + 1)) + min;
-    let n2 = Math.floor(Math.random() * (max - min + 1)) + min;
+    let n2 = forceEqual ? n1 : Math.floor(Math.random() * (max - min + 1)) + min;
 
-    while (n1 === n2) n2 = Math.floor(Math.random() * (max - min + 1)) + min;
+    if (!forceEqual) {
+      while (n1 === n2) n2 = Math.floor(Math.random() * (max - min + 1)) + min;
+    }
 
     this.leftValue = n1; this.rightValue = n2;
     this.leftText = n1.toString(); this.rightText = n2.toString();
 
-    const isBiggerTarget = this.targetPromptText.includes("BIGGER");
-    if (isBiggerTarget) {
-      this.currentRelation = n1 > n2 ? ">" : "<";
+    if (n1 === n2) {
+      this.currentRelation = "=";
     } else {
-      this.currentRelation = n1 < n2 ? ">" : "<";
+      const isBiggerTarget = this.targetPromptText.includes("BIGGER");
+      if (isBiggerTarget) {
+        this.currentRelation = n1 > n2 ? ">" : "<";
+      } else {
+        this.currentRelation = n1 < n2 ? ">" : "<";
+      }
     }
   },
 
-  spawnLikeFractions(maxNum = 20) {
-    const den = Math.floor(Math.random() * 8) + 2; // Denominator 2-9
-    let n1 = Math.floor(Math.random() * maxNum) + 1;
-    let n2 = Math.floor(Math.random() * maxNum) + 1;
-    while (n1 === n2) n2 = Math.floor(Math.random() * maxNum) + 1;
+  spawnLikeFractions(forceEqual = false) {
+    const den = Math.floor(Math.random() * 7) + 3;
+    let n1 = Math.floor(Math.random() * 12) + 1;
+    let n2 = forceEqual ? n1 : Math.floor(Math.random() * 12) + 1;
+    
+    if (!forceEqual) {
+      while (n1 === n2) n2 = Math.floor(Math.random() * 12) + 1;
+    }
 
     this.leftValue = n1 / den; this.rightValue = n2 / den;
     this.leftText = `${n1}/${den}`; this.rightText = `${n2}/${den}`;
     
-    const isBiggerTarget = this.targetPromptText.includes("BIGGER");
-    if (isBiggerTarget) {
-      this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+    if (this.leftValue === this.rightValue) {
+      this.currentRelation = "=";
     } else {
-      this.currentRelation = this.leftValue < this.rightValue ? ">" : "<";
+      const isBiggerTarget = this.targetPromptText.includes("BIGGER");
+      if (isBiggerTarget) {
+        this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+      } else {
+        this.currentRelation = this.leftValue < this.rightValue ? ">" : "<";
+      }
     }
   },
-  spawnIrregularFractions(maxNum = 20) {
+
+  spawnIrregularFractions(forceEqual = false) {
+    if (forceEqual) {
+      const d = 4, n = 2; // e.g. 2/4 and 1/2
+      this.leftValue = 0.5; this.rightValue = 0.5;
+      this.leftText = "2/4"; this.rightText = "1/2";
+      this.currentRelation = "=";
+      return;
+    }
+
     const easyDenoms = [2, 3, 4, 5, 6, 8, 10];
     let d1 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
     let d2 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
@@ -433,11 +402,15 @@ const Game3 = {
     this.leftValue = n1 / d1; this.rightValue = n2 / d2;
     this.leftText = `${n1}/${d1}`; this.rightText = `${n2}/${d2}`;
     
-    const isBiggerTarget = this.targetPromptText.includes("BIGGER");
-    if (isBiggerTarget) {
-      this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+    if (this.leftValue === this.rightValue) {
+      this.currentRelation = "=";
     } else {
-      this.currentRelation = this.leftValue < this.rightValue ? ">" : "<";
+      const isBiggerTarget = this.targetPromptText.includes("BIGGER");
+      if (isBiggerTarget) {
+        this.currentRelation = this.leftValue > this.rightValue ? ">" : "<";
+      } else {
+        this.currentRelation = this.leftValue < this.rightValue ? ">" : "<";
+      }
     }
   },
 
@@ -619,7 +592,7 @@ const Game3 = {
         { icon: "👀", text: "Read the prompt at the bottom of screen." },
         { icon: "✌️", text: "Bigger number: Make a wide 'V' crocodile mouth." },
         { icon: "☝️", text: "Smaller number: Point directly at the card." },
-        { icon: "🖐️", text: "LOWER HAND after answering to start next Q!" }
+        { icon: "🟰", text: "Equal values: Hold hand straight in the center." }
       );
     } else {
       contentRows.push(
@@ -668,40 +641,86 @@ const Game3 = {
   _drawTutSandboxDiagram(ctx, x, y, w, h) {
     const cx = x + w / 2, cy = y + h / 2;
     
-    ctx.fillStyle = "rgba(255,255,255,0.05)";
-    ctx.fillRect(cx - 100 * this.scale, cy - 60 * this.scale, 60 * this.scale, 50 * this.scale);
-    ctx.fillRect(cx + 40 * this.scale, cy - 60 * this.scale, 60 * this.scale, 50 * this.scale);
+    const cardW = 65 * this.scale, cardH = 55 * this.scale;
+    const cardY = cy - 65 * this.scale;
     
-    ctx.font = `bold ${22 * this.scale}px Arial`; ctx.fillStyle = "rgba(255,255,255,0.2)";
-    ctx.textAlign = "center"; ctx.fillText("15", cx - 70 * this.scale, cy - 28 * this.scale);
-    ctx.fillText("3", cx + 70 * this.scale, cy - 28 * this.scale);
+    ctx.fillStyle = "#2196F3"; 
+    ctx.beginPath(); ctx.roundRect(cx - 95 * this.scale, cardY, cardW, cardH, 8 * this.scale); ctx.fill();
+    
+    ctx.fillStyle = "#FF9800"; 
+    ctx.beginPath(); ctx.roundRect(cx + 30 * this.scale, cardY, cardW, cardH, 8 * this.scale); ctx.fill();
+    
+    ctx.font = `bold ${22 * this.scale}px Arial`; ctx.fillStyle = "#FFFFFF";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("15", cx - 62.5 * this.scale, cardY + cardH / 2);
+    ctx.fillText("3", cx + 62.5 * this.scale, cardY + cardH / 2);
 
     const baseDrawingY = cy + 45 * this.scale;
-    const waveOffset = Math.sin(this._tutOrbT * 2) * 25 * this.scale;
+    const animPhase = (Math.sin(this._tutOrbT * 2.5) + 1) / 2;
 
     if (this._tutPage === 1) {
-      ctx.strokeStyle = "#00FFCC"; ctx.lineWidth = 6 * this.scale; ctx.lineCap = "round";
-      ctx.beginPath();
-      ctx.moveTo(cx - 50 * this.scale + waveOffset, baseDrawingY - 15 * this.scale);
-      ctx.lineTo(cx + waveOffset, baseDrawingY + 45 * this.scale);
-      ctx.lineTo(cx - 10 * this.scale + waveOffset, baseDrawingY - 20 * this.scale);
-      ctx.stroke();
+      const showCrocodile = Math.floor(this._tutOrbT * 0.8) % 2 === 0;
 
-      ctx.font = `bold ${12 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
-      ctx.fillText("Wide V = Bigger / Point = Smaller", cx, baseDrawingY + 75 * this.scale);
+      ctx.save();
+      ctx.strokeStyle = "#00FFCC"; 
+      ctx.lineWidth = 5 * this.scale; 
+      ctx.lineCap = "round";
+
+      if (showCrocodile) {
+        const wristX = cx - 20 * this.scale;
+        const wristY = baseDrawingY + 30 * this.scale;
+        const tipIndexX = cx - 75 * this.scale;
+        const tipIndexY = baseDrawingY - 15 * this.scale;
+        const tipThumbX = cx - 45 * this.scale;
+        const tipThumbY = baseDrawingY - 30 * this.scale;
+
+        ctx.beginPath();
+        ctx.moveTo(tipIndexX, tipIndexY);
+        ctx.lineTo(wristX, wristY);
+        ctx.lineTo(tipThumbX, tipThumbY);
+        ctx.stroke();
+
+        ctx.font = `bold ${12 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
+        ctx.fillText("Wide 'V' = Aim BIGGER", cx, baseDrawingY + 55 * this.scale);
+      } else {
+        const wristX = cx + 20 * this.scale;
+        const wristY = baseDrawingY + 30 * this.scale;
+        const tipIndexX = cx + 62.5 * this.scale;
+        const tipIndexY = baseDrawingY - 20 * this.scale;
+
+        ctx.beginPath();
+        ctx.moveTo(tipIndexX, tipIndexY);
+        ctx.lineTo(wristX, wristY);
+        ctx.stroke();
+
+        ctx.font = `bold ${12 * this.scale}px Arial`; ctx.fillStyle = "#FF9800";
+        ctx.fillText("Point Finger = Aim SMALLER", cx, baseDrawingY + 55 * this.scale);
+      }
+      ctx.restore();
+
     } else {
-      const barW = 160 * this.scale, barH = 8 * this.scale;
-      const bx = cx - barW / 2, by = baseDrawingY + 20 * this.scale;
-      const ratio = Math.abs(Math.sin(this._tutOrbT * 1.5));
+      const barW = 180 * this.scale, barH = 10 * this.scale;
+      const bx = cx - barW / 2, by = baseDrawingY - 15 * this.scale;
 
-      ctx.fillStyle = "rgba(0,0,0,0.4)"; ctx.fillRect(bx, by, barW, barH);
-      ctx.fillStyle = `hsl(${ratio * 40}, 100%, 50%)`; ctx.fillRect(bx, by, barW * ratio, barH);
+      ctx.fillStyle = "rgba(0,0,0,0.5)"; 
+      ctx.beginPath(); ctx.roundRect(bx, by, barW, barH, 4 * this.scale); ctx.fill();
+      ctx.fillStyle = `hsl(${animPhase * 50}, 100%, 50%)`; 
+      ctx.beginPath(); ctx.roundRect(bx, by, barW * animPhase, barH, 4 * this.scale); ctx.fill();
 
-      ctx.font = `bold ${14 * this.scale}px Arial`; ctx.fillStyle = "#FF6600";
-      ctx.fillText(`Combo x4 (Draining)`, cx, baseDrawingY + 5 * this.scale);
-      
-      ctx.fillStyle = "#00FF66"; ctx.fillRect(cx - 45 * this.scale, baseDrawingY - 10 * this.scale + waveOffset * 0.3, 6 * this.scale, 6 * this.scale);
-      ctx.fillStyle = "#FFD700"; ctx.fillRect(cx + 45 * this.scale, baseDrawingY - 15 * this.scale - waveOffset * 0.2, 5 * this.scale, 8 * this.scale);
+      ctx.font = `bold ${13 * this.scale}px Arial`; ctx.fillStyle = "#FFD700";
+      ctx.fillText(`🔥 Combo Multiplier x${Math.floor(animPhase * 4) + 1}`, cx, by - 12 * this.scale);
+
+      const holdBarW = 140 * this.scale, holdBarH = 8 * this.scale;
+      const holdBx = cx - holdBarW / 2, holdBy = baseDrawingY + 25 * this.scale;
+      const chargeRatio = (Math.sin(this._tutOrbT * 5) + 1) / 2;
+
+      ctx.fillStyle = "rgba(0,0,0,0.4)"; 
+      ctx.beginPath(); ctx.roundRect(holdBx, holdBy, holdBarW, holdBarH, 4 * this.scale); ctx.fill();
+      ctx.fillStyle = "#00FFCC"; 
+      ctx.beginPath(); ctx.roundRect(holdBx, holdBy, holdBarW * chargeRatio, holdBarH, 4 * this.scale); ctx.fill();
+
+      ctx.font = `${11 * this.scale}px Arial`; ctx.fillStyle = "#00FFCC";
+      ctx.fillText("🎯 1s Hold Timer (Confirming)", cx, holdBy + 20 * this.scale);
     }
   },
 
@@ -716,26 +735,35 @@ const Game3 = {
     ctx.fillText(line, x, y); ctx.restore();
   },
 
+  // ⚡ HANDLES EQUAL COMPARISON GESTURE IN CENTER
   checkPose(ctx, indexTip, thumbTip, wrist, dt) {
     const isSmallerNumberChallenge = this.targetPromptText.includes("SMALLER");
-    
-    if (!isSmallerNumberChallenge) {
-      const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
-      if (angle < 20) { this.resetHolds(dt); return; }
-      
-      const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
-      if (overlap < 0.5) { this.resetHolds(dt); return; }
-    }
+    const isEqualChallenge = this.currentRelation === "=";
 
     let targetDetected = "Center";
-    if (isSmallerNumberChallenge) {
-      const deadzone = 40 * this.scale;
+    const deadzone = 45 * this.scale;
+
+    if (isEqualChallenge) {
+      if (Math.abs(indexTip.x - this.centerX) < deadzone && Math.abs(wrist.x - this.centerX) < deadzone * 1.5) {
+        targetDetected = "=";
+      } else if (indexTip.x < this.centerX - deadzone) {
+        targetDetected = ">";
+      } else {
+        targetDetected = "<";
+      }
+    } else if (isSmallerNumberChallenge) {
       if (indexTip.x < this.centerX - deadzone) {
         targetDetected = ">";
       } else if (indexTip.x > this.centerX + deadzone) {
         targetDetected = "<";
       }
     } else {
+      const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
+      if (angle < 20) { this.resetHolds(dt); return; }
+      
+      const overlap = this.getHandOverlapRatio(indexTip, thumbTip, wrist);
+      if (overlap < 0.5) { this.resetHolds(dt); return; }
+
       const tipsX = (indexTip.x + thumbTip.x) / 2;
       const threshold = 30 * this.scale;
 
@@ -763,7 +791,7 @@ const Game3 = {
       this.gestureGraceTimer = 0; 
     }
 
-    if (this.detectedSymbol === "None" || this.detectedSymbol === "Center") {
+    if (this.detectedSymbol === "None" || (!isEqualChallenge && this.detectedSymbol === "Center")) {
       this.resetHolds(dt);
       return;
     }
@@ -917,6 +945,7 @@ const Game3 = {
     if (this.showTutorial) return; 
 
     const isSmallerNumberChallenge = this.targetPromptText.includes("SMALLER");
+    const isEqualChallenge = this.currentRelation === "=";
 
     let color = "#00FFCC"; 
 
@@ -929,7 +958,10 @@ const Game3 = {
     ctx.strokeStyle = color; ctx.lineWidth = 10 * this.scale; ctx.lineCap = "round";
     ctx.beginPath();
     
-    if (isSmallerNumberChallenge) {
+    if (isEqualChallenge) {
+      // Draw straight vertical bar for center equal hold
+      ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.stroke();
+    } else if (isSmallerNumberChallenge) {
       ctx.moveTo(indexTip.x, indexTip.y); ctx.lineTo(wrist.x, wrist.y); ctx.stroke();
     } else {
       const angle = this.calculateWristAngle(indexTip, thumbTip, wrist);
@@ -1131,7 +1163,6 @@ const Game3 = {
     return mag === 0 ? 0 : Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180 / Math.PI;
   },
 
-  
   getHandOverlapRatio(indexTip, thumbTip, wrist) {
     const margin = 100 * this.scale;
     const left = this.centerX - 200 * this.scale, right = this.centerX + 200 * this.scale;
