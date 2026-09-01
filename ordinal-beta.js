@@ -223,14 +223,20 @@ const Game9 = {
   },
 
   _onResize() {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     this._applyResize(window.innerWidth, window.innerHeight);
     this._buildDreamBackgroundCache();
     this._spriteCache = {};
     this.initStarfield();
     this.setupDoors();
     if (!this.numberPosition.picked) {
+      const playableH       = this.cssHeight - topbarH;
       this.numberPosition.x = this.CENTER_X;
-      this.numberPosition.y = this.CENTER_Y - 230 * this.scale;
+      this.numberPosition.y = topbarH + (playableH * 0.22);
     }
     if (this.gameState === "tutorial") this._initTutStars();
   },
@@ -565,11 +571,18 @@ const Game9 = {
   },
 
   setupDoors() {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     this.doors = [];
     const suffixes = ["st","nd","rd","th"];
     const startX   = this.cssWidth  * 0.2;
     const gap      = this.cssWidth  * 0.2;
-    const y        = this.cssHeight * 0.55;
+    const playableH = this.cssHeight - topbarH;
+    const y        = topbarH + (playableH * 0.55);
+
     for (let i = 0; i < 4; i++) {
       this.doors.push({ x: startX + i * gap, y, suffix: suffixes[i], label: suffixes[i] });
     }
@@ -578,17 +591,25 @@ const Game9 = {
   get doorRadius() { return this.DOOR_RADIUS * this.scale; },
 
   spawnNumber() {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     const num             = Math.floor(Math.random() * this.numberRange) + 1;
     this.currentNumber    = num;
     this.correctSuffix    = this.getSuffix(num);
     this.numberPosition.x = this.CENTER_X;
-    this.numberPosition.y = this.CENTER_Y - 230 * this.scale;
+    
+    // Position the floating number centrally in the vertical space between the topbar and the doors
+    const playableH       = this.cssHeight - topbarH;
+    this.numberPosition.y = topbarH + (playableH * 0.22);
+
     this.numberPosition.picked = false;
     this.mascot.carryingNumber = false;
     this.selectionLocked  = false;
     this.gameState_inner  = "pickup";
   },
-
   getSuffix(num) {
     const t = num % 100;
     if (t >= 11 && t <= 13) return "th";
@@ -856,9 +877,19 @@ const Game9 = {
   },
 
   showToast(text, color) {
-    // Spawn well above the floating number (which sits at CENTER_Y - 230*scale)
-    // so the two never overlap, and start below the top HUD row.
-    this.toast = { text, color: color || "#fff", timer: 1600, y: this.CENTER_Y - 310 * this.scale, alpha: 1 };
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
+    const playableH = this.cssHeight - topbarH;
+    this.toast = { 
+      text, 
+      color: color || "#fff", 
+      timer: 1600, 
+      y: topbarH + (playableH * 0.12), 
+      alpha: 1 
+    };
   },
   updateToast(delta) {
     if (this.toast.timer <= 0) return;
@@ -1149,9 +1180,14 @@ const Game9 = {
   },
 
   drawHUD(ctx) {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     const s = this.scale, W = this.cssWidth;
 
-    const sw=175*s, sh=54*s, sx=18*s, sy=16*s;
+    const sw=175*s, sh=54*s, sx=18*s, sy=topbarH + (16*s);
     ctx.fillStyle = "rgba(30,58,138,0.85)";
     this._rrect(ctx, sx, sy, sw, sh, 18*s); ctx.fill();
     ctx.fillStyle = "#FFD700";
@@ -1159,7 +1195,7 @@ const Game9 = {
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(`⭐ ${this.score}`, sx + sw/2, sy + sh/2);
 
-    const lw=150*s, lh=42*s, lx=W/2-lw/2, ly=16*s;
+    const lw=150*s, lh=42*s, lx=W/2-lw/2, ly=topbarH + (16*s);
     const pinging = this._levelPingActive;
     const pingT   = pinging ? this._levelPingTime / this._levelPingDuration : 1;
     const badgeScale = pinging ? 1 + Math.sin(pingT * Math.PI) * 0.18 : 1;
@@ -1181,7 +1217,7 @@ const Game9 = {
     ctx.restore();
 
     const hSz=32*s, hGap=8*s, totalHW=this.maxHearts*(hSz+hGap)-hGap;
-    const hx0=W-18*s-totalHW, hy0=18*s;
+    const hx0=W-18*s-totalHW, hy0=topbarH + (18*s);
     const shk = this.heartShakeTime > 0 ? Math.sin(this.heartShakeTime * 0.055) * 5 * s : 0;
     for (let i = 0; i < this.maxHearts; i++) {
       ctx.globalAlpha = i < this.hearts ? 1 : 0.22;

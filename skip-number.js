@@ -478,7 +478,7 @@ const Game1 = {
   currentOuterRadius: 1000,
   currentInnerRadius: 970,
   ringScale: 1.5,
-
+GLOBAL_SPEED_MULTIPLIER: 0.55,  
   /* ── Palette ────────────────────────────────────────────── */
   C: {
     bg:        "#0d1b2e",
@@ -615,7 +615,7 @@ const Game1 = {
 
   MAX_POP:  80,
   MAX_EXPL: 80,
-  maxNotesOnScreen: 6,
+  maxNotesOnScreen: 4,
 
   /* ── Listener guard ─────────────────────────────────────── */
   _listenersAttached: false,
@@ -748,6 +748,14 @@ _spawnAccumulator: 0,
   _noteFontCache: null,     // {key, font}
 
 
+
+  // Minimum angle between two notes spawned in the same tick,
+// so their straight-line paths to center don't overlap/crowd.
+MIN_SPAWN_ANGLE_SEPARATION: Math.PI / 3.2, // ~56°
+
+_lastSpawnAngle: 0,
+
+_recentSpawnAngles: [],
   /* ============================================================
       INIT
   ============================================================ */
@@ -755,6 +763,9 @@ _spawnAccumulator: 0,
    /* ============================================================
       INIT
   ============================================================ */
+  /* ============================================================
+   INIT
+============================================================ */
   init(modeKey = "default") {
     const rect = document.getElementById("container").getBoundingClientRect();
     this._applyResize(rect.width, rect.height);
@@ -777,7 +788,7 @@ _spawnAccumulator: 0,
     this.currentNumber = 1;
     this.xp = 0;
     this.level = 1;
-    this.levelThreshold = this._getCumulativeThreshold(this.level); // was _getLevelThreshold
+    this.levelThreshold = this._getCumulativeThreshold(this.level);
     this.tier = 0;
     this.levelUpActive = false;
     this.xpPopFlash = 0;
@@ -812,11 +823,8 @@ _spawnAccumulator: 0,
     this.overlayData = null;
     this.torusAngle = 0;
     this._spriteFrame = 0;
-    this.showSkillDebug = false; // Reset debug toggles across hard reboots
+    this.showSkillDebug = false;
 
-    // ── FIXED: use the actual chosen mode (not a hardcoded "default")
-    //    so _buildRoundPlan() below generates the correct type of plan
-    //    (pattern skip/collect vs. plain skip amount) right from the start. ──
     this.mode = modeKey || "default";
     this.skipAmount = this.getRandomSkip();
     this.gameTitle = "COLLECT MULTIPLES OF "+ this.skipAmount;
@@ -839,8 +847,6 @@ _spawnAccumulator: 0,
     this._tutNoFingerFrames = 0;
     this._syncDifficultyScalars();
 
-    // ── FIXED: this plan is now generated ONCE, using the correct mode,
-    //    and will be reused verbatim when the round actually starts. ──
     this.nextRoundPlan = this._buildRoundPlan();
 
     this._initTutStars();
@@ -858,10 +864,8 @@ _spawnAccumulator: 0,
         this._resizeTimer = setTimeout(() => this._onResize(), 300);
       });
 
-      // ── Unified Double Click / Double Tap Interaction Listener ──
       this._lastTapTime = 0;
       window.addEventListener("pointerdown", (e) => {
-        // Only allow freezing actions inside the live execution gameplay loop
         if (this.gameState !== "playing") return;
         
         const now = performance.now();
@@ -899,14 +903,27 @@ _spawnAccumulator: 0,
           return;
         }
 
-        // ── KEY 3 Toggles Interactive UI Skill Point Overlay Debug Display ──
+        // Key 3: Toggle Debug Skill UI
         if (e.key === "3") {
           this.showSkillDebug = !this.showSkillDebug;
           return;
         }
         
+        // Key 4: Get and set skill points required for Level - 1
+        if (e.key === "4") {
+          const targetLevel = Math.max(0, this.level - 1);
+          const pointsNeeded = this._getCumulativeThreshold(targetLevel);
+
+          console.log(`[DEBUG Key 4] Current Level: ${this.level} | Points needed for Level ${targetLevel}: ${pointsNeeded}`);
+
+          if (this.gameState === "playing") {
+            // Set running skill points directly and update system XP
+            this._adjustSkill(pointsNeeded - this.skillPoints);
+          }
+          return;
+        }
+
         if (e.key === "5") this._setMode("orb");
-        if (e.key === "4") this._setMode("triple");
       });
     }
   },
@@ -935,21 +952,28 @@ _spawnAccumulator: 0,
   },
 
   _applyResize(width, height) {
+    // Read the top bar height published by topbar.js (defaulting to 50px if not ready)
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
+    const playableHeight = height - topbarH;
     this.centerX = width / 2;
-    this.centerY = height / 2;
-    const base = Math.min(width, height);
+    // Center the ring within the remaining space below the bar
+    this.centerY = topbarH + (playableHeight / 2);
+
+    // Scale outer radius based on available playable area
+    const base = Math.min(width, playableHeight);
     this.baseOuterRadius    = base * 0.25 * this.ringScale;
     this.baseInnerRadius    = this.baseOuterRadius * 0.8;
     this.currentOuterRadius = this.baseOuterRadius;
     this.currentInnerRadius = this.baseInnerRadius;
     const levelBoost = 1 + Math.min(0.55, Math.max(0, (this.level || 1) - 1) * 0.08);
-    this.speedCap = this.baseOuterRadius * 0.25 * levelBoost;
+    this.speedCap = this.baseOuterRadius * 0.25 * levelBoost * this.GLOBAL_SPEED_MULTIPLIER;
     this.speedMin = this.speedCap * 0.15;
     if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
     this.launcherSafeRadius = this.baseOuterRadius * 0.45;
-    // Background gradient key changes with size, so it'll rebuild lazily.
-    // Note glow/body sprites are keyed by radius already, so no explicit
-    // invalidation is required here — new radii just get their own cache entry.
   },
 
    /* ── Mode switching ─────────────────────────────────────── */
@@ -1141,31 +1165,32 @@ const gameplayByMode = {
     { icon: "🎯", text: "Numbers fly from the ring toward the center." },
     { icon: "✅", text: `Collect multiples of ${previewSkip} this round (changes each round!)` },
     { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
-    { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone:Center doesn't count — nothing to collect there" },
   ],
   pattern: [
     { icon: "🎶", text: "Numbers cycle: skip a set, then collect a set." },
     { icon: "🧠", text: `Skip ${previewSkip}, collect ${previewCollect} this round (changes each round!)` },
     { icon: "💍", text: "Tap numbers inside the ring before they escape!" },
-    { icon: "🛡️", text: "Safe Zone: Center is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone:Center doesn't count — nothing to collect there." },
+
   ],
   cannon: [
     { icon: "💥", text: "The cannon fires numbers straight across the screen." },
     { icon: "✅", text: `Touch multiples of ${previewSkip} this round (changes each round!)` },
     { icon: "🚀", text: "Numbers travel in one direction until they escape." },
-    { icon: "🛡️", text: "Safe Zone: Right by the cannon is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone: Right by the cannon doesn't count yet." },
   ],
   orb: [
     { icon: "🌀", text: "A spinning orb launches numbers outward." },
     { icon: "✅", text: `Catch multiples of ${previewSkip} this round (changes each round!)` },
     { icon: "💜", text: "The orb turns to aim — watch closely." },
-    { icon: "🛡️", text: "Safe Zone: Right by the orb is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone: Right by the orb doesn't count yet." },
   ],
   triple: [
     { icon: "🔴", text: "THREE cannons fire in random order." },
     { icon: "👀", text: "A gold glow shows which cannon fires next." },
     { icon: "✅", text: `Intercept multiples of ${previewSkip} this round (changes each round!)` },
-    { icon: "🛡️", text: "Safe Zone: Right by the cannons is safe! No tapping here. ⭕" },
+    { icon: "🚫", text: "No-Tap Zone: Right by the cannons doesn't count yet." },
   ],
 };
 
@@ -1690,37 +1715,88 @@ _getCumulativeThreshold(level) {
 },
 
   _getSpawnIntervalForLevel() {
-  const baseMap = { default: 1800, pattern: 2800, cannon: 1800, orb: 1800, triple: 1800 };
-  const minMap  = { default: 900,  pattern: 1400, cannon: 900,  orb: 900,  triple: 900 };
-  const base = baseMap[this.mode] || 1800;
-  const min  = minMap[this.mode] || 900;
+  const baseMap = { default: 1600, pattern: 1700, cannon: 1600, orb: 1600, triple: 1600 };
+  const minMap  = { default: 900,  pattern: 1000, cannon: 900,  orb: 900,  triple: 900 };
+  const base = (baseMap[this.mode] || 1400) / this.GLOBAL_SPEED_MULTIPLIER;
+  const min  = (minMap[this.mode] || 600) / this.GLOBAL_SPEED_MULTIPLIER;
   const drop = (this.level - 1) * (this.mode === "pattern" ? 90 : 80);
   return Math.max(min, base - drop);
 },
 
-  _syncDifficultyScalars() {
-  // Ramps speed baseline significantly higher on each successive level up
-  const speedMultiplier = 1 + Math.min(1.9, Math.max(0, this.level - 1) * 0.22); 
-  this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier;
-  this.speedMin = this.speedCap * 0.15;
+//   _syncDifficultyScalars() {
+//   // Ramps speed baseline significantly higher on each successive level up
+//   const speedMultiplier = 1 + Math.min(1.9, Math.max(0, this.level - 1) * 0.22); 
+//   this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier * this.GLOBAL_SPEED_MULTIPLIER;
+//   this.speedMin = this.speedCap * 0.15;
   
-  // Protection zone size calculation: 2.5x the size of the flying numbers
-  const noteRadius = this.baseOuterRadius * 0.12;
-  this.launcherSafeRadius = noteRadius * 2.5; 
+//   // Protection zone size calculation: 2.5x the size of the flying numbers
+//   const noteRadius = this.baseOuterRadius * 0.12;
+//   this.launcherSafeRadius = noteRadius * 2.5; 
   
-  // ── FIXED: cumulative threshold instead of per-level absolute.
-  //    xp mirrors the real running skillPoints total — no forced reset,
-  //    since progress is continuous across level-ups now. ──
-  this.levelThreshold = this._getCumulativeThreshold(this.level);
-  this.xpToNext = this.levelThreshold;
-  this.xp = this.skillPoints;
-  if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
-},
+//   // ── FIXED: cumulative threshold instead of per-level absolute.
+//   //    xp mirrors the real running skillPoints total — no forced reset,
+//   //    since progress is continuous across level-ups now. ──
+//   this.levelThreshold = this._getCumulativeThreshold(this.level);
+//   this.xpToNext = this.levelThreshold;
+//   this.xp = this.skillPoints;
+//   if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
+// },
 
+
+_syncDifficultyScalars() {
+    // Set max notes on screen to 5 as soon as skipAmount reaches 5 (or higher)
+    if (this.skipAmount >= 5) {
+      this.maxNotesOnScreen = 5;
+    } else {
+      this.maxNotesOnScreen = 4;
+    }
+
+    // Ramps speed baseline significantly higher on each successive level up
+    const speedMultiplier = 1 + Math.min(1.9, Math.max(0, this.level - 1) * 0.22); 
+    this.speedCap = this.baseOuterRadius * 0.25 * speedMultiplier * this.GLOBAL_SPEED_MULTIPLIER;
+    this.speedMin = this.speedCap * 0.15;
+    
+    // Protection zone size calculation: 2.5x the size of the flying numbers
+    const noteRadius = this.baseOuterRadius * 0.12;
+    this.launcherSafeRadius = noteRadius * 2.5; 
+    
+    this.levelThreshold = this._getCumulativeThreshold(this.level);
+    this.xpToNext = this.levelThreshold;
+    this.xp = this.skillPoints;
+    if (!this.noteSpeed || this.noteSpeed > this.speedCap) this.noteSpeed = this.speedCap;
+  },
+
+  // _buildRoundPlan() {
+  //   if (this.mode === "pattern") {
+  //     const skip = this.getRandomSkip();
+  //     const collect = Math.floor(Math.random() * 4) + 1;
+  //     return {
+  //       mode: "pattern",
+  //       skip,
+  //       collect,
+  //       title: `SKIP ${skip} COLLECT ${collect}`,
+  //       label: `Skip ${skip}, collect ${collect}`,
+  //     };
+  //   }
+
+  //   const skip = this.getRandomSkip();
+  //   return {
+  //     mode: this.mode,
+  //     skip,
+  //     collect: 0,
+  //     title: `COLLECT MULTIPLES OF ${skip}`,
+  //     label: `Collect multiples of ${skip}`,
+  //   };
+  // },
 
   _buildRoundPlan() {
+    // If a level up is pending/qualified, compute skip for the next level
+    const targetLevel = (this.skillPoints >= this.levelThreshold && this.level < this.maxLevel)
+      ? this.level + 1
+      : this.level;
+
     if (this.mode === "pattern") {
-      const skip = this.getRandomSkip();
+      const skip = this.getRandomSkip(targetLevel);
       const collect = Math.floor(Math.random() * 4) + 1;
       return {
         mode: "pattern",
@@ -1731,7 +1807,7 @@ _getCumulativeThreshold(level) {
       };
     }
 
-    const skip = this.getRandomSkip();
+    const skip = this.getRandomSkip(targetLevel);
     return {
       mode: this.mode,
       skip,
@@ -1798,6 +1874,7 @@ _getCumulativeThreshold(level) {
   this._instantLevelUpFired = false;
   this._instantBurstActive = false;
   this._instantBurstT = 0;
+  this._recentSpawnAngles = [];
   if (this.mode === "triple" && (!this.tripleCannons || this.tripleCannons.length === 0)) {
       this.tripleCannons = [
           { offset: 0 },
@@ -2440,59 +2517,65 @@ _drawXPRing(ctx, cx, cy, radius) {
  _drawHUD(ctx, isLauncher) {
     const W = this.centerX * 2, H = this.centerY * 2;
     const f = "bold 20px 'Trebuchet MS', sans-serif";
+    
+    // Read live top bar height to offset HUD top elements
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+    const topY = topbarH + 10;
+
     if (isLauncher) {
       ctx.fillStyle = this.C.hudBg;
-      ctx.fillRect(0, 0, W, 50);
+      ctx.fillRect(0, topbarH, W, 50);
       ctx.strokeStyle = this.C.hudBorder;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(0,50);
-      ctx.lineTo(W,50);
+      ctx.moveTo(0, topbarH + 50);
+      ctx.lineTo(W, topbarH + 50);
       ctx.stroke();
       ctx.font = f;
       ctx.textBaseline = "middle";
       ctx.fillStyle = "#e8f4ff";
       ctx.textAlign = "left";
-      ctx.fillText("⭐ "+this.score, 16, 25);
+      ctx.fillText("⭐ "+this.score, 16, topbarH + 25);
       ctx.fillStyle = this.C.gold;
       ctx.textAlign = "center";
       ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
-      ctx.fillText(this.gameTitle, W/2, 25);
+      ctx.fillText(this.gameTitle, W/2, topbarH + 25);
       
       ctx.textAlign = "right";
       ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
       ctx.font = "bold 17px 'Trebuchet MS', sans-serif";
       
       if (this.showSkillDebug) {
-        // Shift baseline slightly upwards to make clean visual space for fractional text
-        ctx.fillText("x"+this.combo+" combo", W-16, 18);
+        ctx.fillText("x"+this.combo+" combo", W-16, topbarH + 18);
         ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
         ctx.fillStyle = this.tierColors[this.tier];
-        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-16, 36);
+        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-16, topbarH + 36);
       } else {
-        ctx.fillText("x"+this.combo+" combo", W-16, 25);
+        ctx.fillText("x"+this.combo+" combo", W-16, topbarH + 25);
       }
     } else {
-      this._pill(ctx, 14, 14, 155, 42);
+      this._pill(ctx, 14, topY, 155, 42);
       ctx.font = f;
       ctx.fillStyle = "#e8f4ff";
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
-      ctx.fillText("⭐ "+this.score, 28, 35);
+      ctx.fillText("⭐ "+this.score, 28, topY + 21);
       
-      // Dynamic scaling panel framework adjustments based on UI diagnostics layout switches
       const pillHeight = this.showSkillDebug ? 56 : 42;
-      this._pill(ctx, W-174, 14, 160, pillHeight);
+      this._pill(ctx, W-174, topY, 160, pillHeight);
       ctx.textAlign = "right";
       ctx.fillStyle = this.combo >= 3 ? this.C.correct : "#aac8e0";
       
       if (this.showSkillDebug) {
-        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, 30);
+        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, topY + 16);
         ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
         ctx.fillStyle = this.tierColors[this.tier];
-        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-28, 50);
+        ctx.fillText(`${this.skillPoints}/${this.levelThreshold}`, W-28, topY + 36);
       } else {
-        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, 35);
+        ctx.fillText("🔥 "+this.combo+"  x"+this.multiplier, W-28, topY + 21);
       }
       
       ctx.textAlign = "center";
@@ -2501,9 +2584,10 @@ _drawXPRing(ctx, cx, cy, radius) {
       ctx.font = "bold 26px 'Trebuchet MS', sans-serif";
       ctx.shadowColor = "rgba(245,200,66,0.4)";
       ctx.shadowBlur = 14;
-      ctx.fillText(this.gameTitle, W/2, 34);
+      ctx.fillText(this.gameTitle, W/2, topY + 20);
       ctx.shadowBlur = 0;
     }
+
     this._drawTimeBar(ctx, isLauncher);
     const ringCX = W/2, ringCY = isLauncher ? H-60 : H-48, ringR = 26;
     this._drawXPRing(ctx, ringCX, ringCY, ringR);
@@ -2544,14 +2628,21 @@ _bumpTimeCeiling() {
     const pct = this.timeLimit > 0 ? Math.max(0, Math.min(1, this.timeRemaining / this.timeLimit)) : 0;
     const barW = Math.min(W * 0.52, 380);
     const barH = 12;
+    
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
     const x = W / 2 - barW / 2;
-    const y = isLauncher ? 58 : 58;
+    const y = isLauncher ? topbarH + 58 : topbarH + 58;
+
     ctx.save();
     ctx.font = "bold 12px 'Trebuchet MS', sans-serif";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillStyle = "rgba(240,244,255,0.8)";
-    ctx.fillText(`Time ${Math.ceil(this.timeRemaining)}s`, (W / 2) +220, y +7);
+    ctx.fillText(`Time ${Math.ceil(this.timeRemaining)}s`, (W / 2) + 220, y + 7);
     ctx.fillStyle = "rgba(8,18,36,0.76)";
     ctx.beginPath();
     ctx.roundRect(x-4, y, barW, barH, 6);
@@ -2982,114 +3073,230 @@ _hexToRgb(hex) {
   /* ============================================================
      MAIN UPDATE
   ============================================================ */
+// /* ============================================================
+//      MAIN UPDATE
+//   ============================================================ */
+//   update(ctx, fingers, dt = 1/60) {
+//   // ── WAS: dt = Math.min(dt, 1 / 20) — i.e. hard-capped at 50ms no
+//   //    matter what main.js passed in. That silently re-imposed the
+//   //    exact same "lost time" bug we just fixed in main.js's gameLoop,
+//   //    since this clamp runs before timeRemaining/tutorial-hold ever
+//   //    see dt. Raised to match the 0.25s ceiling used in main.js for
+//   //    Game1, so real elapsed time on slower/Android devices survives
+//   //    all the way through to the timer and tutorial countdown. ──
+//   dt = Math.min(dt, 0.25);
+
+//   if (this.gameState === "tutorial") {
+//     this._updateTutorial(ctx, fingers, dt);
+//     return;
+//   }
+
+//   if (this.gameState === "loading") return;
+
+//   if (this.gameState === "roundBreak")     { this._drawRoundBreakScreen(ctx, fingers, dt); return; }
+//   if (this.gameState === "levelCongrats")  { this._drawLevelCongratsScreen(ctx, fingers, dt); return; }
+//   if (this.gameState === "levelExplain")   { this._drawLevelExplainScreen(ctx, fingers, dt); return; }
+//   if (this.gameState === "gameOver")       { this._drawGameOverScreen(ctx, fingers, dt); return; }
+
+//   this._noHandDuration = 0;
+//   this._hidePauseButton();
+
+//   this._drawBg(ctx);
+//   this._drawBgStars(ctx);
+//   this._updateLevelUp(dt);
+//   this.noiseTime += dt * 1.8;
+//   this._driftSpeed(dt);
+//   const progressNow = this._computeProgressPercent(false);
+//   const assistDrain = progressNow >= 72 ? 0.55 : 1;
+//   this.timeRemaining = Math.max(0, this.timeRemaining - (dt * assistDrain));
+//   // Pass the value computed above instead of recomputing it — skillPoints/
+//   // level can't have changed in between (only timeRemaining did).
+//   this._maybeGrantAssistTime(progressNow);
+//   if (this.timeRemaining <= 0) {
+//     this._enterGameOver();
+//     this._drawGameOverScreen(ctx, fingers, dt);
+//     return;
+//   }
+
+//   // ── roundWrapPending now covers TWO cases: the normal end-of-round
+//   //    wrap (100 numbers cycled) AND an instant level-up burst
+//   //    (threshold crossed mid-round). Both stop spawning via
+//   //    _updateSpawning()'s roundWrapPending guard. ──
+//   if (this.roundWrapPending) {
+//     this._drawBg(ctx);
+//     this._drawBgStars(ctx);
+
+//     if (this._instantBurstActive) {
+//       this._instantBurstT += dt;
+//       this._drawInstantLevelFlash(ctx, this._instantBurstT / this._instantBurstDuration);
+//       if (this._instantBurstT >= this._instantBurstDuration) {
+//         this._instantBurstActive = false;
+//         this._resolveRoundEnd();
+//         return;
+//       }
+//       return;
+//     }
+
+//     this.roundWrapDelay -= dt;
+//     if (this.roundWrapDelay <= 0) {
+//       this._resolveRoundEnd();
+//       return;
+//     }
+//     return;
+//   }
+
+//   this._updateSpawning(dt);
+
+//   const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
+//   if (!isLauncher) this.drawRings(ctx, dt);
+
+//   if      (this.mode === "cannon") { this.updateCannonNotes(ctx, dt); this.drawCannon(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
+//   else if (this.mode === "orb")    { this.updateCannonNotes(ctx, dt); this.drawOrbLauncher(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
+//   else if (this.mode === "triple") { this.updateCannonNotes(ctx, dt); this.drawTripleCannons(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); }
+//   else                             { this.drawNotes(ctx, dt); }
+
+//   if (this.mode === "triple" && this.previewTimer > 0) {
+//     this.previewTimer -= dt;
+//     if (this.previewTimer <= 0) this.executeTripleShot();
+//   }
+
+//   this.drawPopEffects(ctx);
+
+//   // ── OPTIMIZED: plain for-loop instead of .forEach() — forEach allocates
+//   //    a new closure/callback invocation context every single frame. ──
+//   for (let i = 0; i < fingers.length; i++) {
+//     this.drawFinger(ctx, fingers[i].x, fingers[i].y);
+//   }
+
+//   const now = performance.now();
+//   if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
+//     this._lastFingerUpdateTime = now;
+//     for (let i = 0; i < fingers.length; i++) {
+//       const finger = fingers[i];
+//       if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
+//       else            this.checkCollision(finger.x, finger.y);
+//     }
+//   }
+
+//   // ── NEW: check AFTER collisions/misses this frame so skillPoints is
+//   //    fully up to date. If threshold just got crossed, this sets
+//   //    roundWrapPending + starts the burst — next frame's early branch
+//   //    above takes over immediately. ──
+//   this._checkInstantLevelUp();
+
+//   this._drawHUD(ctx, isLauncher);
+//   this._drawLevelUpBurst(ctx);
+//   this._drawHintChangeAnnouncement(ctx, dt);
+//   this.drawHitText(ctx);
+//   this._drawNoFingerPrompt(ctx, dt);
+// },
+
+/* ============================================================
+     MAIN UPDATE
+  ============================================================ */
   update(ctx, fingers, dt = 1/60) {
-  dt = Math.min(dt, 1 / 20);
+    // Clamp delta time to 0.25s max to prevent lost time bugs on performance hitches
+    dt = Math.min(dt, 0.25);
 
-  if (this.gameState === "tutorial") {
-    this._updateTutorial(ctx, fingers, dt);
-    return;
-  }
+    if (this.gameState === "tutorial") {
+      this._updateTutorial(ctx, fingers, dt);
+      return;
+    }
 
-  if (this.gameState === "loading") return;
+    if (this.gameState === "loading") return;
 
-  if (this.gameState === "roundBreak")     { this._drawRoundBreakScreen(ctx, fingers, dt); return; }
-  if (this.gameState === "levelCongrats")  { this._drawLevelCongratsScreen(ctx, fingers, dt); return; }
-  if (this.gameState === "levelExplain")   { this._drawLevelExplainScreen(ctx, fingers, dt); return; }
-  if (this.gameState === "gameOver")       { this._drawGameOverScreen(ctx, fingers, dt); return; }
+    if (this.gameState === "roundBreak")     { this._drawRoundBreakScreen(ctx, fingers, dt); return; }
+    if (this.gameState === "levelCongrats")  { this._drawLevelCongratsScreen(ctx, fingers, dt); return; }
+    if (this.gameState === "levelExplain")   { this._drawLevelExplainScreen(ctx, fingers, dt); return; }
+    if (this.gameState === "gameOver")       { this._drawGameOverScreen(ctx, fingers, dt); return; }
 
-  this._noHandDuration = 0;
-  this._hidePauseButton();
+    this._noHandDuration = 0;
+    this._hidePauseButton();
 
-  this._drawBg(ctx);
-  this._drawBgStars(ctx);
-  this._updateLevelUp(dt);
-  this.noiseTime += dt * 1.8;
-  this._driftSpeed(dt);
-  const progressNow = this._computeProgressPercent(false);
-  const assistDrain = progressNow >= 72 ? 0.55 : 1;
-  this.timeRemaining = Math.max(0, this.timeRemaining - (dt * assistDrain));
-  // Pass the value computed above instead of recomputing it — skillPoints/
-  // level can't have changed in between (only timeRemaining did).
-  this._maybeGrantAssistTime(progressNow);
-  if (this.timeRemaining <= 0) {
-    this._enterGameOver();
-    this._drawGameOverScreen(ctx, fingers, dt);
-    return;
-  }
-
-  // ── roundWrapPending now covers TWO cases: the normal end-of-round
-  //    wrap (100 numbers cycled) AND an instant level-up burst
-  //    (threshold crossed mid-round). Both stop spawning via
-  //    _updateSpawning()'s roundWrapPending guard. ──
-  if (this.roundWrapPending) {
     this._drawBg(ctx);
     this._drawBgStars(ctx);
+    this._updateLevelUp(dt);
+    this.noiseTime += dt * 1.8;
+    this._driftSpeed(dt);
 
-    if (this._instantBurstActive) {
-      this._instantBurstT += dt;
-      this._drawInstantLevelFlash(ctx, this._instantBurstT / this._instantBurstDuration);
-      if (this._instantBurstT >= this._instantBurstDuration) {
-        this._instantBurstActive = false;
+    const progressNow = this._computeProgressPercent(false);
+    const assistDrain = progressNow >= 72 ? 0.55 : 1;
+    this.timeRemaining = Math.max(0, this.timeRemaining - (dt * assistDrain));
+    
+    this._maybeGrantAssistTime(progressNow);
+    if (this.timeRemaining <= 0) {
+      this._enterGameOver();
+      this._drawGameOverScreen(ctx, fingers, dt);
+      return;
+    }
+
+    // Handles end-of-round delay and instant level-up celebratory bursts
+    if (this.roundWrapPending) {
+      this._drawBg(ctx);
+      this._drawBgStars(ctx);
+
+      if (this._instantBurstActive) {
+        this._instantBurstT += dt;
+        this._drawInstantLevelFlash(ctx, this._instantBurstT / this._instantBurstDuration);
+        if (this._instantBurstT >= this._instantBurstDuration) {
+          this._instantBurstActive = false;
+          this._resolveRoundEnd();
+          return;
+        }
+        return;
+      }
+
+      this.roundWrapDelay -= dt;
+      if (this.roundWrapDelay <= 0) {
         this._resolveRoundEnd();
         return;
       }
       return;
     }
 
-    this.roundWrapDelay -= dt;
-    if (this.roundWrapDelay <= 0) {
-      this._resolveRoundEnd();
-      return;
+    this._updateSpawning(dt);
+
+    const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
+    if (!isLauncher) this.drawRings(ctx, dt);
+
+    if      (this.mode === "cannon") { this.updateCannonNotes(ctx, dt); this.drawCannon(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
+    else if (this.mode === "orb")    { this.updateCannonNotes(ctx, dt); this.drawOrbLauncher(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
+    else if (this.mode === "triple") { this.updateCannonNotes(ctx, dt); this.drawTripleCannons(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); }
+    else                             { this.drawNotes(ctx, dt); }
+
+    if (this.mode === "triple" && this.previewTimer > 0) {
+      this.previewTimer -= dt;
+      if (this.previewTimer <= 0) this.executeTripleShot();
     }
-    return;
-  }
 
-  this._updateSpawning(dt);
+    this.drawPopEffects(ctx);
 
-  const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
-  if (!isLauncher) this.drawRings(ctx, dt);
+    // ── Touch input processing capped to a maximum of 2 index fingers ──
+    const activeFingers = fingers.slice(0, 2);
 
-  if      (this.mode === "cannon") { this.updateCannonNotes(ctx, dt); this.drawCannon(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
-  else if (this.mode === "orb")    { this.updateCannonNotes(ctx, dt); this.drawOrbLauncher(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); this.drawCharging(ctx); this.updateCharging(dt); }
-  else if (this.mode === "triple") { this.updateCannonNotes(ctx, dt); this.drawTripleCannons(ctx, dt); this.drawExplosions(ctx); this.drawLauncherZone(ctx); }
-  else                             { this.drawNotes(ctx, dt); }
-
-  if (this.mode === "triple" && this.previewTimer > 0) {
-    this.previewTimer -= dt;
-    if (this.previewTimer <= 0) this.executeTripleShot();
-  }
-
-  this.drawPopEffects(ctx);
-
-  // ── OPTIMIZED: plain for-loop instead of .forEach() — forEach allocates
-  //    a new closure/callback invocation context every single frame. ──
-  for (let i = 0; i < fingers.length; i++) {
-    this.drawFinger(ctx, fingers[i].x, fingers[i].y);
-  }
-
-  const now = performance.now();
-  if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
-    this._lastFingerUpdateTime = now;
-    for (let i = 0; i < fingers.length; i++) {
-      const finger = fingers[i];
-      if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
-      else            this.checkCollision(finger.x, finger.y);
+    for (let i = 0; i < activeFingers.length; i++) {
+      this.drawFinger(ctx, activeFingers[i].x, activeFingers[i].y);
     }
-  }
 
-  // ── NEW: check AFTER collisions/misses this frame so skillPoints is
-  //    fully up to date. If threshold just got crossed, this sets
-  //    roundWrapPending + starts the burst — next frame's early branch
-  //    above takes over immediately. ──
-  this._checkInstantLevelUp();
+    const now = performance.now();
+    if (now - this._lastFingerUpdateTime >= this.FINGER_UPDATE_INTERVAL) {
+      this._lastFingerUpdateTime = now;
+      for (let i = 0; i < activeFingers.length; i++) {
+        const finger = activeFingers[i];
+        if (isLauncher) this.checkCannonCollision(finger.x, finger.y);
+        else            this.checkCollision(finger.x, finger.y);
+      }
+    }
 
-  this._drawHUD(ctx, isLauncher);
-  this._drawLevelUpBurst(ctx);
-  this._drawHintChangeAnnouncement(ctx, dt);
-  this.drawHitText(ctx);
-  this._drawNoFingerPrompt(ctx, dt);
-},
+    // Check if skill points reached the target threshold for mid-round level completion
+    this._checkInstantLevelUp();
 
+    this._drawHUD(ctx, isLauncher);
+    this._drawLevelUpBurst(ctx);
+    this._drawHintChangeAnnouncement(ctx, dt);
+    this.drawHitText(ctx);
+    this._drawNoFingerPrompt(ctx, dt);
+  },
   /* ── Finger ─────────────────────────────────────────────── */
   drawFinger(ctx, x, y) {
     ctx.shadowColor = "rgba(126,207,179,0.55)";
@@ -3243,26 +3450,76 @@ _hexToRgb(hex) {
   },
 
   /* ── Notes ───────────────────────────────────────────────── */
-  spawnNote() {
-    if (this.notes.length >= this.maxNotesOnScreen) return;
-    if (this.roundWrapPending || this.gameState !== "playing") return;
-    
-    // GUARD: If 100 has already been spawned, stop producing new notes entirely
-    if (this.currentNumber > this.maxNumber) return;
+/* ── Ring mode note spawner — spawns 2 per interval instead of 1.
+   Rolling-window separation check:
+     • Note A (1st of this batch) only avoids the LAST note spawned
+       before this batch (i.e. the previous batch's most recent note).
+     • Note B (2nd of this batch) avoids Note A (this batch), NOT the
+       older previous-batch note — so B is free to spawn near where
+       last batch's notes were, keeping things collectible.
+   After spawning, _recentSpawnAngles is replaced (not appended) with
+   just this batch's angles, so the NEXT batch only ever checks
+   against what was "just before it". ── */
+spawnNote() {
+  if (this.roundWrapPending || this.gameState !== "playing") return;
+  if (this.currentNumber > this.maxNumber) return;
 
-    const angle = Math.random() * Math.PI * 2;
-    const minR  = this.currentOuterRadius + 150, maxR = this.currentOuterRadius + 210;
+  const notesToSpawn = 2;
+  const minSep = this.MIN_SPAWN_ANGLE_SEPARATION;
+
+  // The only angle this batch needs to avoid initially is the most
+  // recent angle from the PREVIOUS batch (rolling — one batch back).
+  const priorAngle = this._recentSpawnAngles.length > 0
+    ? this._recentSpawnAngles[this._recentSpawnAngles.length - 1]
+    : null;
+
+  const thisBatchAngles = [];
+
+  for (let i = 0; i < notesToSpawn; i++) {
+    if (this.notes.length >= this.maxNotesOnScreen) break;
+    if (this.currentNumber > this.maxNumber) break;
+
+    let angle;
+    if (i === 0) {
+      // Note A: avoid only the previous batch's last angle (if any)
+      if (priorAngle !== null) {
+        const span = Math.PI * 2 - minSep * 2;
+        angle = priorAngle + minSep + Math.random() * span;
+      } else {
+        angle = Math.random() * Math.PI * 2;
+      }
+    } else {
+      // Note B: avoid only Note A from THIS batch — free to land
+      // anywhere relative to the older previous-batch angle.
+      const prev = thisBatchAngles[i - 1];
+      const span = Math.PI * 2 - minSep * 2;
+      angle = prev + minSep + Math.random() * span;
+    }
+
+    thisBatchAngles.push(angle);
+
+    const radiusJitter = i * 18;
+    const minR = this.currentOuterRadius + 150 + radiusJitter;
+    const maxR = this.currentOuterRadius + 210 + radiusJitter;
     const spawnR = Math.random() * (maxR - minR) + minR;
+
     const num = this.currentNumber++;
 
-    this.notes.push({ 
-      x: this.centerX + Math.cos(angle)*spawnR, 
-      y: this.centerY + Math.sin(angle)*spawnR, 
-      radius: this.baseOuterRadius*0.12, 
-      value: num, 
-      id: num 
+    this.notes.push({
+      x: this.centerX + Math.cos(angle) * spawnR,
+      y: this.centerY + Math.sin(angle) * spawnR,
+      radius: this.baseOuterRadius * 0.12,
+      value: num,
+      id: num
     });
-  },
+  }
+
+  // Replace (not append) — only this batch's angles matter for
+  // the NEXT batch's rolling check.
+  if (thisBatchAngles.length > 0) {
+    this._recentSpawnAngles = thisBatchAngles;
+  }
+},
   drawNotes(ctx, dt) {
   const isLauncher = (this.mode === "cannon" || this.mode === "orb" || this.mode === "triple");
   if (!isLauncher) {
@@ -4309,45 +4566,57 @@ spawnTripleNote() {
  recentSkips: [], // Tracks recently used target numbers
 
 
- _getSkipPoolForLevel(level = this.level) {
-    if (level <= 5) {
-      return [2, 3, 4, 5];
-    } else if (level <= 10) {
-      return [4, 5, 6, 7, 8];
-    } else if (level <= 15) {
-      return [6, 7, 8, 9, 10, 11];
-    } else {
-      // Scales dynamically for Level 16+: drops lower numbers and adds higher ones
-      const tierIndex = Math.floor((level - 1) / 5); // 3 for Lv 16-20, 4 for Lv 21-25, etc.
-      const minNum = 2 + (tierIndex * 2);
-      const maxNum = minNum + 5;
+//  _getSkipPoolForLevel(level = this.level) {
+//     if (level <= 5) {
+//       return [2, 3, 4, 5];
+//     } else if (level <= 10) {
+//       return [4, 5, 6, 7, 8];
+//     } else if (level <= 15) {
+//       return [6, 7, 8, 9, 10, 11];
+//     } else {
+//       // Scales dynamically for Level 16+: drops lower numbers and adds higher ones
+//       const tierIndex = Math.floor((level - 1) / 5); // 3 for Lv 16-20, 4 for Lv 21-25, etc.
+//       const minNum = 2 + (tierIndex * 2);
+//       const maxNum = minNum + 5;
       
-      const pool = [];
-      for (let n = minNum; n <= maxNum; n++) {
-        pool.push(n);
-      }
-      return pool;
-    }
+//       const pool = [];
+//       for (let n = minNum; n <= maxNum; n++) {
+//         pool.push(n);
+//       }
+//       return pool;
+//     }
+//   },
+
+_getSkipPoolForLevel(level = this.level) {
+    // Level 1 = 2, Level 2 = 3, Level 3 = 4, Level 4 = 5, etc.
+    const targetMultiplier = level + 1;
+    return [targetMultiplier];
   },
 
 
-  getRandomSkip() {
-    const basePool = this._getSkipPoolForLevel(this.level || 1);
+  // getRandomSkip() {
+  //   const basePool = this._getSkipPoolForLevel(this.level || 1);
     
-    // Filter out numbers used in the last 2 rounds
-    const available = basePool.filter(num => !this.recentSkips.includes(num));
+  //   // Filter out numbers used in the last 2 rounds
+  //   const available = basePool.filter(num => !this.recentSkips.includes(num));
     
-    // Fallback to full pool if filtering eliminates all options (e.g., small pool)
-    const pool = available.length > 0 ? available : basePool;
-    const selected = pool[Math.floor(Math.random() * pool.length)];
+  //   // Fallback to full pool if filtering eliminates all options (e.g., small pool)
+  //   const pool = available.length > 0 ? available : basePool;
+  //   const selected = pool[Math.floor(Math.random() * pool.length)];
 
-    // Store in history and retain only the last 2 entries
-    this.recentSkips.push(selected);
-    if (this.recentSkips.length > 2) {
-      this.recentSkips.shift();
-    }
+  //   // Store in history and retain only the last 2 entries
+  //   this.recentSkips.push(selected);
+  //   if (this.recentSkips.length > 2) {
+  //     this.recentSkips.shift();
+  //   }
 
-    return selected;
+  //   return selected;
+  // },
+
+getRandomSkip(targetLevel = this.level) {
+    const lvl = targetLevel || 1;
+    // Level 1 -> Multiples of 2, Level 2 -> 3, Level 3 -> 4, etc.
+    return lvl + 1;
   },
 
   fullReset() {
@@ -4380,7 +4649,8 @@ spawnTripleNote() {
     this.skipAmount = this.getRandomSkip();
     this.gameTitle = "SKIP " + this.skipAmount;
     this._noteSpriteCache = null;
-    this._noteFontCache = null;
+    this._noteFontCache = null
+    this._recentSpawnAngles = [];;
     this._restartSpawnTimer();
   },
 

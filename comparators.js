@@ -128,10 +128,23 @@ const Game3 = {
       this.eventsBound = true;
 
       window.addEventListener('keydown', (e) => {
-        if (e.key === '1' && 1 <= this.maxGradeUnlocked) this.setDifficulty(1);
-        if (e.key === '2' && 2 <= this.maxGradeUnlocked) this.setDifficulty(2);
-        if (e.key === '3' && 3 <= this.maxGradeUnlocked) this.setDifficulty(3);
-        if (e.key === '4' && 4 <= this.maxGradeUnlocked) this.setDifficulty(4);
+        // Cheat key: Press '1' to skip to the next level
+        if (e.key === '1') {
+          this.currentLevel++;
+          this.questionsInLevel = 0;
+          
+          this.popups.push({ 
+            text: `CHEAT: LEVEL ${this.currentLevel}!`, 
+            x: this.centerX, 
+            y: this.centerY - 140 * this.scale, 
+            vy: -15, 
+            life: 1.5, 
+            color: "#FFD700", 
+            timestamp: performance.now() 
+          });
+
+          this.spawnNumbers();
+        }
 
         if (e.key === ' ' && this.showTutorial) {
           this.showTutorial = false;
@@ -145,6 +158,9 @@ const Game3 = {
           this.reset();
         }, 200);
       });
+
+
+
 
       const canvas = document.getElementById("game_canvas") || document.querySelector("canvas");
       if (canvas) {
@@ -217,14 +233,22 @@ const Game3 = {
   },
 
   onResize(width, height) {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+
+    const playableHeight = height - topbarH;
     this.centerX = width / 2;
-    this.centerY = height / 2;
-    const base = Math.min(width, height);
+    this.centerY = topbarH + (playableHeight / 2);
+
+    const base = Math.min(width, playableHeight);
     this.scale = base / 600;
     this.margin = 80 * this.scale;
 
-    this.gradeBtn = { x: 140 * this.scale, y: 50 * this.scale, r: 35 * this.scale };
-    this.helpBtn = { x: width - 125 * this.scale, y: 50 * this.scale, r: 22 * this.scale };
+    const topY = topbarH + (28 * this.scale);
+    this.gradeBtn = { x: 140 * this.scale, y: topY, r: 35 * this.scale };
+    this.helpBtn = { x: width - 125 * this.scale, y: topY, r: 22 * this.scale };
     this.preRenderUI();
   },
 
@@ -259,7 +283,8 @@ const Game3 = {
     this.confetti = [];
     this.handResetRequired = true;
 
-    if (this.currentLevel === 5) {
+    // Level 3 is the mixed barrage (shorter hold threshold & faster combo timer)
+    if (this.currentLevel === 3) {
       this.winHoldThreshold = 0.6;
       this.COMBO_MAX_TIME = 3.0;
     } else {
@@ -271,9 +296,13 @@ const Game3 = {
     const shouldTestEqual = this.currentLevel >= 3 && Math.random() < 0.22;
 
     let askBigger = true;
-    if (this.currentLevel === 1) askBigger = true;
-    else if (this.currentLevel === 2) askBigger = false;
-    else askBigger = Math.random() > 0.5;
+    if (this.currentLevel === 1) {
+      askBigger = true; // Level 1: Hand gesture at BIGGER number
+    } else if (this.currentLevel === 2) {
+      askBigger = false; // Level 2: Point at SMALLER number
+    } else {
+      askBigger = Math.random() > 0.5; // Level 3+: Mixed Barrage
+    }
 
     if (shouldTestEqual) {
       this.targetPromptText = "Numbers are EQUAL! Hold in center!";
@@ -366,8 +395,10 @@ const Game3 = {
     let d1 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
     let d2 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
     while (d1 === d2) d2 = easyDenoms[Math.floor(Math.random() * easyDenoms.length)];
-    let n1 = Math.floor(Math.random() * d1) + 1;
-    let n2 = Math.floor(Math.random() * d2) + 1;
+
+    let n1 = Math.floor(Math.random() * Math.min(d1 * 2, maxNum)) + 1;
+    let n2 = Math.floor(Math.random() * Math.min(d2 * 2, maxNum)) + 1;
+    
     this.leftValue = n1 / d1; this.rightValue = n2 / d2;
     this.leftText = `${n1}/${d1}`; this.rightText = `${n2}/${d2}`;
     
@@ -793,6 +824,7 @@ const Game3 = {
     this.detectedSymbol = "None";
   },
 
+  // Level Progression Logic without Grades
   handleSuccess() {
     this.gameState = "SUCCESS";
     this.handResetRequired = true;
@@ -820,50 +852,22 @@ const Game3 = {
       });
     }
 
-    const requiredQuestions = (this.currentLevel === 5) ? 10 : 5; 
+    const requiredQuestions = (this.currentLevel === 3) ? 10 : 5; 
 
     if (this.questionsInLevel >= requiredQuestions) {
       this.questionsInLevel = 0;
-
-      if (this.currentLevel < 5) {
-        this.currentLevel++;
-        const levelMsg = (this.currentLevel === 5) ? "⚡ LEVEL 5: QUESTION BARRAGE!" : `LEVEL ${this.currentLevel}!`;
-        this.popups.push({ 
-          text: levelMsg, 
-          x: this.centerX, 
-          y: this.centerY - 140 * this.scale, 
-          vy: -15, 
-          life: 2.0, 
-          color: "#FFFF00", 
-          timestamp: performance.now() 
-        });
-      } else {
-        if (this.currentGrade < 4) {
-          this.currentGrade++;
-          this.maxGradeUnlocked = Math.max(this.maxGradeUnlocked, this.currentGrade);
-          this.currentLevel = 1;
-          this.score = 0;
-          this.popups.push({ 
-            text: `GRADE ${this.currentGrade} UNLOCKED!`, 
-            x: this.centerX, 
-            y: this.centerY - 140 * this.scale, 
-            vy: -15, 
-            life: 2.5, 
-            color: "#00FFCC", 
-            timestamp: performance.now() 
-          });
-        } else {
-          this.popups.push({ 
-            text: "MASTERED ALL GRADES!", 
-            x: this.centerX, 
-            y: this.centerY - 140 * this.scale, 
-            vy: -15, 
-            life: 3.0, 
-            color: "#FFD700", 
-            timestamp: performance.now() 
-          });
-        }
-      }
+      this.currentLevel++;
+      
+      const levelMsg = (this.currentLevel === 3) ? "⚡ LEVEL 3: QUESTION BARRAGE!" : `LEVEL ${this.currentLevel}!`;
+      this.popups.push({ 
+        text: levelMsg, 
+        x: this.centerX, 
+        y: this.centerY - 140 * this.scale, 
+        vy: -15, 
+        life: 2.0, 
+        color: "#FFFF00", 
+        timestamp: performance.now() 
+      });
     }
 
     if (this.combo > 0 && this.combo % 5 === 0) {
@@ -873,19 +877,6 @@ const Game3 = {
     }
 
     this.popups.push({ text: `+${pointsGained}!`, x: this.centerX, y: this.centerY - 40 * this.scale, vy: -20, life: 1.2, color: "#00FF22", timestamp: performance.now() });
-
-    if (this.combo > 0 && this.combo % 5 === 0) {
-      this.popups.push({ 
-        text: `AMAZING COMBO x${this.combo}`, 
-        x: this.centerX, 
-        y: this.centerY + 175 * this.scale, 
-        vy: -5, 
-        life: 1.5, 
-        color: "#FFD700",
-        isMilestone: true,
-        timestamp: performance.now()
-      });
-    }
 
     for (let i = 0; i < 15; i++) {
       this.particles.push({
@@ -979,8 +970,13 @@ const Game3 = {
     }
   },
 
+  // Updated UI pill removing Grade labels
   drawUI(ctx) {
-    const topY = 28 * this.scale;
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
+    const topY = topbarH + (14 * this.scale);
 
     const drawPill = (x, y, w, h, bg = "rgba(20, 20, 20, 0.75)", stroke = "rgba(255, 255, 255, 0.15)") => {
       ctx.fillStyle = bg;
@@ -993,16 +989,16 @@ const Game3 = {
       ctx.stroke();
     };
 
-    const subLabel = `Grade ${this.currentGrade} (Lvl ${this.currentLevel})`;
+    const subLabel = `Level ${this.currentLevel}`;
     ctx.font = `bold ${18 * this.scale}px Arial`;
-    const gradeW = ctx.measureText(subLabel).width + 36 * this.scale;
-    const gradeH = 44 * this.scale;
-    const gradeX = 25 * this.scale;
-    drawPill(gradeX, topY, gradeW, gradeH);
+    const levelW = ctx.measureText(subLabel).width + 36 * this.scale;
+    const levelH = 44 * this.scale;
+    const levelX = 25 * this.scale;
+    drawPill(levelX, topY, levelW, levelH);
     ctx.fillStyle = "#00FFCC";
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(subLabel, gradeX + gradeW / 2, topY + gradeH / 2);
+    ctx.fillText(subLabel, levelX + levelW / 2, topY + levelH / 2);
 
     const scoreText = `SCORE: ${this.score}`;
     ctx.font = `bold ${22 * this.scale}px Arial`;
@@ -1075,7 +1071,7 @@ const Game3 = {
     ctx.globalAlpha = 1;
 
     ctx.font = `bold ${24 * this.scale}px Arial`; 
-    ctx.fillStyle = (this.currentLevel === 5) ? "#FFCC00" : "#FFFFFF";
+    ctx.fillStyle = (this.currentLevel === 3) ? "#FFCC00" : "#FFFFFF";
     ctx.shadowBlur = 8; 
     ctx.shadowColor = "#000";
     ctx.fillText(this.targetPromptText, this.centerX, this.centerY + 140 * this.scale);
@@ -1091,7 +1087,7 @@ const Game3 = {
 
   drawHelpPillButton(ctx, topY) {
     const itemW = 44 * this.scale;
-    const pillX = window.innerWidth - itemW - 85 * this.scale;
+    const pillX = window.innerWidth - itemW - 25 * this.scale;
 
     ctx.fillStyle = "rgba(20, 20, 20, 0.75)";
     ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";

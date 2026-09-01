@@ -85,6 +85,23 @@ gameState: "tutorial",
   _tutNoHandFrames: 0,
   TUT_HOLD_SEC: 2.0,
 
+
+  // ===== SPAWN PHASE SYSTEM (top-only <-> bottom-only, then unlocks "both") =====
+spawnPhase: "top",          // "top" | "bottom" | "both"
+phaseTimer: 0,               // ms elapsed in current phase
+phaseDuration: 60000,        // 15s per phase before switching sides
+bothSidesUnlocked: false,    // becomes true permanently once score hits LEVEL_UNLOCK_SCORE
+LEVEL_UNLOCK_SCORE: 777,
+
+// Popup overlay state (pauses spawning/movement while shown)
+sidePopupActive: false,
+sidePopupTitle: "",
+sidePopupSubtitle: "",
+sidePopupColor: "#00FFFF",
+sidePopupTimer: 0,
+sidePopupDuration: 2600,     // ms popup stays on screen
+sidePopupScale: 0,           // for pop-in animation
+
   init() {
   try {
     if (screen.orientation && screen.orientation.lock) {
@@ -154,6 +171,28 @@ gameState: "tutorial",
   this._tutOrbT = 0;
   this._tutHoldProgress = 0;
   this._tutNoHandFrames = 0;
+
+  this.spawnPhase = "top";
+this.phaseTimer = 0;
+this.bothSidesUnlocked = false;
+this.sidePopupActive = false;
+this.sidePopupTimer = 0;
+this.sidePopupScale = 0;
+
+
+window.addEventListener('keydown', (e) => {
+  if (window.currentGame !== Game8) return;
+
+  if (e.key === "1") {
+    this.score = 770;
+    this.scoreScale = 2.0;
+    this.scoreColor = "#FFD700";
+
+    this.spawnFloatingText(this.CENTER_X, this.CENTER_Y - 60 * this.scale, "CHEAT: 770!", "#FFD700");
+
+    console.log("[CHEAT] Score set to 770 for testing level-up popup.");
+  }
+});
  
   this.initPose();
 },
@@ -473,191 +512,200 @@ gameState: "tutorial",
   },
 
   resize() {
-    const cssW = window.innerWidth;
-    const cssH = window.innerHeight;
+    const cssW = window.innerWidth;
+    const cssH = window.innerHeight;
 
-    let newScale = Math.min(cssW / this.BASE_WIDTH, cssH / this.BASE_HEIGHT);
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
 
-    if (!newScale || newScale <= 0) newScale = 1;
+    let newScale = Math.min(cssW / this.BASE_WIDTH, (cssH - topbarH) / this.BASE_HEIGHT);
 
-    if (
-      this.scale &&
-      Math.abs(newScale - this.scale) < 0.001 &&
-      this.cssWidth === cssW &&
-      this.cssHeight === cssH
-    ) {
-      return;
-    }
+    if (!newScale || newScale <= 0) newScale = 1;
 
-    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    if (
+      this.scale &&
+      Math.abs(newScale - this.scale) < 0.001 &&
+      this.cssWidth === cssW &&
+      this.cssHeight === cssH
+    ) {
+      return;
+    }
 
-    canvasElement.width = cssW * dpr;
-    canvasElement.height = cssH * dpr;
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
 
-    this.cssWidth = cssW;
-    this.cssHeight = cssH;
-    this.scale = newScale;
+    canvasElement.width = cssW * dpr;
+    canvasElement.height = cssH * dpr;
 
-    this._armLength = this.ARM_LENGTH * this.scale;
-    this._ballRadius = this.BALL_RADIUS * this.scale;
-    this._edgeSize = this.EDGE_SIZE * this.scale;
-    this._lineGap = this.LINE_GAP * this.scale;
-    this._pivotRadius = this.PIVOT_RADIUS * this.scale;
-    this._pivotOffset = this.PIVOT_OFFSET * this.scale;
+    this.cssWidth = cssW;
+    this.cssHeight = cssH;
+    this.scale = newScale;
 
-    this.CENTER_X = cssW / 2;
-    this.CENTER_Y = cssH / 2;
+    this._armLength = this.ARM_LENGTH * this.scale;
+    this._ballRadius = this.BALL_RADIUS * this.scale;
+    this._edgeSize = this.EDGE_SIZE * this.scale;
+    this._lineGap = this.LINE_GAP * this.scale;
+    this._pivotRadius = this.PIVOT_RADIUS * this.scale;
+    this._pivotOffset = this.PIVOT_OFFSET * this.scale;
 
-    const ctx = canvasElement.getContext("2d");
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const playableH = cssH - topbarH;
+    this.CENTER_X = cssW / 2;
+    this.CENTER_Y = topbarH + (playableH / 2);
 
-    this.fontBall = `bold ${30 * this.scale}px Orbitron`;
-    this.fontUI = `bold ${30 * this.scale}px Orbitron`;
-    this.fontLegend = `bold ${36 * this.scale}px Orbitron`;
-    this.fontFloater = `bold ${24 * this.scale}px Orbitron`;
-    this.fontScore = `bold ${20 * this.scale}px Orbitron`;
-    this.fontScoreBig = `bold ${40 * this.scale}px Orbitron`;
+    const ctx = canvasElement.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    this.rebuildCaches();
-  },
+    this.fontBall = `bold ${30 * this.scale}px Orbitron`;
+    this.fontUI = `bold ${30 * this.scale}px Orbitron`;
+    this.fontLegend = `bold ${36 * this.scale}px Orbitron`;
+    this.fontFloater = `bold ${24 * this.scale}px Orbitron`;
+    this.fontScore = `bold ${20 * this.scale}px Orbitron`;
+    this.fontScoreBig = `bold ${40 * this.scale}px Orbitron`;
 
- /* ── 3) REPLACE update(ctx) ──────────────────────────────────── */
+    this.rebuildCaches();
+  },
+
 update(ctx) {
   if (!this.running) return;
- 
+
   const now = performance.now();
   const deltaTime = now - this.lastTime;
   this.lastTime = now;
- 
+
   if (this.scoreScale > 1) {
     this.scoreScale = Math.max(1, this.scoreScale - 0.05);
   }
- 
-  // ── Tutorial screen takes over rendering entirely until the
-  //    player holds their wrist at center for TUT_HOLD_SEC. ──
+
   if (this.gameState === "tutorial") {
     this.drawBackground(ctx);
     this._updateTutorial(ctx, Math.min(deltaTime, 50));
     return;
   }
- 
+
   if (!this.gameStarted) {
-    // Safety fallback — shouldn't normally be reached since the
-    // tutorial now owns the pre-game state.
     this.checkPivotLock(deltaTime);
+  } else if (this.sidePopupActive) {
+    // Freeze spawning/physics/scoring while the popup is up,
+    // but keep particles/floaters settling and the popup animating.
+    this.updateSidePopup(Math.min(deltaTime, 50));
   } else {
     this.handleSpawning(deltaTime);
     this.updateBalls(deltaTime / 16.67);
     this.checkPhysics();
     this.checkScoring();
   }
- 
+
   this.updateParticles();
   this.updateFloaters();
- 
+
   this.drawBackground(ctx);
- 
+
   if (this.gameStarted) {
     this.drawBalls(ctx);
     this.drawArms(ctx);
   }
- 
+
   this.drawPivots(ctx);
   this.drawParticles(ctx);
   this.drawFloaters(ctx);
   this.drawUI(ctx);
+
+  if (this.sidePopupActive) {
+    this.drawSidePopup(ctx);
+  }
 },
 
-  handleSpawning(dt) {
-    this.spawnTimer += dt;
+handleSpawning(dt) {
+  if (this.sidePopupActive) return;
 
-    this.spawnMode = "top-bottom";
+  if (!this.bothSidesUnlocked) {
+    this.phaseTimer += dt;
 
-    if (this.spawnTimer > this.spawnRate && this.balls.length < this.MAX_BALLS) {
-      this.spawnBall();
-      this.spawnTimer = 0;
-    }
-  },
+    // Timer's up — but don't switch yet if balls from the current
+    // side are still on screen. Just stop spawning NEW ones and
+    // wait for the board to clear first.
+    if (this.phaseTimer >= this.phaseDuration) {
+      if (this.balls.length === 0) {
+        this.phaseTimer = 0;
+        const nextPhase = this.spawnPhase === "top" ? "bottom" : "top";
+        this.triggerSidePopup(nextPhase);
+      }
+      return; // no new spawns while waiting to switch or showing popup
+    }
+  }
 
-  spawnBall() {
-    const number = Math.floor(Math.random() * 100) + 1;
-    const isOdd = number % 2 !== 0;
+  this.spawnTimer += dt;
 
-    const speed = (1 + (2000 - this.spawnRate) / 2000) * this.scale;
+  if (this.spawnTimer > this.spawnRate && this.balls.length < this.MAX_BALLS) {
+    this.spawnBall();
+    this.spawnTimer = 0;
+  }
+},
 
-    let sides = [];
+ spawnBall() {
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
 
-    if (this.spawnMode === "top-bottom") {
-      sides = [0, 1];
-    } else if (this.spawnMode === "left-right") {
-      sides = [2, 3];
-    } else if (this.spawnMode === "all") {
-      sides = [0, 1, 2, 3];
-    } else if (this.spawnMode === "random-one") {
-      if (!this._lastRandomSide) {
-        this._lastRandomSide = Math.floor(Math.random() * 4);
-      }
+    const number = Math.floor(Math.random() * 100) + 1;
+    const isOdd = number % 2 !== 0;
 
-      sides = [this._lastRandomSide];
+    const speed = (1 + (2000 - this.spawnRate) / 2000) * this.scale;
 
-      if (Math.random() < 0.1) {
-        this._lastRandomSide = Math.floor(Math.random() * 4);
-      }
-    }
+    let sides = [];
 
-    const side = sides[Math.floor(Math.random() * sides.length)];
+    if (this.spawnPhase === "top") {
+      sides = [0];
+    } else if (this.spawnPhase === "bottom") {
+      sides = [1];
+    } else {
+      sides = [0, 1];
+    }
 
-    let x;
-    let y;
-    let tx;
-    let ty;
+    const side = sides[Math.floor(Math.random() * sides.length)];
 
-    const outsideOffset = this.ballRadius * 2;
-    const farBoundary = 2000 * this.scale;
+    let x;
+    let y;
+    let tx;
+    let ty;
 
-    if (side === 0) {
-      x = this.CENTER_X;
-      y = -outsideOffset;
-      tx = x;
-      ty = this.cssHeight + farBoundary;
-    } else if (side === 1) {
-      x = this.CENTER_X;
-      y = this.cssHeight + outsideOffset;
-      tx = x;
-      ty = -farBoundary;
-    } else if (side === 2) {
-      x = -outsideOffset;
-      y = this.CENTER_Y;
-      tx = this.cssWidth + farBoundary;
-      ty = y;
-    } else if (side === 3) {
-      x = this.cssWidth + outsideOffset;
-      y = this.CENTER_Y;
-      tx = -farBoundary;
-      ty = y;
-    }
+    const outsideOffset = this.ballRadius * 2;
+    const farBoundary = 2000 * this.scale;
 
-    this.balls.push({
-      x,
-      y,
-      prevX: x,
-      prevY: y,
-      targetX: tx,
-      targetY: ty,
-      vx: 0,
-      vy: 0,
-      speed,
-      number,
-      isOdd,
-      color: "#ffffff",
-      trail: [],
-      trailIdx: 0,
-      hitCooldown: 0,
-      scored: false,
-      hasCollided: false
-    });
-  },
+    if (side === 0) {
+      x = this.CENTER_X;
+      y = topbarH - outsideOffset;
+      tx = x;
+      ty = this.cssHeight + farBoundary;
+    } else if (side === 1) {
+      x = this.CENTER_X;
+      y = this.cssHeight + outsideOffset;
+      tx = x;
+      ty = -farBoundary;
+    }
 
+    this.balls.push({
+      x,
+      y,
+      prevX: x,
+      prevY: y,
+      targetX: tx,
+      targetY: ty,
+      vx: 0,
+      vy: 0,
+      speed,
+      number,
+      isOdd,
+      color: "#ffffff",
+      trail: [],
+      trailIdx: 0,
+      hitCooldown: 0,
+      scored: false,
+      hasCollided: false
+    });
+  },
   updateBalls(dt) {
     for (let i = 0; i < this.balls.length; i++) {
       let b = this.balls[i];
@@ -1030,22 +1078,27 @@ update(ctx) {
   },
 
   updateScore(amount, isGood) {
-    if (isGood) {
-      sfxCorrect_8.currentTime = 0;
-      sfxCorrect_8.play().catch(() => { });
-    } else {
-      sfxWrong_8.currentTime = 0;
-      sfxWrong_8.play().catch(() => { });
-    }
+  if (isGood) {
+    sfxCorrect_8.currentTime = 0;
+    sfxCorrect_8.play().catch(() => { });
+  } else {
+    sfxWrong_8.currentTime = 0;
+    sfxWrong_8.play().catch(() => { });
+  }
 
-    this.score += amount;
-    this.scoreScale = 2.0;
-    this.scoreColor = isGood ? "#00FF00" : "#FF0000";
+  this.score += amount;
+  this.scoreScale = 2.0;
+  this.scoreColor = isGood ? "#00FF00" : "#FF0000";
 
-    this.spawnRate = isGood
-      ? Math.max(this.minSpawnRate, this.spawnRate - 100)
-      : Math.min(this.maxSpawnRate, this.spawnRate + 200);
-  },
+  this.spawnRate = isGood
+    ? Math.max(this.minSpawnRate, this.spawnRate - 100)
+    : Math.min(this.maxSpawnRate, this.spawnRate + 200);
+
+  // Unlock simultaneous top+bottom spawning once the player proves themselves.
+  if (!this.bothSidesUnlocked && this.score >= this.LEVEL_UNLOCK_SCORE) {
+    this.triggerLevelPopup();
+  }
+},
 
   checkPivotLock(dt) {
     if (!this.steeringHand) {
@@ -1279,96 +1332,102 @@ update(ctx) {
   },
 
   drawUI(ctx) {
-    if (!this.gameStarted) {
-      ctx.textAlign = "center";
-      ctx.font = this.fontUI;
+    const topbarH = parseInt(
+      getComputedStyle(document.documentElement).getPropertyValue('--nb-topbar-h') || '50',
+      10
+    );
 
-      ctx.fillStyle = "black";
-      ctx.fillText(
-        "PLACE ONE HAND ON CENTER TO START",
-        this.CENTER_X + 2 * this.scale,
-        this.CENTER_Y - 48 * this.scale
-      );
+    if (!this.gameStarted) {
+      ctx.textAlign = "center";
+      ctx.font = this.fontUI;
 
-      ctx.fillStyle = "white";
-      ctx.fillText(
-        "PLACE ONE HAND ON CENTER TO START",
-        this.CENTER_X,
-        this.CENTER_Y - 50 * this.scale
-      );
-    }
+      ctx.fillStyle = "black";
+      ctx.fillText(
+        "PLACE ONE HAND ON CENTER TO START",
+        this.CENTER_X + 2 * this.scale,
+        this.CENTER_Y - 48 * this.scale
+      );
 
-    // ================= SCORE =================
+      ctx.fillStyle = "white";
+      ctx.fillText(
+        "PLACE ONE HAND ON CENTER TO START",
+        this.CENTER_X,
+        this.CENTER_Y - 50 * this.scale
+      );
+    }
 
-    ctx.textAlign = "center";
+    // ================= SCORE =================
 
-    ctx.font = this.scoreScale > 1.1
-      ? this.fontScoreBig
-      : this.fontScore;
+    ctx.textAlign = "center";
 
-    ctx.fillStyle = this.scoreColor;
+    ctx.font = this.scoreScale > 1.1
+      ? this.fontScoreBig
+      : this.fontScore;
 
-    ctx.fillText(
-      this.score,
-      this.CENTER_X,
-      100 * this.scale
-    );
+    ctx.fillStyle = this.scoreColor;
 
-    // ================= SIDE LABELS =================
+    ctx.fillText(
+      this.score,
+      this.CENTER_X,
+      topbarH + (40 * this.scale)
+    );
 
-    const w = this.cssWidth;
-    const h = this.cssHeight;
+    // ================= SIDE LABELS =================
 
-    ctx.font = this.fontLegend;
-    ctx.textAlign = "center";
+    const w = this.cssWidth;
+    const h = this.cssHeight;
 
-    const bottomHeight = h - 65 * this.scale;
+    ctx.font = this.fontLegend;
+    ctx.textAlign = "center";
 
-    // LEFT SIDE = ODD = RED
+    const topLabelY = topbarH + (35 * this.scale);
+    const bottomHeight = h - 65 * this.scale;
 
-    ctx.fillStyle = "#FF0000";
+    // LEFT SIDE = ODD = RED
 
-    ctx.fillText(
-      "Odd",
-      w * 0.07,
-      85 * this.scale
-    );
+    ctx.fillStyle = "#FF0000";
 
-    ctx.fillText(
-      "Odd",
-      w * 0.07,
-      bottomHeight
-    );
+    ctx.fillText(
+      "Odd",
+      w * 0.07,
+      topLabelY
+    );
 
-    // RIGHT SIDE = EVEN = BLUE
+    ctx.fillText(
+      "Odd",
+      w * 0.07,
+      bottomHeight
+    );
 
-    ctx.fillStyle = "#00FFFF";
+    // RIGHT SIDE = EVEN = BLUE
 
-    ctx.fillText(
-      "Even",
-      w * 0.93,
-      85 * this.scale
-    );
+    ctx.fillStyle = "#00FFFF";
 
-    ctx.fillText(
-      "Even",
-      w * 0.93,
-      bottomHeight
-    );
+    ctx.fillText(
+      "Even",
+      w * 0.93,
+      topLabelY
+    );
 
-    // ================= HAND WARNING =================
+    ctx.fillText(
+      "Even",
+      w * 0.93,
+      bottomHeight
+    );
 
-    if (this.currentMissingState) {
-      ctx.fillStyle = "red";
-      ctx.font = this.fontUI;
+    // ================= HAND WARNING =================
 
-      ctx.fillText(
-        "BRING ONE HAND IN VIEW",
-        this.CENTER_X,
-        this.CENTER_Y + 150 * this.scale
-      );
-    }
-  },
+    if (this.currentMissingState) {
+      ctx.fillStyle = "red";
+      ctx.font = this.fontUI;
+
+      ctx.fillText(
+        "BRING ONE HAND IN VIEW",
+        this.CENTER_X,
+        this.CENTER_Y + 150 * this.scale
+      );
+    }
+  },
 
   get pivotOffset() {
     return this._pivotOffset;
@@ -1622,50 +1681,71 @@ _updateTutorial(ctx, dt) {
   }
 },
  
- 
-/* ── 4b) NEW: animated mini-diagram of the actual mechanic ───── */
 _drawTutVisual(ctx, px, py, pw, ph, t) {
   ctx.save();
   ctx.translate(px, py);
- 
+
   const cx = pw / 2, cy = ph / 2;
   const armLen = Math.min(pw, ph) * 0.32;
- 
-  // Colored edge zones — mirrors the real red/blue bands
+  const ballRadius = 14;
+
+  // Render edge zones
   const bandW = pw * 0.14;
   ctx.fillStyle = "rgba(255,0,0,0.35)";
   ctx.fillRect(0, 0, bandW, ph);
   ctx.fillStyle = "rgba(0,255,255,0.35)";
   ctx.fillRect(pw - bandW, 0, bandW, ph);
- 
-  // Demo cycle: 0-2s shows an ODD ball knocked LEFT,
-  //             2-4s shows an EVEN ball knocked RIGHT.
+
+  // Demo cycle: 0-2s ODD ball (left), 2-4s EVEN ball (right)
   const cycle = t % 4;
   const isOddDemo = cycle < 2;
-  const localT = (cycle % 2) / 2; // 0..1 within this half-cycle
+  const localT = (cycle % 2) / 2; // Normalized loop time (0.0 to 1.0)
   const num = isOddDemo ? 7 : 4;
   const zoneColor = isOddDemo ? "#FF0000" : "#00FFFF";
- 
-  const fallPhase = 0.45;
+
+  // Dynamic bar rotation with smooth angular velocity momentum
+  const baseTargetAngle = isOddDemo ? Math.PI * 0.75 : Math.PI * 0.25;
+  const armAngle = baseTargetAngle + Math.sin(t * 4) * 0.2;
+
+  // Collision timeline settings
+  const hitT = 0.45; // Fraction of cycle when impact occurs
+  const contactDist = armLen * 0.65; // Distance along the arm where ball hits
+
+  // Calculate exact collision point in canvas space
+  const hitX = cx + Math.cos(armAngle) * contactDist;
+  const hitY = cy + Math.sin(armAngle) * contactDist;
+
   let bx, by;
-  if (localT < fallPhase) {
-    const p = localT / fallPhase;
-    bx = cx;
-    by = p * cy;
+
+  if (localT < hitT) {
+    // Phase 1: Straight vertical drop onto the rotating arm
+    const p = localT / hitT;
+    const startY = -ballRadius;
+    
+    // Smooth quadratic drop trajectory
+    bx = cx + (hitX - cx) * p;
+    by = startY + (hitY - startY) * Math.pow(p, 1.2);
   } else {
-    const p = (localT - fallPhase) / (1 - fallPhase);
+    // Phase 2: Perfect smooth parabolic bounce towards target edge zone
+    const p = (localT - hitT) / (1 - hitT);
     const targetX = isOddDemo ? bandW * 0.5 : pw - bandW * 0.5;
-    bx = cx + (targetX - cx) * p;
-    by = cy + (ph - cy) * p * 0.9;
+    const targetY = ph * 0.85;
+
+    // Normal vector direction from collision point
+    const sideDir = isOddDemo ? -1 : 1;
+
+    // Smooth horizontal travel
+    bx = hitX + (targetX - hitX) * Math.pow(p, 0.85);
+
+    // Parabolic arc bounce curve (outward momentum push)
+    const arcHeight = 35 * (1 - Math.pow(p - 0.5, 2) * 4);
+    by = hitY + (targetY - hitY) * p - Math.max(0, arcHeight);
   }
- 
-  // Arm points toward the deflection direction, with a little idle swing
-  const armAngle = isOddDemo ? Math.PI * 0.82 : Math.PI * 0.18;
-  const swingAngle = armAngle + Math.sin(t * 3) * 0.12;
- 
+
+  // Draw double-sided arm
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.rotate(swingAngle);
+  ctx.rotate(armAngle);
   ctx.strokeStyle = "#ac2fffff";
   ctx.shadowColor = "#f36affff";
   ctx.shadowBlur = 10;
@@ -1680,28 +1760,30 @@ _drawTutVisual(ctx, px, py, pw, ph, t) {
   ctx.stroke();
   ctx.shadowBlur = 0;
   ctx.restore();
- 
-  // Pivot
+
+  // Draw Center Pivot
   ctx.beginPath();
   ctx.arc(cx, cy, 5, 0, Math.PI * 2);
   ctx.fillStyle = "#ff2491ff";
   ctx.fill();
- 
-  // Ball
+
+  // Draw Ball with glow
   ctx.beginPath();
-  ctx.arc(bx, by, 14, 0, Math.PI * 2);
+  ctx.arc(bx, by, ballRadius, 0, Math.PI * 2);
   ctx.fillStyle = "#ffffff";
   ctx.shadowColor = zoneColor;
   ctx.shadowBlur = 14;
   ctx.fill();
   ctx.shadowBlur = 0;
-  ctx.fillStyle = "#000";
+
+  // Ball number text
+  ctx.fillStyle = "#000000";
   ctx.font = "bold 13px Orbitron";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(num, bx, by);
- 
-  // Zone labels
+
+  // Side zone labels
   ctx.font = "10px Orbitron";
   ctx.fillStyle = "#FF0000";
   ctx.textAlign = "left";
@@ -1709,10 +1791,9 @@ _drawTutVisual(ctx, px, py, pw, ph, t) {
   ctx.fillStyle = "#00FFFF";
   ctx.textAlign = "right";
   ctx.fillText("EVEN", pw - 6, ph - 8);
- 
+
   ctx.restore();
 },
- 
  
 /* ── 4c) NEW: transition out of the tutorial into real play ──── */
 _startPlayingFromTutorial() {
@@ -1724,5 +1805,127 @@ _startPlayingFromTutorial() {
   if (video) video.style.opacity = "0.2";
  
   this.spawnFloatingText(this.CENTER_X, this.CENTER_Y, "START!", "white");
+},
+
+triggerSidePopup(nextPhase) {
+  this.spawnPhase = nextPhase;
+
+  const fromTop = nextPhase === "bottom"; // switching FROM top TO bottom
+  const messages = fromTop
+    ? { title: "🔄 SWITCHEROO!", subtitle: "Numbers now zoom in from the BOTTOM!" }
+    : { title: "🔄 SWITCHEROO!", subtitle: "Numbers now zoom in from the TOP!" };
+
+  this.sidePopupActive = true;
+  this.sidePopupTitle = messages.title;
+  this.sidePopupSubtitle = messages.subtitle;
+  this.sidePopupColor = "#BB66FF";
+  this.sidePopupTimer = 0;
+  this.sidePopupScale = 0;
+
+  sfxLevel_8.currentTime = 0;
+  sfxLevel_8.play().catch(() => {});
+},
+
+triggerLevelPopup() {
+  this.bothSidesUnlocked = true;
+  this.spawnPhase = "both";
+
+  this.sidePopupActive = true;
+  this.sidePopupTitle = "🌟 LEVEL UP! 🌟";
+  this.sidePopupSubtitle = "You're ready for the next level — numbers now fly in from BOTH sides!";
+  this.sidePopupColor = "#FFD700";
+  this.sidePopupTimer = 0;
+  this.sidePopupScale = 0;
+
+  sfxLevel_8.currentTime = 0;
+  sfxLevel_8.play().catch(() => {});
+},
+
+updateSidePopup(dt) {
+  if (!this.sidePopupActive) return;
+
+  this.sidePopupTimer += dt;
+
+  // Quick pop-in, hold, then close automatically.
+  this.sidePopupScale = Math.min(1, this.sidePopupTimer / 250);
+
+  if (this.sidePopupTimer >= this.sidePopupDuration) {
+    this.sidePopupActive = false;
+    this.sidePopupTimer = 0;
+    // Reset timers cleanly so play resumes at a fair pace, not a burst.
+    this.spawnTimer = 0;
+    this.phaseTimer = 0;
+    this.lastTime = performance.now();
+  }
+},
+
+drawSidePopup(ctx) {
+  if (!this.sidePopupActive) return;
+
+  const W = this.cssWidth, H = this.cssHeight;
+  const sc = this.scale || 1;
+  let pop = this.sidePopupScale;
+
+  // Little overshoot bounce on pop-in.
+  if (this.sidePopupTimer < 250) {
+    pop += Math.sin((this.sidePopupTimer / 250) * Math.PI) * 0.1;
+  }
+
+  ctx.save();
+  ctx.fillStyle = "rgba(2,4,10,0.72)";
+  ctx.fillRect(0, 0, W, H);
+
+  const boxW = Math.min(W - 60 * sc, 640 * sc);
+  const boxH = 220 * sc;
+  const boxX = this.CENTER_X - boxW / 2;
+  const boxY = this.CENTER_Y - boxH / 2;
+
+  ctx.translate(this.CENTER_X, this.CENTER_Y);
+  ctx.scale(pop, pop);
+  ctx.translate(-this.CENTER_X, -this.CENTER_Y);
+
+  ctx.shadowColor = this.sidePopupColor;
+  ctx.shadowBlur = 30 * sc;
+  ctx.fillStyle = "rgba(10,8,24,0.96)";
+  ctx.strokeStyle = this.sidePopupColor;
+  ctx.lineWidth = 4 * sc;
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, boxW, boxH, 26 * sc);
+  ctx.fill();
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  ctx.fillStyle = this.sidePopupColor;
+  ctx.shadowColor = this.sidePopupColor;
+  ctx.shadowBlur = 16 * sc;
+  ctx.font = `bold ${34 * sc}px Orbitron`;
+  ctx.fillText(this.sidePopupTitle, this.CENTER_X, boxY + 75 * sc);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `${17 * sc}px Orbitron`;
+  ctx.fillText(this.sidePopupSubtitle, this.CENTER_X, boxY + 130 * sc);
+
+  // Little countdown bar showing time left before auto-close.
+  const barW = boxW * 0.6;
+  const barH = 8 * sc;
+  const barX = this.CENTER_X - barW / 2;
+  const barY = boxY + boxH - 34 * sc;
+  const progress = Math.min(1, this.sidePopupTimer / this.sidePopupDuration);
+
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW, barH, 4 * sc);
+  ctx.fill();
+
+  ctx.fillStyle = this.sidePopupColor;
+  ctx.beginPath();
+  ctx.roundRect(barX, barY, barW * (1 - progress), barH, 4 * sc);
+  ctx.fill();
+
+  ctx.restore();
 },
 };
